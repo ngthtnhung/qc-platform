@@ -593,6 +593,7 @@ window.closeModals = function() {
   let runningCount = 0;
   function render() {
     if (runningCount > 0) return; // đang chạy: không vẽ lại để khỏi mất kết quả đang hiển thị
+    renderStats();
     const keep = {}; const openId = document.querySelector('#at-list .at-card.open')?.dataset.id || '';
     document.querySelectorAll('#at-list [data-id]').forEach(c => { keep[c.dataset.id] = { res: c.querySelector('.at-result').innerHTML, vals: collect(c), acc: c.querySelector('.at-acc').value, times: (c.querySelector('.at-times') || {}).value, code: c.querySelector('.at-codebox').style.display }; });
     try { renderCards(); } finally {
@@ -606,9 +607,21 @@ window.closeModals = function() {
       });
     }
   }
+  const foldTxt = x => String(x || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase();
+  function visibleTasks() {
+    const q = foldTxt($('at-q')?.value.trim()), kind = $('at-kind')?.value || '';
+    return tasks.filter(t => (!kind || (kind === 'write') === !!t.writes) && (!q || foldTxt([t.name, t.module, t.flow, t.description].join(' ')).includes(q)));
+  }
+  function renderStats() {
+    const mods = new Set(tasks.map(t => t.module)).size, run = tasks.filter(t => t.runnable).length, w = tasks.filter(t => t.writes).length;
+    const card = (k, v, sub) => `<div class="stat-card"><span>${k}</span><b>${v}</b><small>${sub}</small></div>`;
+    $('at-stats').innerHTML = card('Tác vụ', tasks.length, `${mods} module`) + card('Sẵn sàng chạy', run, `${tasks.length - run} chưa sẵn sàng`) + card('Tạo hoặc sửa dữ liệu', w, 'dữ liệu có tiền tố [AI TEST]') + card('Chỉ đọc', tasks.length - w, 'không đổi dữ liệu');
+  }
   function renderCards() {
     if (!tasks.length) { $('at-list').innerHTML = '<div style="padding:14px;color:var(--text-subtle);">Chưa có tác vụ. Tác vụ được ghi khi khám phá module (xem docs/operations/automation-tasks.md).</div>'; return; }
-    $('at-list').innerHTML = tasks.map(t => `
+    const shown = visibleTasks();
+    if (tasks.length && !shown.length) { $('at-list').innerHTML = '<div style="padding:14px;color:var(--text-subtle);">Không có tác vụ nào khớp bộ lọc.</div>'; return; }
+    $('at-list').innerHTML = shown.map(t => `
       <div class="card at-card" style="padding:10px 14px;margin-bottom:8px;" data-id="${esc(t.id)}">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
           <div><strong>${esc(t.name)}</strong>
@@ -846,6 +859,8 @@ window.closeModals = function() {
   document.addEventListener('DOMContentLoaded', () => {
     $('at-module').addEventListener('change', load);
     $('at-reload').addEventListener('click', load);
+    $('at-q').addEventListener('input', () => render());
+    $('at-kind').addEventListener('change', () => render());
     { let opened = false; document.querySelector("[data-tab='pane-automation']").addEventListener('click', () => { if (!opened) { opened = true; load(); } }); } // đổi tab không nạp lại: giữ nguyên kết quả, chỉ nạp lại khi tải lại trang
     $('te-add-param').addEventListener('click', () => $('te-params').insertAdjacentHTML('beforeend', paramRow({ auto: true })));
     $('te-params').addEventListener('click', e => { if (e.target.closest('.tp-del')) e.target.closest('.tp-row').remove(); });

@@ -64,6 +64,11 @@
     <!-- TAB 5: TÁC VỤ TỰ ĐỘNG (Playwright, ghi lại khi khám phá module) -->
     <section class="tab-pane" id="pane-automation">
       <div class="page-head"><h1>Tác Vụ Tự Động</h1><p>Chọn tác vụ, chỉnh trường thông tin, chạy và xem kết quả.</p></div>
+      <div class="stat-grid" id="at-stats"></div>
+      <div class="filter-bar">
+        <input class="form-control" id="at-q" type="search" placeholder="Tìm tác vụ theo tên, module, mô tả..." />
+        <select class="form-control" id="at-kind"><option value="">Mọi loại tác vụ</option><option value="write">Tạo hoặc sửa dữ liệu</option><option value="read">Chỉ đọc</option></select>
+      </div>
       <div class="card">
         <div class="card-header">
           <span class="card-title">Tác vụ có thể tự động hóa (ghi lại khi khám phá module)</span>
