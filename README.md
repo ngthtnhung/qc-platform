@@ -74,40 +74,5 @@ qa-platform/
 node services/api/server.js
 ```
 Truy cập Web Dashboard tại: `http://localhost:3001`.
-
 ---
 
-## 🧪 Chạy Kiểm Thử Tự Động (Automated Tests)
-
-```powershell
-node tests/run-all-tests.js
-```
-Kết quả kiểm thử:
-- ✓ Policy Engine Tests: Missing actor rejected, AI self-approval blocked, Production-test org gate blocked/allowed, Production destructive writes blocked.
-- ✓ State Machine Tests: Legal & illegal transitions, Idempotent keys, Checkpoint resume.
-- ✓ 16-Column Schema Tests: Exact 16 columns validated, invalid status rejected, Markdown table export verified.
-
----
-
-## Kho Business Rule
-
-Tab 5 hien thi rule da xac nhan tu artifact 'Kho Business Rule Haraworks' (read-only). Dong bo: xuat DB artifact vao database/kb-snapshot/ roi chay `node scripts/sync-business-rules.mjs`. API: GET /api/v1/business-rules?module=&q=. RAG phan tich bug tu dong trich dan rule (nguon '[Kho BR]').
-
-## Dang nhap tu dong bang Playwright
-
-Bam 'Mo Browser & Dang Nhap' tren tai khoan: QA Launcher (apps/launcher) mo Chrome rieng tren may ban (profile o ~/.qa-launcher/profiles); chay: node apps/launcher/launcher.js --server http://localhost:3001, tu dien ma cong ty, ten dang nhap, mat khau.
-Mat khau luu ma hoa (AES-256-GCM, khoa boc bang Windows DPAPI) trong secrets/vault.json, chi cho Staging va Production OrgID DEMO. Dat mat khau bang nut 'Dat mat khau' tren the tai khoan hoac o mat khau khi them tai khoan. Khong API nao tra mat khau ve giao dien. Production chi doc: khong luu mat khau, chan request ghi. Gap CAPTCHA/OTP thi dung cho ban.
-Nhap file secrets/credentials.json cu vao kho: node scripts/import-credentials.mjs
-
-
-## Dung chung cho nhom
-
-Xem docs/operations/team-deployment.md (server noi bo + QA Launcher tren may tung nguoi + day rule len server).
-
-## Tab sau khi doi
-
-1 Tai khoan va Moi truong, 2 Phan tich Bug (tu tim rule va bug cu khi go mo ta), 3 Bug Cu (6.059 bug tu Kho Business Rule), 4 Kho Business Rule, 5 Tac vu Tu dong. Da go tab Ke hoach test 16 cot va Thuc thi test; cac route /test-plans va /integrations/task-system/bug-subtasks da bo. Dong bo bug: node scripts/sync-bugs.mjs.
-
-## Rule chinh tren platform
-
-Tab 4 cho them/sua/xoa rule (quyen le rules_edit). Thay doi luu rieng o database/business_rules_local.json, dong bo tu Kho khong ghi de va khong tu ghi nguoc ve Kho. Rule tao tren platform co ma dang DV5S-P001. Trang Phan quyen (admin) va nut ? huong dan nam tren giao dien.
