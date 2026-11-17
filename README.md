@@ -1,78 +1,81 @@
-﻿# Internal AI QA Testing Platform (MVP v1.0)
+﻿# QC Platform
 
-Hệ thống nền tảng kiểm thử tự động nội bộ ứng dụng AI, được thiết kế theo đúng tài liệu kiến trúc kỹ thuật (System Design v1.0, 25/10/2026).
+Nền tảng nội bộ cho QC của Haraworks: tra cứu bug và business rule, phân tích bug có AI hỗ trợ, tự động đăng nhập đúng tài khoản test, và chạy các tác vụ Playwright (tạo phiếu, gửi thư, tạo môn học...) với tham số chỉnh ngay trên giao diện. Một máy chạy **server** cho cả nhóm, mỗi người chạy **launcher** trên máy mình để mở Chrome và chạy tác vụ.
 
----
+## Có gì trong platform
 
-## 🌟 Tính Năng Nổi Bật
+| Trang | Làm gì |
+|---|---|
+| Tổng quan | Số bug, rule, tác vụ, tài khoản; lối tắt; trạng thái hệ thống |
+| Tài Khoản & Môi Trường | Bấm tài khoản để mở và tự đăng nhập (Staging, Production OrgID DEMO); lưu mật khẩu mã hóa trên server |
+| Phân Tích Bug | Mô tả bug, tìm rule và bug cũ liên quan (lọc bug mới hoặc cũ), AI gợi ý nguyên nhân, test case cần tạo, người nên tạo, tác vụ tự động nên chạy hoặc tạo thêm |
+| Tra Cứu Bug | Thẻ bug có trạng thái, người thực hiện, người duyệt; lọc nhiều tiêu chí; mở chi tiết (mô tả, lịch sử, bình luận, xem trước ảnh và video) |
+| Kho Business Rule | Rule đã trích xuất kèm trạng thái xác nhận; thêm, sửa, xóa; cập nhật từ Kho |
+| Tác Vụ Tự Động | Chọn tác vụ, chỉnh trường thông tin (có editor cho nội dung nhiều dòng), chọn file đính kèm từ kho file, chạy nhiều lần |
+| Phân Quyền | Admin cấp token và quyền cho từng người |
 
-1. **Quản lý Môi trường & Cổng Kiểm Soát Org Test (Org Confirmation Gate)**:
-   - Quản lý đa môi trường: `STAGING`, `PRODUCTION_TEST`, `TASK_SYSTEM`, `PRODUCTION`.
-   - **Fail-Closed Security Gate**: Kiên quyết chặn mọi thao tác chạy automation trên môi trường `PRODUCTION_TEST` cho đến khi QC nhấn nút **[✓ Xác Nhận Đúng Org Test]**.
-   - Mở cửa sổ Chrome độc lập và hỗ trợ tự động điền form đăng nhập theo đúng tài khoản và vai trò.
-2. **Phân Tích Bug Khách Hàng Bằng AI Grounded & RAG**:
-   - Kiểm tra các trường thông tin bắt buộc, tự động cảnh báo thiếu thông tin cần CX bổ sung.
-   - Tìm kiếm và trích dẫn trực tiếp các quy tắc nghiệp vụ từ cơ sở tri thức (RAG Chunks & Citations).
-   - Đề xuất các bước tái hiện và cho phép lưu thành **Bug Procedure** có version để Replay.
-3. **Kế Hoạch Test Function 16 Cột Chuẩn**:
-   - AI đọc mô tả tính năng từ PO và link Figma (Figma URL & node id).
-   - Tự động sinh bộ Test Plan tuân thủ nghiêm ngặt **16 cột theo Section 5.5**:
-     `Link Task | ID | Test Type | Platform | Test objective | Module | Screen | Functional | Steps | Account | Precondition / Test Data | Expected Result | Actual Result | Image / Video | Status | Note`
-   - Hỗ trợ đầy đủ các kịch bản của module **Bảo trì**: 4 mức ưu tiên, mapping dữ liệu cũ, view xem ẩn độ ưu tiên, hiển thị icon trên Desktop & Mobile, thiết lập mặc định và migration function.
-   - QC có quyền Sửa, Xóa, Thêm case và bấm **[✓ QC Duyệt Kế Hoạch]**.
-4. **Thực Thi Kiểm Thử (Checklist) & Tự Động Log Bug**:
-   - Bảng checklist tương tác: Pass, Fail, Reset, ghi chú lỗi thực tế, đính kèm ảnh/video.
-   - Bấm **[✓ Hoàn Tất Test & Tự Động Tạo Bug Subtasks]**: Gom toàn bộ case FAIL thành danh sách bug ticket chuẩn `[BUG] <Mô tả lỗi>`.
-   - Gán đúng Dev PIC (`Lê Vĩnh Ngọc Châu`), tính toán hạn hoàn thành theo SLA ngày, reviewer QC, các bước tái hiện và bằng chứng đính kèm.
-   - Đồng bộ sang hệ thống task với khóa **Idempotency-Key** chống trùng lặp và xác thực trạng thái từ xa (**Remote State Verification**).
-5. **Bảo Vệ Dữ Liệu & Redaction**:
-   - Bộ lọc `Redactor` tự động làm sạch token, session cookies, mật khẩu và dữ liệu nhạy cảm trước khi lưu vào log hoặc database.
+## Chạy nhanh trên máy của bạn (một người dùng)
 
----
+Cần Node.js 22 và Google Chrome hoặc Microsoft Edge.
+```powershell
+npm i
+node services/api/server.js      # mở http://localhost:3001
+node apps/launcher/launcher.js --server http://localhost:3001
+```
 
-## 🏗️ Cấu Trúc Thư Mục
+## Chạy cho cả nhóm (mạng nội bộ)
+
+Một máy làm server (luôn bật), HTTPS bằng chứng chỉ mkcert theo đúng IP của máy. Mỗi người dùng token riêng.
+
+| Bạn là | Cài lần đầu | Các lần sau |
+|---|---|---|
+| Admin (máy chạy server) | `docs/operations/huong-dan-chay-theo-ip.md`, phần Admin | `.\start-team.ps1` |
+| Thành viên (Windows) | cùng file, phần Thành viên: cài Node 22, `npm i`, cài `rootCA.pem` | `node apps/launcher/launcher.js --server https://IP_MAY_CHU:3001` |
+| Thành viên (macOS) | tab **Thành viên (macOS)** trong nút ? của platform | lệnh launcher như trên |
+
+Tóm tắt cho admin:
+```powershell
+node scripts/team-user.mjs add "Tên thành viên" member         # cấp token, chỉ hiện một lần
+mkcert -cert-file secrets\tls.crt -key-file secrets\tls.key localhost 127.0.0.1 IP_MAY_CHU
+.\start-team.ps1                                                 # nghe mọi địa chỉ mạng, HTTPS, cổng 3001
+```
+Đổi IP máy chủ thì cấp lại chứng chỉ và gửi lại `rootCA.pem`. Hướng dẫn đầy đủ từng bước, bảng lỗi thường gặp: `docs/operations/huong-dan-chay-theo-ip.md` (cũng có trong nút ? của platform, tab "Cài máy chủ", "Thành viên", "Chạy hằng ngày").
+
+## Thêm rule và bug cho mọi người
+
+Chi tiết: `docs/operations/them-rule-va-bug.md` (cũng có trong nút ?, tab "Thêm rule và bug").
+
+**Rule**
+- Một rule: tab Kho Business Rule, nút **+ Thêm rule**.
+- Nhiều rule: chạy skill `business-rule-extractor` (lệnh `Explore`), skill tự đẩy lên bằng `node scripts/qa-sync.mjs --no-bugs`. Cài một lần: `node scripts/qa-sync.mjs --save-config https://IP_MAY_CHU:3001 TOKEN`.
+- Không đẩy được tự động: nút **Cập nhật rule từ kho** hoặc **Nhập file kho** (file tạo bằng `node scripts/sync-business-rules.mjs --export kho-rule.json`).
+
+**Bug**
+- Realtime từ Haraworks: admin lưu cookie vào `secrets\haraworks.json` rồi khởi động lại server.
+- Bug cũ: `node scripts/sync-bugs.mjs` (đọc `database/kb-snapshot/data/bugs.json`).
+
+## AI phân tích bug (tùy chọn)
+
+Đặt khóa trước khi khởi động server: `$env:GEMINI_API_KEY = "..."` (Gemini, mặc định `gemini-3.5-flash`) hoặc `ANTHROPIC_API_KEY`. Chưa có khóa thì hệ thống phân tích theo dữ liệu (thống kê bug cũ, rule, khớp từ khóa) và ghi rõ là chưa dùng AI. Kiểm tra kết nối: `node scripts/ai-check.mjs`.
+
+## Tác vụ tự động
+
+Tác vụ là file JSON trong `database/automation-drafts/` (định dạng và quy tắc: `docs/operations/automation-tasks.md`). Skill Explore tự sinh tác vụ cho mỗi luồng đã chạy thành công; đẩy lên bằng `qa-sync`. Tác vụ dùng được ngay, không cần duyệt. Chỉ chạy trên Staging.
+
+## Cấu trúc thư mục
 
 ```text
-qa-platform/
-├── apps/
-│   ├── web/                         # QA Web Dashboard (Vanilla HTML5 / CSS Pastel / JS)
-│   └── chrome-extension/            # Chrome Extension Companion (Client tiện ích)
-├── services/
-│   ├── api/                         # Backend RESTful API Server (Port 3001)
-│   ├── workflow-orchestrator/       # 4 State Machines & Checkpoint Idempotency Manager
-│   ├── ai-service/                  # RAG Engine, Bug Analyzer, Test Plan Generator
-│   └── automation-runner/           # Playwright Context Runner & Org Gate
-├── packages/
-│   ├── policy-engine/               # Security Policies & Approval Matrix
-│   ├── diagnostics/                 # Sensitive Data Redactor & Collector
-│   ├── test-case-schema/            # 16-Column Template Validator & Markdown Exporter
-│   ├── task-adapter/                # Task System Connector (Jira / Haraworks)
-│   └── figma-adapter/               # Figma Link & Metadata Parser
-├── database/
-│   ├── schema.sql                   # 19 Relational Database Tables
-│   ├── seeds.sql                    # Initial seed data
-│   └── db.js                        # Transactional Database Client & Repositories
-├── tests/
-│   ├── policy-engine.test.js        # Policy Engine & Org Gate tests
-│   ├── state-machine.test.js        # State Machine & Idempotency tests
-│   ├── test-case-schema.test.js     # 16-Column Schema tests
-│   └── run-all-tests.js             # Automated Test Runner
-├── start-platform.bat               # 1-click startup on Windows
-└── start-platform.ps1               # PowerShell startup script
+apps/web/            giao diện (HTML, CSS, JS thuần, không framework)
+apps/launcher/       chương trình chạy trên máy từng người (mở Chrome, chạy Playwright)
+services/api/        server (Node, không phụ thuộc thư viện ngoài)
+packages/            module dùng chung: bug-search, haraworks-live, automation-tasks, secret-vault...
+scripts/             lệnh vận hành: qa-sync, team-user, sync-bugs, sync-business-rules, ai-check
+database/            schema, db.js, tác vụ mẫu (dữ liệu chạy thật không nằm trong repo)
+docs/operations/     tài liệu vận hành
+skills/              skill của team (xem skills/README.md)
+tests/               bộ test: node tests/run-all-tests.js
 ```
 
----
+## Đóng góp
 
-## 🚀 Hướng Dẫn Khởi Chạy
-
-### Cách 1: Chạy Bằng PowerShell / Batch
-1. Chạy file `start-platform.ps1` hoặc double-click `start-platform.bat`.
-2. Mở trình duyệt và truy cập: **`http://localhost:3001`**.
-
-### Cách 2: Chạy Thủ Công Qua Terminal
-```powershell
-node services/api/server.js
-```
-Truy cập Web Dashboard tại: `http://localhost:3001`.
----
-
+Xem `CONTRIBUTING.md`. Dữ liệu thật (`secrets/`, `database/*.json`, token, cookie) không bao giờ đưa lên repo; `.gitignore` đã chặn.

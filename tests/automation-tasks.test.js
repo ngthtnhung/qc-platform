@@ -5,7 +5,7 @@ import { normalizeTask, normalizeParams, mergeParams, chooseAccount, isRunnable,
 import { runTask } from '../apps/launcher/task-runner.js';
 import { fetchTaskFiles } from '../apps/launcher/task-files.js';
 import { analyzeLocal, analyzeAI, matchTasks } from '../packages/bug-search/analysis.js';
-import { shapeDetail, htmlToText } from '../packages/haraworks-live/detail.js';
+import { shapeDetail, htmlToText, extractMedia, mediaKind } from '../packages/haraworks-live/detail.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -170,5 +170,8 @@ const det = shapeDetail(
 );
 assert(det.description === 'Mô tả' + String.fromCharCode(10) + 'dòng 2' && det.assignee.name === 'An' && !JSON.stringify(det).includes('@x.vn') && !JSON.stringify(det).includes('"09"'), 'không lộ email hoặc số điện thoại');
 assert(det.logs[0].info.Project === 'P' && det.comments.total === 1 && det.comments.items[0].replies[0].by === 'An' && det.info.customer === 'Every Half', 'lịch sử, bình luận, trả lời');
+const mm = extractMedia('<p>Lỗi <img src="https://cdn.x/a.png?x=1&amp;y=2"> <video src="https://cdn.x/v.mp4"></video> <a href="https://cdn.x/b.JPG">xem</a> <a href="https://x/doc.docx">doc</a> <img src="javascript:alert(1)"></p>');
+assert(mm.length === 3 && mm[0].url === 'https://cdn.x/a.png?x=1&y=2' && mm[0].kind === 'image' && mm.some(m => m.kind === 'video') && !JSON.stringify(mm).includes('javascript'), 'tách ảnh, video nhúng, bỏ đường dẫn lạ');
+assert(mediaKind('https://x/a.mov') === 'video' && mediaKind('', 'ghi-am.mp3') === 'audio' && mediaKind('https://x/f.pdf') === 'pdf' && mediaKind('https://x/f.zip') === 'file', 'phân loại tệp theo đuôi');
 console.log('✓ Test 8 Passed: chi tiết bug (HTML an toàn, không lộ dữ liệu cá nhân)');
 }

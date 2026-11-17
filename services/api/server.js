@@ -573,7 +573,7 @@ const handler = async (req, res) => {
       const q = urlObj.searchParams;
       return sendJson(res, 200, { success: true, data: BugStore.list({
         module: q.get('module') || '', q: q.get('q') || '', category: q.get('category') || '', year: q.get('year') || '',
-        status: q.get('status') || '', assignee: q.get('assignee') || '', closed: q.get('closed') || '',
+        status: q.get('status') || '', assignee: q.get('assignee') || '', approver: q.get('approver') || '', closed: q.get('closed') || '', age: q.get('age') || '',
         unknown: q.get('unknown') === '1', offset: Math.max(0, +q.get('offset') || 0), limit: Math.min(200, +q.get('limit') || 50)
       }) });
     }
@@ -620,7 +620,7 @@ const handler = async (req, res) => {
       const rules = similarRules(text, used, 8);
       return sendJson(res, 200, { success: true, data: {
         module_guess: guess, module_used: used, artifact_url: rules.artifact_url,
-        rules: rules.rules, bugs: BugStore.similar(text, used, 10)
+        rules: rules.rules, bugs: BugStore.similar(text, used, 10, ['new', 'old'].includes(body.age) ? body.age : '')
       } });
     }
 
@@ -632,7 +632,7 @@ const handler = async (req, res) => {
       const used = body.module || '';
       const guess = used ? '' : guessModule(text);
       const rules = similarRules(text, used, 8).rules;
-      const bugs = BugStore.similar(text, used, 10);
+      const bugs = BugStore.similar(text, used, 10, ['new', 'old'].includes(body.age) ? body.age : '');
       const tasks = await db.find('automation_tasks', t => t.status !== 'retired');
       const input = { text, moduleUsed: used, moduleGuess: guess, rules, bugs, tasks };
       let out;
@@ -754,6 +754,7 @@ const handler = async (req, res) => {
     if (pathname === '/' || pathname === '/index.html') {
       return serveStaticFile(res, path.join(WEB_DIR, 'index.html'), 'text/html');
     }
+    if (pathname === '/logo.svg' || pathname === '/favicon.ico') return serveStaticFile(res, path.join(WEB_DIR, 'logo.svg'), 'image/svg+xml');
     if (pathname.endsWith('.js')) {
       return serveStaticFile(res, path.join(WEB_DIR, pathname), 'application/javascript');
     }

@@ -18,15 +18,15 @@ window.HELP_PAGES = {
     </ul>
     <h3>Các tab</h3>
     <ul>
-      <li><b>1. Tài Khoản và Môi Trường</b>: bấm tài khoản để mở và đăng nhập; chọn link muốn vào; đặt mật khẩu (cần quyền).</li>
-      <li><b>2. Phân Tích Bug</b>: gõ mô tả, hệ thống tự tìm rule và bug cũ liên quan (tìm theo từ khóa, không phải mô hình ngôn ngữ).</li>
-      <li><b>3. Bug Cũ (realtime)</b>: tra cứu hơn 6.000 bug cũ và bug mới lấy realtime từ Haraworks (kèm trạng thái, người xử lý), lọc theo module, phân loại, năm.</li>
-      <li><b>4. Kho Business Rule</b>: xem, tìm, thêm, sửa, xóa rule (cần quyền để sửa). Rule có nhãn "Chưa xác nhận" là rule AI vừa khám phá, chưa có người kiểm.</li>
-      <li><b>5. Tác Vụ Tự Động</b>: chạy tác vụ Playwright đã được duyệt, chỉ trên Staging.</li>
-      <li><b>6. Phân Quyền</b>: chỉ quản trị viên thấy; thêm người dùng, đổi quyền, cấp token.</li>
+      <li><b>Tài Khoản và Môi Trường</b>: bấm tài khoản để mở và đăng nhập; chọn link muốn vào; đặt mật khẩu (cần quyền).</li>
+      <li><b>Phân Tích Bug</b>: gõ mô tả, hệ thống tự tìm rule và bug cũ liên quan (tìm theo từ khóa, không phải mô hình ngôn ngữ).</li>
+      <li><b>Tra Cứu Bug</b>: tra cứu hơn 6.000 bug cũ và bug mới lấy realtime từ Haraworks (kèm trạng thái, người xử lý), lọc theo module, trạng thái, người thực hiện, người duyệt, thời gian; mở chi tiết để xem bình luận, ảnh, video ngay trên trang.</li>
+      <li><b>Kho Business Rule</b>: xem, tìm, thêm, sửa, xóa rule (cần quyền để sửa). Rule có nhãn "Chưa xác nhận" là rule AI vừa khám phá, chưa có người kiểm.</li>
+      <li><b>Tác Vụ Tự Động</b>: chạy tác vụ Playwright (dùng được ngay, không cần duyệt), chỉ trên Staging.</li>
+      <li><b>Phân Quyền</b>: chỉ quản trị viên thấy; thêm người dùng, đổi quyền, cấp token.</li>
     </ul>
     <h3>Vai trò và quyền</h3>
-    <p>Quản trị viên có mọi quyền. Thành viên chỉ làm được các việc được cấp: sửa môi trường, đặt mật khẩu, đẩy rule, thêm/sửa/xóa rule, đẩy tác vụ nháp, duyệt tác vụ.</p>`,
+    <p>Quản trị viên có mọi quyền. Thành viên chỉ làm được các việc được cấp: sửa môi trường, đặt mật khẩu, đẩy rule, thêm/sửa/xóa rule, đẩy tác vụ lên.</p>`,
 
   'server-win': `
     <p class="help-note">Làm một lần khi cài. Sau đó mỗi lần chạy xem tab <b>Chạy hằng ngày</b>.</p>
@@ -115,6 +115,35 @@ window.HELP_PAGES = {
     </ol>
     <h3>Khi IP máy chủ đổi</h3>
     <p>Admin làm lại mục A.4 đến A.6 ở tab <b>Cài máy chủ (Windows)</b>. Mỗi thành viên chạy lại launcher với địa chỉ mới, và chạy lại lệnh <code>--save-config</code> nếu có cấu hình đẩy.</p>`,
+
+  'rulebug': `
+    <p class="help-note">Lệnh chạy trong Windows PowerShell, trong thư mục project. Đẩy lên server nhóm cần token riêng có quyền tương ứng. Bản đầy đủ: <code>docs/operations/them-rule-va-bug.md</code>.</p>
+    <h3>Thêm rule</h3>
+    <ol>
+      <li><b>Một rule:</b> tab Kho Business Rule, bấm <b>+ Thêm rule</b> (cần quyền thêm, sửa, xóa rule). Rule này chỉ nằm trên platform.</li>
+      <li><b>Nhiều rule (nên dùng):</b> chạy skill <code>business-rule-extractor</code> (lệnh <code>Explore</code>). Skill tự đẩy lên sau mỗi lần Explore. Cài một lần trên máy chạy skill:
+        <pre class="help-code">node scripts/qa-sync.mjs --save-config https://IP_MAY_CHU:3001 TOKEN_CUA_BAN</pre>
+        Đẩy tay khi cần:
+        <pre class="help-code">node scripts/qa-sync.mjs --no-bugs</pre>
+        Rule lên kèm nhãn "Chưa xác nhận" cho đến khi được xác nhận trong Kho. Tác vụ tự động sinh ra cũng lên cùng lúc, dùng được ngay.</li>
+      <li><b>Không đẩy được tự động:</b> trên máy chạy server bấm <b>⟳ Cập nhật rule từ kho</b>. Ở máy khác, tạo file rồi bấm <b>Nhập file kho</b>:
+        <pre class="help-code">node scripts/sync-business-rules.mjs --export kho-rule.json</pre></li>
+    </ol>
+    <h3>Thêm bug</h3>
+    <ol>
+      <li><b>Bug realtime từ Haraworks (admin làm một lần trên máy chạy server):</b> đăng nhập tasks.haraworks.vn, mở DevTools (F12), tab Network, bấm một yêu cầu tới tasks.haraworks.vn, sao chép giá trị header <code>cookie</code>. Tạo file <code>secrets\\haraworks.json</code>:
+        <pre class="help-code">{ "cookie": "dán nguyên giá trị header cookie vào đây" }</pre>
+        Khởi động lại server (<code>.\\start-team.ps1</code>). Thanh trạng thái ở Tra Cứu Bug sẽ báo <b>Realtime</b>. Cookie hết hạn thì thanh báo "Chưa realtime", di chuột vào để xem lý do, rồi lấy cookie mới. Cookie chỉ nằm trên server, không đưa lên GitHub.</li>
+      <li><b>Bug cũ:</b> Claude xuất <code>data/bugs.json</code> từ Kho vào <code>database/kb-snapshot/data/bugs.json</code>, rồi:
+        <pre class="help-code">node scripts/sync-bugs.mjs</pre>
+        (cần token quyền rules, đã lưu bằng <code>--save-config</code>).</li>
+    </ol>
+    <h3>Kiểm tra</h3>
+    <ul>
+      <li>Rule: tab Kho Business Rule, tìm theo mã hoặc từ khóa.</li>
+      <li>Bug: tab Tra Cứu Bug, số bug ở đầu trang, lọc theo module, trạng thái, người duyệt, thời gian. Mở một bug để xem mô tả, lịch sử, bình luận, ảnh và video ngay trên trang.</li>
+      <li>Phân Tích Bug dùng cả rule và bug này; bug có nhãn <b>Bug mới</b> (30 ngày gần đây) hoặc <b>Bug cũ</b>.</li>
+    </ul>`,
 
   errors: `
     <table class="qa-table"><thead><tr><th>Triệu chứng</th><th>Cách xử lý</th></tr></thead><tbody>

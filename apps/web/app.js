@@ -992,6 +992,7 @@ window.closeModals = function() {
       <a href="${esc(safeUrl(b.url))}" target="_blank" rel="noopener"><b>${esc(b.title)}</b></a>
       <div style="font-size:11px;margin-top:2px;">
         ${b.module ? `<span class="badge badge-blue">${esc(b.module)}</span>` : ''}
+        ${b.is_new ? '<span class="badge badge-amber" title="Tạo trong 30 ngày gần đây">Bug mới</span>' : '<span class="badge badge-closed" title="Tạo trước đó">Bug cũ</span>'}
         ${b.category ? `<span class="badge badge-amber">${esc(b.category)}</span>` : ''}
         ${b.live && b.status != null ? `<span class="badge badge-green">${esc(BUG_STATUS[b.status] || 'Trạng thái ' + b.status)}</span>` : ''}
         <span style="color:var(--text-subtle);">${esc((b.date || '').slice(0, 16))}${b.assignee ? ' · ' + esc(b.assignee) : ''}${b.project ? ' · ' + esc(b.project) : ''}</span></div>${note}</div>`;
@@ -1004,7 +1005,7 @@ window.closeModals = function() {
     const my = ++seq;
     $('ba-summary') && ($('ba-results').style.display === 'none' || ($('ba-summary').style.opacity = '.5'));
     try {
-      const res = await fetch(`${API_BASE}/bug-search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, module: $('bug-module-select').value }) });
+      const res = await fetch(`${API_BASE}/bug-search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, module: $('bug-module-select').value, age: $('ba-age').value }) });
       const j = await res.json();
       if (my !== seq) return; // có lần gõ mới hơn
       if (!res.ok) throw new Error(j.error?.message || 'Lỗi tìm kiếm');
@@ -1020,13 +1021,15 @@ window.closeModals = function() {
     const my = ++aiSeq;
     $('ba-ai-body').innerHTML = '<span style="color:var(--text-subtle);">Đang phân tích...</span>';
     try {
-      const res = await fetch(`${API_BASE}/bug-analysis`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, module: $('bug-module-select').value }) });
+      const res = await fetch(`${API_BASE}/bug-analysis`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, module: $('bug-module-select').value, age: $('ba-age').value }) });
       let j = null; try { j = await res.json(); } catch {}
       if (my !== aiSeq) return;
       if (!res.ok) throw new Error(j?.error?.message || (res.status === 404 ? 'Server chưa chạy bản mới, hãy khởi động lại server' : 'Lỗi ' + res.status));
       const d = j.data, list = a => a.length ? `<ul style="margin:2px 0 6px 18px;padding:0;">${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '<div style="color:var(--text-subtle);">Không có.</div>';
       $('ba-ai-body').innerHTML = `<div style="font-size:11px;color:var(--text-subtle);margin-bottom:6px;">${esc(d.engine_note)}</div>
         <b>Có thể do:</b>${list(d.causes)}<b>Cần kiểm tra:</b>${list(d.checks)}
+        <b>Test case nên tạo:</b>${list(d.testcases || [])}
+        <b>Ai nên tạo test case:</b>${(d.testcase_owner || []).length ? `<ul style="margin:2px 0 6px 18px;padding:0;">${d.testcase_owner.map(o => `<li><b>${esc(o.name)}</b> <span style="color:var(--text-subtle);">${esc(o.why)}</span></li>`).join('')}</ul>` : `<div style="color:var(--text-subtle);margin:2px 0 6px;">${esc(d.owner_note || 'Chưa có dữ liệu người xử lý.')}</div>`}
         <b>Tác vụ tự động hóa gợi ý:</b>${d.tasks.length ? `<ul style="margin:2px 0 6px 18px;padding:0;">${d.tasks.map(t => `<li><a href="#" class="ba-task" data-id="${esc(t.id)}">${esc(t.name)}</a> <span class="badge badge-blue">${esc(t.module)}</span> <span style="color:var(--text-subtle);">${esc(t.why)}</span></li>`).join('')}</ul>` : '<div style="color:var(--text-subtle);">Chưa có tác vụ phù hợp.</div>'}
         ${d.new_task ? `<div style="margin-top:4px;"><b>Gợi ý tạo tác vụ mới:</b> ${esc(d.new_task)}</div>` : ''}`;
       $('ba-ai-body').querySelectorAll('.ba-task').forEach(a => a.onclick = e => { e.preventDefault(); document.querySelector("[data-tab='pane-automation']").click(); });
@@ -1046,12 +1049,14 @@ window.closeModals = function() {
       facetsLoaded = true;
       const f = data.facets || {};
       $('bh-total').textContent = `${data.count} bug`;
-      const fill = (id, html) => { const sel = $(id); const keep = sel.value; sel.innerHTML = sel.options[0].outerHTML + html; sel.value = keep; };
+      const fill = (id, html) => { const sel = $(id); const keep = sel.value; const none = id === 'bh-ap' ? '<option value="__none__">Chưa có người duyệt</option>' : ''; sel.innerHTML = sel.options[0].outerHTML + none + html; sel.value = keep; };
       // module: "Chưa rõ module" chỉ lọc trong tab này
       const mod = $('bh-module'), unk = mod.querySelector('option[value="__unknown__"]');
       if (unk) unk.textContent = `Chưa rõ module (${f.unknown || 0})`;
       else mod.insertAdjacentHTML('beforeend', `<option value="__unknown__">Chưa rõ module (${f.unknown || 0})</option>`);
       fill('bh-st', Object.entries(f.statuses || {}).sort((x, y) => y[1] - x[1]).map(([k, n]) => `<option value="${esc(k)}">${esc(bhStatusLabel(+k))} (${n})</option>`).join(''));
+      fill('bh-ap', Object.entries(f.approvers || {}).sort((x, y) => y[1] - x[1]).map(([k, n]) => `<option value="${esc(k)}">${esc(k)} (${n})</option>`).join(''));
+      $('bh-ap').insertAdjacentHTML('beforeend', '');
       fill('bh-as', Object.entries(f.assignees || {}).sort((x, y) => y[1] - x[1]).map(([k, n]) => `<option value="${esc(k)}">${esc(k)} (${n})</option>`).join(''));
       fill('bh-cat', Object.entries(f.categories || {}).sort((x, y) => y[1] - x[1]).map(([k, n]) => `<option value="${esc(k)}">${esc(k)} (${n})</option>`).join(''));
       fill('bh-year', Object.keys(f.years || {}).sort().reverse().map(y => `<option>${esc(y)}</option>`).join(''));
@@ -1063,15 +1068,15 @@ window.closeModals = function() {
     return new URLSearchParams({
       module: unknown ? '' : mod, unknown: unknown ? '1' : '0', q: $('bh-q').value.trim(),
       category: $('bh-cat').value, year: $('bh-year').value, status: $('bh-st').value,
-      assignee: $('bh-as').value, closed: $('bh-cl').value
+      assignee: $('bh-as').value, closed: $('bh-cl').value, approver: $('bh-ap').value, age: $('bh-age').value
     });
   }
 
   function bhCard(b, idx) {
     const st = b.live && b.status != null ? `<span class="badge ${b.closed ? 'badge-closed' : 'badge-green'}">${esc(bhStatusLabel(b.status))}</span>` : '';
-    const meta = [b.category, (b.date || '').slice(0, 16), b.assignee].filter(Boolean).map(esc).join(' · ');
+    const meta = [b.category, (b.date || '').slice(0, 16), b.assignee, b.approver ? 'Duyệt: ' + b.approver : ''].filter(Boolean).map(esc).join(' · ');
     return `<article class="bh-card${b.closed ? ' is-closed' : ''}" data-idx="${idx}" tabindex="0">
-      <div class="bh-card-top"><span class="badge badge-blue">${b.module ? esc(b.module) : 'Chưa rõ module'}</span>${st}</div>
+      <div class="bh-card-top"><span class="badge badge-blue">${b.module ? esc(b.module) : 'Chưa rõ module'}</span>${st}${b.is_new ? '<span class="badge badge-amber" title="Tạo trong 30 ngày gần đây">Mới</span>' : ''}</div>
       <div class="bh-card-title">${esc(b.title)}</div>
       <div class="bh-card-meta">${meta}</div>
       ${b.closed ? '<span class="bh-ribbon">Đã đóng</span>' : ''}
@@ -1108,6 +1113,7 @@ window.closeModals = function() {
       ${row('Ngày tạo', esc((b.date || '').slice(0, 16) || '-'))}
       ${live ? row('Trạng thái', esc(bhStatusLabel(b.status))) : row('Trạng thái', '<i>bản lưu cũ, không có trạng thái</i>')}
       ${live ? row('Người thực hiện', esc(b.assignee || '-')) : ''}
+      ${live ? row('Người duyệt', esc(b.approver || 'Chưa có')) : ''}
       ${live ? row('Dự án', esc(b.project || '-')) : ''}
       ${live ? row('Cập nhật lần cuối', esc((b.updated || '').slice(0, 16) || '-')) : ''}
       ${note}
@@ -1120,6 +1126,19 @@ window.closeModals = function() {
   // Chi tiết đầy đủ lấy từ Haraworks (mô tả, người, lịch sử, bình luận); cần cookie Haraworks trên server
   const vnTime = iso => { if (!iso) return '-'; const d = new Date(iso); return isNaN(d) ? esc(iso) : d.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }); };
   const LOG_TYPE = { 1: 'Tạo công việc', 12: 'Thay đổi dự án' };
+  // Xem trước ảnh, video, âm thanh, PDF ngay trên trang (không cần tải về)
+  const mediaHtml = list => {
+    const seen = new Set(), items = (list || []).filter(m => m && /^https?:\/\//i.test(m.url || '') && !seen.has(m.url) && seen.add(m.url));
+    if (!items.length) return '';
+    return `<div class="bh-media">${items.map(m => {
+      const u = esc(m.url), nm = esc(m.name || '');
+      if (m.kind === 'image') return `<a class="bh-img" href="${u}" data-light="${u}" title="${nm || 'Xem ảnh lớn'}"><img src="${u}" loading="lazy" alt="${nm || 'ảnh'}"></a>`;
+      if (m.kind === 'video') return `<video class="bh-vid" controls preload="metadata" src="${u}"></video>`;
+      if (m.kind === 'audio') return `<audio class="bh-aud" controls preload="none" src="${u}"></audio>`;
+      if (m.kind === 'pdf') return `<details class="bh-pdfd"><summary>📄 ${nm || 'PDF'}</summary><iframe class="bh-pdf" data-src="${u}" title="${nm || 'PDF'}"></iframe><a href="${u}" target="_blank" rel="noopener">Mở trong tab mới</a></details>`;
+      return `<a class="bh-file" href="${u}" target="_blank" rel="noopener">📎 ${nm || 'tệp'}</a>`;
+    }).join('')}</div>`;
+  };
   const names = a => a.length ? a.map(p => esc(p.name)).join(', ') : '-';
   async function loadBhDetail(id) {
     const box = $('bh-detail'); if (!box) return;
@@ -1132,7 +1151,7 @@ window.closeModals = function() {
       const att = a => a.length ? a.map(f => f.url ? `<a href="${esc(safeUrl(f.url))}" target="_blank" rel="noopener">${esc(f.name || 'tệp')}</a>` : esc(f.name)).join(', ') : '-';
       const logs = d.logs.slice().sort((x, y) => String(y.at).localeCompare(String(x.at))).map(l => `<li><b>${esc(l.by || '-')}</b>: ${esc(LOG_TYPE[l.type] || ('Thay đổi (mã ' + l.type + ')'))}${l.info.Project ? ': ' + esc(l.info.Project) : ''}${l.reason ? ' · ' + esc(l.reason) : ''}<br><span style="color:var(--text-muted);">${vnTime(l.at)}</span></li>`).join('');
       const cm = d.comments.items.map(c => `<div class="bh-comment"><b>${esc(c.by || '-')}</b> <span style="color:var(--text-muted);font-size:11px;">${vnTime(c.at)}</span>
-        <div style="white-space:pre-wrap;">${esc(c.text)}</div>${c.attachments.length ? `<div style="font-size:11.5px;">Đính kèm: ${att(c.attachments)}</div>` : ''}
+        <div style="white-space:pre-wrap;">${esc(c.text)}</div>${mediaHtml([...(c.media || []), ...c.attachments])}
         ${c.replies.map(r => `<div class="bh-reply"><b>${esc(r.by || '-')}</b> <span style="color:var(--text-muted);font-size:11px;">${vnTime(r.at)}</span><div style="white-space:pre-wrap;">${esc(r.text)}</div></div>`).join('')}</div>`).join('');
       box.style.color = '';
       box.innerHTML = `<h4 style="margin:6px 0;">Chi tiết từ Haraworks</h4>
@@ -1140,8 +1159,9 @@ window.closeModals = function() {
         ${d.code ? row('Mã', esc(d.code)) : ''}${row('Người tạo', esc(d.created_by?.name || '-'))}${row('Người thực hiện', d.assignee ? esc(d.assignee.name) + (d.assignee.dept ? ' · ' + esc(d.assignee.dept) : '') : '-')}
         ${row('Chủ sở hữu', esc(d.owner?.name || '-'))}${d.supporters.length ? row('Người hỗ trợ', names(d.supporters)) : ''}${row('Người theo dõi (' + d.followers.length + ')', names(d.followers))}
         ${row('Hạn thực hiện', vnTime(d.plan_end_at))}${row('Ưu tiên (mã)', d.priority ?? '-')}${row('Cập nhật gần nhất', vnTime(d.updated_at) + (d.updated_by?.name ? ' · ' + esc(d.updated_by.name) : ''))}
-        ${d.project ? row('Dự án', esc(d.project)) : ''}${row('File đính kèm', att(d.attachments))}
-        ${d.description ? `<h4 style="margin:10px 0 4px;">Mô tả</h4><div style="white-space:pre-wrap;font-size:12px;">${esc(d.description)}</div>` : ''}
+        ${d.project ? row('Dự án', esc(d.project)) : ''}
+        ${d.description || (d.description_media || []).length ? `<h4 style="margin:10px 0 4px;">Mô tả</h4><div style="white-space:pre-wrap;font-size:12px;">${esc(d.description)}</div>${mediaHtml(d.description_media)}` : ''}
+        ${d.attachments.length ? `<h4 style="margin:10px 0 4px;">File đính kèm (${d.attachments.length})</h4>${mediaHtml(d.attachments)}` : ''}
         <h4 style="margin:10px 0 4px;">Lịch sử cập nhật (${d.logs.length})</h4>${logs ? `<ul class="bh-logs">${logs}</ul>` : '<div style="color:var(--text-muted);">Không có.</div>'}
         <h4 style="margin:10px 0 4px;">Bình luận (${d.comments.total})</h4>${cm || '<div style="color:var(--text-muted);">Chưa có bình luận.</div>'}`;
     } catch (e) { if ($('bh-detail') === box) box.textContent = 'Không lấy được chi tiết: ' + e.message; }
@@ -1184,18 +1204,29 @@ window.closeModals = function() {
     loadModules();
     $('bug-input-desc').addEventListener('input', schedule);
     $('bug-module-select').addEventListener('change', liveSearch);
+    $('ba-age').addEventListener('change', () => { liveSearch(); runAnalysis(); });
     $('bug-platform-select').addEventListener('change', () => hints($('bug-input-desc').value, $('bug-platform-select').value));
     $('btn-load-sample-bug').addEventListener('click', () => { $('bug-input-desc').value = SAMPLE; liveSearch(); runAnalysis(); });
     $('ba-ai-run').addEventListener('click', runAnalysis);
 
     document.querySelector("[data-tab='pane-bug-history']").addEventListener('click', async () => { if (!$('bh-list').children.length) { await loadFacets(); loadBugs(true); } });
-    ['bh-module', 'bh-cat', 'bh-year', 'bh-st', 'bh-as', 'bh-cl'].forEach(id => $(id).addEventListener('change', reload));
+    const FILTERS = ['bh-module', 'bh-cat', 'bh-year', 'bh-st', 'bh-as', 'bh-ap', 'bh-age', 'bh-cl'];
+    const badge = () => { const n = FILTERS.filter(id => $(id).value).length; const el = $('bh-filter-n'); el.textContent = n; el.style.display = n ? '' : 'none'; };
+    FILTERS.forEach(id => $(id).addEventListener('change', () => { badge(); reload(); }));
+    const panel = open => { $('bh-filters').classList.toggle('open', open); $('bh-filter-overlay').classList.toggle('open', open); };
+    $('bh-filter-btn').addEventListener('click', () => panel(!$('bh-filters').classList.contains('open')));
+    $('bh-filter-close').addEventListener('click', () => panel(false));
+    $('bh-filter-overlay').addEventListener('click', () => panel(false));
+    $('bh-filter-clear').addEventListener('click', () => { FILTERS.forEach(id => { $(id).value = ''; }); badge(); reload(); });
+    // ảnh lớn khi bấm vào ảnh trong chi tiết; PDF chỉ nạp khi mở
+    document.addEventListener('click', e => { const a = e.target.closest('[data-light]'); if (a) { e.preventDefault(); const lb = $('bh-lightbox'); lb.querySelector('img').src = a.dataset.light; lb.hidden = false; } else if (e.target.closest('#bh-lightbox')) { $('bh-lightbox').hidden = true; } });
+    document.addEventListener('toggle', e => { const d = e.target; if (d.classList?.contains('bh-pdfd') && d.open) { const f = d.querySelector('iframe'); if (f && !f.src) f.src = f.dataset.src; } }, true);
     $('bh-q').addEventListener('input', reload);
     $('bh-more').addEventListener('click', () => loadBugs(false));
     $('bh-list').addEventListener('click', e => { const c = e.target.closest('.bh-card'); if (c) openBh(+c.dataset.idx); });
     $('bh-list').addEventListener('keydown', e => { const c = e.target.closest && e.target.closest('.bh-card'); if (c && e.key === 'Enter') openBh(+c.dataset.idx); });
     $('bh-drawer-close').addEventListener('click', closeBh);
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeBh(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeBh(); const lb = $('bh-lightbox'); if (lb) lb.hidden = true; } });
     $('bh-refresh').addEventListener('click', async () => { try { await fetch(`${API_BASE}/bugs/live/refresh`, { method: 'POST' }); } catch {} setTimeout(checkLive, 2500); });
     liveTimer = setInterval(checkLive, 5000);
     document.querySelector("[data-tab='pane-bug-history']").addEventListener('click', () => setTimeout(checkLive, 50));

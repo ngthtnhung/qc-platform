@@ -11,7 +11,8 @@ const ID_RE = /^[0-9a-f]{24}$/;
 const cache = new Map(); // id -> { at, data }
 const TTL = 60 * 1000;
 
-const FULL = `id name code content status ticket_Status priority plan_End_At comment_Token created_At updated_At
+const FULL = `id name code content status ticket_Status priority need_Approval plan_End_At comment_Token created_At updated_At
+  approverEntity { user_Name department_Name job_Title_Name }
   created_By { id name } updated_By { id name } owner { id name }
   assignTo { id name departmentName jobtitleName }
   followers { id name departmentName jobtitleName }
@@ -32,6 +33,19 @@ export function htmlToText(html) {
     .replace(/\n{3,}/g, '\n\n').trim();
 }
 
+const IMG = /\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/i, VID = /\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i, AUD = /\.(mp3|wav|m4a|ogg|aac)(\?|#|$)/i, PDF = /\.pdf(\?|#|$)/i;
+/** Loại tệp theo đuôi (tên hoặc đường dẫn): image, video, audio, pdf hoặc file */
+export const mediaKind = (url, name = '') => (IMG.test(name) || IMG.test(url) ? 'image' : VID.test(name) || VID.test(url) ? 'video' : AUD.test(name) || AUD.test(url) ? 'audio' : PDF.test(name) || PDF.test(url) ? 'pdf' : 'file');
+/** Ảnh, video, âm thanh nhúng trong nội dung HTML (để xem trước, không cần tải về). Chỉ nhận đường dẫn http hoặc https. */
+export function extractMedia(html) {
+  const out = new Map();
+  const add = (u, kind) => { const url = String(u).replace(/&amp;/g, '&').trim(); if (/^https?:\/\//i.test(url) && !out.has(url)) out.set(url, kind); };
+  String(html || '').replace(/<img\b[^>]*?\bsrc=["']([^"']+)["']/gi, (_, u) => { add(u, 'image'); return ''; });
+  String(html || '').replace(/<(?:video|audio|source)\b[^>]*?\bsrc=["']([^"']+)["']/gi, (_, u) => { add(u, mediaKind(u) === 'audio' ? 'audio' : 'video'); return ''; });
+  String(html || '').replace(/<a\b[^>]*?\bhref=["']([^"']+)["']/gi, (_, u) => { const k = mediaKind(u); if (k === 'image' || k === 'video' || k === 'audio') add(u, k); return ''; });
+  return [...out].map(([url, kind]) => ({ url, kind }));
+}
+const files = a => (Array.isArray(a) ? a : []).map(f => ({ name: f.name || '', url: f.url || '', kind: mediaKind(f.url || '', f.name || '') }));
 const people = a => (Array.isArray(a) ? a : []).map(p => ({ name: p.name || '', dept: p.departmentName || '', title: p.jobtitleName || '' }));
 const one = p => (p ? { name: p.name || '' } : null);
 
@@ -42,10 +56,12 @@ export function shapeDetail(task, logs, comments) {
     description: htmlToText(task.content),
     status: task.status ?? task.ticket_Status ?? null, priority: task.priority ?? null,
     plan_end_at: task.plan_End_At || '', created_at: task.created_At || '', updated_at: task.updated_At || '',
+    approver: task.approverEntity ? { name: task.approverEntity.user_Name || '', dept: task.approverEntity.department_Name || '', title: task.approverEntity.job_Title_Name || '' } : null,
+    need_approval: !!task.need_Approval,
     created_by: one(task.created_By), updated_by: one(task.updated_By), owner: one(task.owner),
     assignee: task.assignTo ? { name: task.assignTo.name || '', dept: task.assignTo.departmentName || '', title: task.assignTo.jobtitleName || '' } : null,
     followers: people(task.followers), supporters: people(task.supporters),
-    attachments: (task.attachments || []).map(a => ({ name: a.name || '', url: a.url || '' })),
+    attachments: files(task.attachments), description_media: extractMedia(task.content),
     project: task.project_Name || '', info,
     logs: (logs || []).map(l => ({
       type: l.log_Type, value: l.value || '', reason: l.reason || '', at: l.created_At || '', by: l.created_By?.name || '',
@@ -55,7 +71,7 @@ export function shapeDetail(task, logs, comments) {
       total: comments?.totalCount ?? 0,
       items: (comments?.data || []).map(c => ({
         id: c.id, text: htmlToText(c.content), at: c.created_At || '', by: c.created_By?.name || '',
-        attachments: (c.attachments || []).map(a => ({ name: a.name || '', url: a.url || '' })),
+        attachments: files(c.attachments), media: extractMedia(c.content),
         likes: c.like_count || 0,
         replies: (c.replies?.data || []).map(r => ({ id: r.id, text: htmlToText(r.content), at: r.created_At || '', by: r.created_By?.name || '' }))
       }))

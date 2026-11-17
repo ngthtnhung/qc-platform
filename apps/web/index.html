@@ -3,14 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Internal AI QA Testing Platform</title>
+  <title>QC Platform</title>
+  <link rel="icon" type="image/svg+xml" href="logo.svg">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
-      <div class="sb-brand"><span class="sb-logo">QC</span><span class="sb-name">QC Platform</span></div>
+      <div class="sb-brand"><img class="sb-logo" src="logo.svg" alt="QC Platform"><span class="sb-name">QC Platform</span></div>
       <nav class="tabs-header">
         <div class="sb-label">KHÔNG GIAN LÀM VIỆC</div>
         <button class="tab-button active" data-tab="pane-overview">Tổng quan</button>
@@ -171,7 +172,7 @@
           Đây là tìm theo từ khóa và độ hiếm của từ, không phải mô hình ngôn ngữ; gõ không dấu cũng được.
         </p>
         <textarea class="form-control" id="bug-input-desc" rows="5" placeholder="Ví dụ: Cửa hàng không hoàn tất được đánh giá phiếu Bảo trì trên mobile..."></textarea>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:10px;">
           <div class="form-group">
             <label class="form-label">Module (để Tự nhận diện nếu chưa chắc):</label>
             <select class="form-control" id="bug-module-select"><option value="">Tự nhận diện, tìm trên mọi module</option></select>
@@ -182,6 +183,10 @@
               <option value="Web">Web Desktop</option>
               <option value="Mobile">Mobile</option>
             </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Bug liên quan theo thời gian:</label>
+            <select class="form-control" id="ba-age"><option value="">Mọi lúc</option><option value="new">Bug mới (30 ngày gần đây)</option><option value="old">Bug cũ (trước đó)</option></select>
           </div>
         </div>
         <div id="ba-hints" style="font-size:11.5px;margin-top:6px;"></div>
@@ -221,18 +226,29 @@
             <button class="btn btn-outline" id="bh-refresh" title="Lấy ngay từ Haraworks" style="padding:2px 8px;">⟳</button>
           </span>
         </div>
-        <div class="bh-filters">
-          <select class="form-control" id="bh-module"><option value="">Tất cả module</option></select>
+        <div class="bh-top">
           <input class="form-control" id="bh-q" type="search" placeholder="Tìm trong tiêu đề bug..." />
-          <select class="form-control" id="bh-st"><option value="">Mọi trạng thái</option></select>
-          <select class="form-control" id="bh-cl"><option value="">Đang mở và đã đóng</option><option value="open">Đang mở</option><option value="closed">Đã đóng</option></select>
-          <select class="form-control" id="bh-as"><option value="">Mọi người thực hiện</option></select>
-          <select class="form-control" id="bh-cat"><option value="">Mọi phân loại</option></select>
-          <select class="form-control" id="bh-year"><option value="">Mọi năm</option></select>
+          <button class="btn btn-outline" id="bh-filter-btn" type="button">☰ Bộ lọc <span class="badge badge-blue" id="bh-filter-n" style="display:none;"></span></button>
         </div>
-        <div id="bh-count" style="font-size:11.5px;margin-bottom:6px;"></div>
-        <div id="bh-list"></div>
-        <button class="btn btn-outline" id="bh-more" style="display:none;margin-top:8px;">Xem thêm 50 bug</button>
+        <div class="bh-body">
+          <div class="bh-results">
+            <div id="bh-count" style="font-size:11.5px;margin-bottom:6px;"></div>
+            <div id="bh-list"></div>
+            <button class="btn btn-outline" id="bh-more" style="display:none;margin-top:8px;">Xem thêm 50 bug</button>
+          </div>
+          <aside class="bh-filters-panel" id="bh-filters" aria-label="Bộ lọc bug">
+            <div class="bhf-head"><b>Bộ lọc</b><button type="button" class="linkbtn" id="bh-filter-clear">Xóa bộ lọc</button><button type="button" class="btn btn-outline bhf-close" id="bh-filter-close">Đóng ✕</button></div>
+            <label class="bhf-l">Module</label><select class="form-control" id="bh-module"><option value="">Tất cả module</option></select>
+            <label class="bhf-l">Trạng thái</label><select class="form-control" id="bh-st"><option value="">Mọi trạng thái</option></select>
+            <label class="bhf-l">Đang mở hay đã đóng</label><select class="form-control" id="bh-cl"><option value="">Đang mở và đã đóng</option><option value="open">Đang mở</option><option value="closed">Đã đóng</option></select>
+            <label class="bhf-l">Người thực hiện</label><select class="form-control" id="bh-as"><option value="">Mọi người thực hiện</option></select>
+            <label class="bhf-l">Người duyệt</label><select class="form-control" id="bh-ap"><option value="">Mọi người duyệt</option><option value="__none__">Chưa có người duyệt</option></select>
+            <label class="bhf-l">Thời gian tạo</label><select class="form-control" id="bh-age"><option value="">Mọi lúc</option><option value="new">Bug mới (30 ngày gần đây)</option><option value="old">Bug cũ (trước đó)</option></select>
+            <label class="bhf-l">Phân loại</label><select class="form-control" id="bh-cat"><option value="">Mọi phân loại</option></select>
+            <label class="bhf-l">Năm</label><select class="form-control" id="bh-year"><option value="">Mọi năm</option></select>
+          </aside>
+        </div>
+        <div class="bhf-overlay" id="bh-filter-overlay"></div>
       </div>
       <aside id="bh-drawer" aria-label="Chi tiết bug">
         <div style="display:flex;justify-content:flex-end;padding:8px 10px;"><button class="btn btn-outline" id="bh-drawer-close">Đóng ✕</button></div>
@@ -473,6 +489,7 @@
         <button data-help="member-win">Thành viên (Windows)</button>
         <button data-help="member-mac">Thành viên (macOS)</button>
         <button data-help="daily">Chạy hằng ngày</button>
+        <button data-help="rulebug">Thêm rule và bug</button>
         <button data-help="admin">Quản trị</button>
         <button data-help="errors">Lỗi thường gặp</button>
       </div>
@@ -482,5 +499,6 @@
 
   <script src="help-content.js"></script>
   <script src="app.js"></script>
+  <div id="bh-lightbox" class="bh-lightbox" hidden><img alt="Xem ảnh"></div>
 </body>
 </html>

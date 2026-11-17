@@ -11,12 +11,13 @@ const CACHE_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '../.
 const BIG_PROJECT = 1000; // dự án lớn hơn mức này: chỉ lấy chi tiết task MỚI để đỡ nặng
 
 // Đổi số này khi thêm trường mới -> lần chạy sau tự lấy lại chi tiết mọi bug
-const FIELDS_VERSION = 2;
+const FIELDS_VERSION = 3;
 const RECENT_DAYS = 62; // dự án lớn: vẫn lấy lại chi tiết bug tạo trong ~2 tháng để bắt thay đổi thông tin
 
 const BUG_FIELDS = `
   id name status priority is_Deleted created_At status_Updated_At project_Id
   assignTo { id name }
+  approverEntity { user_Name department_Name }
   additionalInfo { key value }
 `;
 
@@ -182,6 +183,7 @@ export class BugLive extends EventEmitter {
         live: true,
         status: t.status,
         assignee: t.assignTo?.name || '',
+        approver: t.approverEntity?.user_Name || '',
         projectId: t.project_Id,
         projectName: t.project_Name,
         customerName: info.customer || '',
