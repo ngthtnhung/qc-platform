@@ -163,8 +163,9 @@ assert(gm.engine === 'ai' && gm.tasks[0].id === 'at_1' && /gemini/.test(gm.engin
 console.log('✓ Test 7 Passed: phân tích bug (khớp tác vụ, AI lọc mã bịa)');
 
 let repairPrompt = '';
+const editorScript = "await step('mã đang sửa trong editor', async () => { await page.getByText('lỗi').waitFor(); });";
 const repair = await suggestAutomationFix(
-  { name: 'Tạo phiếu', description: 'Tạo phiếu bảo trì', steps: ['Gửi phiếu'], params: [], script: "await step('gửi', async () => {});" },
+  { name: 'Tạo phiếu', description: 'Tạo phiếu bảo trì', steps: ['Gửi phiếu'], params: [], script: editorScript },
   'Timeout khi nhấn Gửi',
   { apiKey: 'k', fetchImpl: async (url, opts) => {
     repairPrompt = JSON.parse(opts.body).messages[0].content;
@@ -172,6 +173,7 @@ const repair = await suggestAutomationFix(
   } }
 );
 assert(repair.script.includes('getByRole') && repairPrompt.includes('Timeout khi nhấn Gửi'), 'trợ lý trả code sửa theo log lỗi');
+assert(repairPrompt.includes(JSON.stringify(editorScript)), 'trợ lý nhận toàn bộ code đang có trong editor');
 assert(validateScript(repair.script).length === 0 && validateScript('process.exit(1)').length > 0, 'code AI tuân theo giới hạn an toàn của automation');
 let repairAttempts = 0;
 const retryDelays = [];

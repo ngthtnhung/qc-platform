@@ -716,7 +716,7 @@ window.closeModals = function() {
           <div class="fld-note">Sửa giá trị để chạy với giá trị khác (chỉ lần chạy này).
             ${canEdit() ? '<button class="linkbtn at-save-params" style="background:none;border:0;color:var(--primary);cursor:pointer;text-decoration:underline;font-size:11px;">Lưu làm mặc định</button>' : ''}
             Không có trong danh mục của tài khoản thì chọn mục đầu tiên (xem ghi chú sau khi chạy).</div>` : ''}
-        <pre class="at-codebox" style="display:none;background:var(--surface-alt);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:11px;overflow:auto;max-height:260px;margin-top:8px;">${esc(t.script)}</pre>
+        <pre class="at-codebox" style="display:none;background:var(--surface-alt);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:11px;white-space:pre;tab-size:2;overflow:auto;max-height:70vh;margin-top:8px;">${esc(t.script)}</pre>
         <div class="at-result" style="font-size:11.5px;margin-top:6px;"></div>
         </div>
       </div>`).join('');
@@ -911,7 +911,7 @@ window.closeModals = function() {
     message.textContent = 'AI đang phân tích lỗi và đề xuất code...';
     message.className = '';
     try {
-      const result = await call('POST', `/automation/tasks/${encodeURIComponent(taskId)}/repair`, { error });
+      const result = await call('POST', `/automation/tasks/${encodeURIComponent(taskId)}/repair`, { error, script: $('te-script').value });
       if (!editing || editing.id !== taskId) return;
       $('te-script').value = result.script;
       message.textContent = `${result.engine_note || 'Đã có đề xuất sửa.'} Code đã được điền vào ô soạn thảo.`;

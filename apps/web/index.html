@@ -381,7 +381,7 @@
 
     <!-- ===== MODAL: SỬA TÁC VỤ TỰ ĐỘNG ===== -->
   <div class="modal-overlay" id="modal-task">
-    <div class="modal-content" style="max-width:860px;max-height:90vh;overflow:auto;">
+    <div class="modal-content" style="max-width:1100px;width:96vw;max-height:96vh;overflow:auto;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <strong style="font-size:14px;" id="te-title">Sửa tác vụ</strong>
         <button class="btn btn-outline" style="padding:2px 8px;" onclick="closeModals()">✕</button>
@@ -400,10 +400,10 @@
       <div class="form-group"><label class="form-label">Tham số (code đọc bằng <code>ctx.params.khoa_thamso</code>, <code>ctx.val(khoa, macDinh)</code>, <code>ctx.list(khoa)</code>; file đính kèm bằng <code>attachFiles(input, khoa)</code>). Để trống: tham số tùy chọn thì code bỏ qua, tham số bắt buộc thì chọn mục đầu tiên hoặc ngẫu nhiên theo cột cuối:</label>
         <table class="qa-table"><thead><tr><th>Khóa</th><th>Tên hiển thị</th><th>Giá trị mặc định</th><th>Loại</th><th>Khi trống hoặc không có</th><th></th></tr></thead><tbody id="te-params"></tbody></table>
         <button type="button" class="btn btn-outline" id="te-add-param" style="margin-top:6px;">+ Thêm tham số</button></div>
-      <div class="form-group"><label class="form-label">Code Playwright (dùng <code>page</code>, <code>ctx</code>, <code>step</code>, <code>assert</code>, <code>pickOption(danhSachMuc, 'khoa_thamso')</code>, <code>attachFiles(input, 'khoa_thamso')</code>):</label>
-        <textarea class="form-control" id="te-script" rows="16" spellcheck="false" style="font-family:monospace;font-size:11.5px;white-space:pre;overflow:auto;"></textarea></div>
+      <div class="form-group"><label class="form-label">Toàn bộ code Playwright (dùng <code>page</code>, <code>ctx</code>, <code>step</code>, <code>assert</code>, <code>pickOption(danhSachMuc, 'khoa_thamso')</code>, <code>attachFiles(input, 'khoa_thamso')</code>):</label>
+        <textarea class="form-control" id="te-script" rows="28" spellcheck="false" style="width:100%;height:62vh;min-height:320px;max-height:72vh;resize:vertical;font-family:monospace;font-size:12px;white-space:pre;overflow:auto;"></textarea></div>
       <section class="ai-code-help" aria-labelledby="te-ai-title">
-        <div class="ai-code-head"><div><strong id="te-ai-title">Nhờ AI sửa code theo lỗi chạy</strong><p>Dán lỗi từ lần chạy gần nhất. AI đề xuất code để bạn xem lại; không tự lưu hoặc chạy.</p></div></div>
+        <div class="ai-code-head"><div><strong id="te-ai-title">Nhờ AI sửa code theo lỗi chạy</strong><p>Dán lỗi từ lần chạy gần nhất. AI dùng toàn bộ code hiện trong ô soạn thảo ở trên và chỉ đề xuất; không tự lưu hoặc chạy.</p></div></div>
         <textarea class="form-control" id="te-ai-error" rows="4" placeholder="Dán thông báo lỗi hoặc log lỗi tại đây..."></textarea>
         <div class="ai-code-actions"><button type="button" class="btn btn-outline" id="te-ai-fix">✦ Đề xuất sửa code</button><span id="te-ai-msg" role="status"></span></div>
       </section>

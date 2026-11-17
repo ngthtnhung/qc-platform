@@ -6,7 +6,26 @@ const NOTE = 'Đã chạy tay đủ luồng trên staging (THL, LNK151515) ngày
 
 const taoMon = String.raw`const name = ctx.testPrefix + ' ' + ctx.val('ten_mon', 'Môn học thử');
 const publish = !/^(không|khong|no|n)$/i.test(ctx.val('xuat_ban', 'Có').trim());
+const responsible = ctx.val('nguoi_phu_trach', '').trim();
 const type = async (loc, text) => { await loc.click(); await loc.pressSequentially(text); };
+const pickText = async (text, what) => {
+  const opt = page.getByText(text).last();
+  await opt.waitFor({ timeout: 15000 }).catch(() => { throw new Error('Không tìm thấy ' + what + ' "' + text + '" trong danh sách'); });
+  await opt.click();
+};
+const confirmValue = async (value, what) => {
+  for (let i = 0; i < 20; i++) {
+    const inField = await page.locator('input,textarea,select,[role=combobox]').evaluateAll((els, expected) => els.some(el =>
+      String(el.value || '').trim() === expected
+      || Array.from(el.selectedOptions || []).some(option => String(option.textContent || '').trim() === expected)
+      || String(el.textContent || '').trim() === expected
+    ), value);
+    const visibleText = await page.getByText(value, { exact: true }).last().isVisible().catch(() => false);
+    if (inField || visibleText) return;
+    await page.waitForTimeout(250);
+  }
+  assert(false, what + ' chưa được giữ trên form: ' + value);
+};
 
 await step('Mở form Thêm môn học', async () => {
   await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
@@ -27,6 +46,16 @@ await step('Chọn hình thức học', async () => {
   await opt.click();
   // chọn xong hệ thống tự tạo bản nháp và đổi địa chỉ sang /lnd/edit/
   await page.waitForURL(/\/lnd\/edit\//, { timeout: 20000 });
+  await confirmValue(want, 'Hình thức học');
+});
+
+await step('Chọn người phụ trách', async () => {
+  if (!responsible) throw new Error('Cần nhập mã hoặc tên người phụ trách trong trường thông tin trước khi chạy.');
+  await page.getByText('Người phụ trách', { exact: true }).last().click();
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type(responsible, { delay: 40 });
+  await pickText(responsible, 'người phụ trách');
+  await confirmValue(responsible, 'Người phụ trách');
 });
 
 await step('Chọn ảnh đại diện (không chọn file thì tự tạo ảnh 352x198)', async () => {
@@ -68,6 +97,11 @@ await step('Thêm một bài học (video)', async () => {
   if (ctx.has('thoi_luong')) await type(page.getByPlaceholder('Nhập số phút'), ctx.val('thoi_luong', '1'));
   await page.getByText('Tạo bài học', { exact: true }).last().click();
   await page.getByText(lesson).first().waitFor({ timeout: 20000 });
+});
+
+await step('Xác nhận hình thức học và người phụ trách trên bản nháp', async () => {
+  await confirmValue(ctx.val('hinh_thuc', 'Tự học').trim(), 'Hình thức học');
+  await confirmValue(responsible, 'Người phụ trách');
 });
 
 if (publish) {
@@ -145,7 +179,8 @@ const tasks = [
       steps: [
         'Đăng nhập Staging bằng tài khoản quản lý học tập, mở Quản lý môn học, bấm Thêm môn học',
         'Nhập mã môn học {{ma_mon}} (phải chưa có) và tên môn học: [AI TEST] {{ten_mon}}',
-        'Chọn hình thức học {{hinh_thuc}} (Tự học hoặc Cần mở lớp); hệ thống tự lưu nháp',
+        'Chọn hình thức học {{hinh_thuc}} (Tự học hoặc Cần mở lớp); kiểm tra hình thức còn trên bản nháp',
+        'Chọn người phụ trách {{nguoi_phu_trach}} (nhập mã hoặc tên; bắt buộc)',
         'Chọn ảnh đại diện {{anh}} (không chọn file: tự tạo ảnh 352x198), cắt ảnh và bấm Lưu',
         'Nhập mô tả: [AI TEST] {{mo_ta}}, bấm Tiếp tục sang bước 2',
         'Thêm bài học video: [AI TEST] {{ten_bai}}, liên kết {{link_video}}, thời lượng {{thoi_luong}} phút (trống: bỏ qua), bấm Tạo bài học',
@@ -155,6 +190,7 @@ const tasks = [
         { key: 'ma_mon', label: 'Mã môn học (phải khác các môn đã có)', value: 'AITEST02', auto: false },
         { key: 'ten_mon', label: 'Tên môn học (tự thêm tiền tố [AI TEST])', value: 'Môn học thử', auto: true },
         { key: 'hinh_thuc', label: 'Hình thức học: Tự học hoặc Cần mở lớp (mới chạy thử với Tự học)', value: 'Tự học', auto: false },
+        { key: 'nguoi_phu_trach', label: 'Người phụ trách (nhập mã hoặc tên; bắt buộc)', value: '', auto: false },
         { key: 'anh', label: 'Ảnh đại diện (png hoặc jpeg; không chọn: tự tạo ảnh 352x198)', value: '', auto: false, type: 'file' },
         { key: 'mo_ta', label: 'Mô tả môn học (tự thêm tiền tố [AI TEST])', value: 'Mô tả môn học thử', auto: true },
         { key: 'ten_bai', label: 'Tên bài học (tự thêm tiền tố [AI TEST])', value: 'Bài học thử', auto: true },
@@ -163,7 +199,7 @@ const tasks = [
         { key: 'xuat_ban', label: 'Xuất bản ngay: Có hoặc Không (Không: để bản nháp)', value: 'Có', auto: false }
       ],
       script: taoMon,
-      source: { explore_date: '2026-11-16', note: NOTE + ' Ô thời lượng nhập 1 phút nhưng hiển thị 3, nghi hệ thống tự lấy độ dài video (xem LND-011). Mã môn học trùng chưa thử nên chưa biết thông báo lỗi.' }
+      source: { explore_date: '2026-11-16', note: NOTE + ' Ô thời lượng nhập 1 phút nhưng hiển thị 3, nghi hệ thống tự lấy độ dài video (xem LND-011). Mã môn học trùng chưa thử nên chưa biết thông báo lỗi. Đã bổ sung bước chọn người phụ trách và kiểm tra lại hình thức/người phụ trách trên bản nháp; cần replay trên Staging để xác nhận selector theo DOM thật.' }
     }
   },
   {

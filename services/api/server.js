@@ -427,6 +427,14 @@ const handler = async (req, res) => {
       const body = await parseJsonBody(req);
       if (typeof body.error !== 'string' || !body.error.trim()) return jerr(400, 'Cần dán lỗi của lần chạy để AI phân tích.');
       if (body.error.length > 10000) return jerr(413, 'Lỗi chạy quá dài (tối đa 10000 ký tự).');
+      let repairTask = task;
+      if (body.script !== undefined) {
+        if (typeof body.script !== 'string' || !body.script.trim()) return jerr(400, 'Code hiện tại không hợp lệ.');
+        if (body.script.length > 20000) return jerr(413, 'Code quá dài (tối đa 20000 ký tự).');
+        const scriptErrors = validateScript(body.script);
+        if (scriptErrors.length) return jerr(400, scriptErrors.join('; '));
+        repairTask = { ...task, script: body.script };
+      }
       const providers = [
         process.env.GEMINI_API_KEY && { provider: 'gemini', apiKey: process.env.GEMINI_API_KEY, baseUrl: process.env.GEMINI_BASE_URL || undefined },
         process.env.ANTHROPIC_API_KEY && { provider: 'anthropic', apiKey: process.env.ANTHROPIC_API_KEY, baseUrl: process.env.ANTHROPIC_BASE_URL || undefined }
@@ -436,7 +444,7 @@ const handler = async (req, res) => {
       for (let i = 0; i < providers.length; i++) {
         const ai = providers[i];
         try {
-          const suggestion = await suggestAutomationFix(task, body.error, { ...ai, model: i === 0 ? process.env.QA_AI_MODEL || undefined : undefined });
+          const suggestion = await suggestAutomationFix(repairTask, body.error, { ...ai, model: i === 0 ? process.env.QA_AI_MODEL || undefined : undefined });
           const errors = validateScript(suggestion.script);
           if (errors.length) return jerr(422, errors.join('; '));
           const fallbackNote = failures.length ? `Nhà cung cấp chính gặp sự cố (${failures[0]}); đã dùng dự phòng. ` : '';
