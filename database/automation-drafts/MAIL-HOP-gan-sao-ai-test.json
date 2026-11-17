@@ -1,0 +1,31 @@
+{
+  "name": "Gắn sao rồi bỏ sao một thư [AI TEST] trong Hộp thư đến",
+  "module": "MAIL",
+  "flow": "HOP",
+  "description": "Tìm thư [AI TEST] đầu tiên trong Hộp thư đến, gắn sao, kiểm tra đã gắn, rồi bỏ sao và kiểm tra đã bỏ. Cần có sẵn một thư [AI TEST] (chạy tác vụ gửi thư trước).",
+  "start_url": "https://ic.zuizui.io/internal_mailold/inbox",
+  "required_roles": [],
+  "writes": true,
+  "rule_ids": [
+    "MAIL-005"
+  ],
+  "steps": [
+    "Mở Hộp thư đến, tìm thư có tiêu đề chứa {{tieu_de_chua}}",
+    "Đưa thư về trạng thái chưa gắn sao nếu đang gắn",
+    "Bấm ngôi sao trên dòng thư, kiểm tra đã gắn sao",
+    "Bấm ngôi sao lần nữa, kiểm tra đã bỏ sao"
+  ],
+  "params": [
+    {
+      "key": "tieu_de_chua",
+      "label": "Chữ có trong tiêu đề thư cần gắn sao",
+      "value": "[AI TEST]",
+      "auto": false
+    }
+  ],
+  "source": {
+    "explore_date": "2026-11-16",
+    "note": "Đã làm tay trên Staging (ic.zuizui.io, OrgID THL) bằng tài khoản NTTN191919, các bước chạy thành công. Selector lấy từ trang thật. CHƯA chạy lại bằng Playwright; chạy thử một lần rồi duyệt. Mới thử với NTTN191919. Biểu tượng sao đã gắn có màu #F0AD4F; hệ thống báo \"Đã gắn dấu sao ...\" và \"Đã bỏ gắn dấu sao ...\"."
+  },
+  "script": "const key = ctx.params.tieu_de_chua || ctx.testPrefix;\n\nawait step('Tìm thư cần gắn sao trong Hộp thư đến', async () => {\n  await page.locator('tbody tr .mail-content__subject', { hasText: key }).first().waitFor({ timeout: 30000 });\n});\n\nconst row = () => page.locator('tbody tr').filter({ has: page.locator('.mail-content__subject', { hasText: key }) }).first();\nconst star = () => row().locator('.hrv-next-input-checkbox-star');\n// Sao đã gắn thì biểu tượng có màu #F0AD4F\nconst isStarred = async () => (await star().locator('path').evaluateAll(ps => ps.some(p => /F0AD4F/i.test(p.getAttribute('fill') || ''))));\nconst waitStar = async want => {\n  for (let i = 0; i < 20; i++) { if ((await isStarred()) === want) return; await page.waitForTimeout(500); }\n  throw new Error(want ? 'Thư không được gắn sao' : 'Thư không được bỏ sao');\n};\n\nawait step('Đưa thư về trạng thái chưa gắn sao', async () => {\n  if (await isStarred()) { await star().click(); await waitStar(false); }\n});\n\nawait step('Gắn sao', async () => {\n  await star().click();\n  await waitStar(true);\n});\n\nawait step('Bỏ sao', async () => {\n  await star().click();\n  await waitStar(false);\n});"
+}

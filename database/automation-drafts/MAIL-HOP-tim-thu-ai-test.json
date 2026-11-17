@@ -1,0 +1,30 @@
+{
+  "name": "Tìm thư theo tiêu đề",
+  "module": "MAIL",
+  "flow": "HOP",
+  "description": "Gõ từ khóa vào ô tìm kiếm của Hộp thư đến, bấm Enter, kiểm tra trang kết quả có ít nhất một thư có tiêu đề chứa từ khóa. Chỉ đọc.",
+  "start_url": "https://ic.zuizui.io/internal_mailold/inbox",
+  "required_roles": [],
+  "writes": false,
+  "rule_ids": [
+    "MAIL-003"
+  ],
+  "steps": [
+    "Mở Hộp thư đến, gõ từ khóa {{tu_khoa}} vào ô tìm kiếm rồi bấm Enter",
+    "Đợi chuyển sang trang kết quả tìm kiếm",
+    "Kiểm tra tổng số kết quả từ 1 trở lên và có thư có tiêu đề chứa từ khóa"
+  ],
+  "params": [
+    {
+      "key": "tu_khoa",
+      "label": "Từ khóa tìm kiếm",
+      "value": "[AI TEST]",
+      "auto": false
+    }
+  ],
+  "source": {
+    "explore_date": "2026-11-16",
+    "note": "Đã làm tay trên Staging (ic.zuizui.io, OrgID THL) bằng tài khoản NTTN191919, các bước chạy thành công. Selector lấy từ trang thật. CHƯA chạy lại bằng Playwright; chạy thử một lần rồi duyệt. Mới thử với NTTN191919. Tìm kiếm chuyển sang /internal_mailold/search?typeId=100&query=...; có dòng \"Tổng cộng N kết quả\"."
+  },
+  "script": "const keyword = ctx.params.tu_khoa || ctx.testPrefix;\nconst fold = s => String(s || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase();\n\nawait step('Nhập từ khóa vào ô tìm kiếm', async () => {\n  await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});\n  const box = page.getByPlaceholder('Tìm kiếm theo tiêu đề hoặc tên người gửi...');\n  await box.click();\n  await box.pressSequentially(keyword);\n  await box.press('Enter');\n});\n\nawait step('Chuyển sang trang kết quả tìm kiếm', async () => {\n  await page.waitForURL(/\\/internal_mailold\\/search\\?/, { timeout: 30000 });\n  await page.locator('tbody tr .mail-content__subject').first().waitFor({ timeout: 30000 });\n});\n\nawait step('Có kết quả khớp từ khóa', async () => {\n  const total = await page.getByText(/Tổng cộng \\d+ kết quả/).first().innerText();\n  const n = parseInt((total.match(/\\d+/) || ['0'])[0], 10);\n  assert(n >= 1, 'Không có kết quả nào cho từ khóa ' + keyword);\n  const subjects = await page.locator('tbody tr .mail-content__subject').allInnerTexts();\n  assert(subjects.some(s => fold(s).includes(fold(keyword))), 'Không thư nào có tiêu đề chứa ' + keyword);\n  ctx.log(total.trim());\n});"
+}

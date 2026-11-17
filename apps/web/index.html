@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Internal AI QA Testing Platform</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <header class="navbar">
+    <div class="brand-group">
+      <span class="brand-title">Internal AI QA Platform</span>
+      <span class="badge badge-green" id="api-status-badge">🟢 API Connected (Port 3001)</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button class="help-btn" id="btn-theme" type="button" aria-label="Đổi giao diện"></button>
+      <button class="help-btn" id="btn-help" type="button" title="Hướng dẫn cài đặt và sử dụng" aria-label="Hướng dẫn">?</button>
+      <span id="current-user-label" style="font-size:12px;color:var(--text-subtle);">Người dùng: <strong>QC Tester (Me)</strong></span>
+      <span class="badge badge-blue" id="current-user-role">Role: QC Lead</span>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="container">
+
+    <!-- Navigation Tabs -->
+    <nav class="tabs-header">
+      <button class="tab-button active" data-tab="pane-accounts">1. Tài Khoản & Môi Trường</button>
+      <button class="tab-button" data-tab="pane-bug-analysis">2. Phân Tích Bug</button>
+      <button class="tab-button" data-tab="pane-bug-history">3. Tra cứu bug</button>
+      <button class="tab-button" data-tab="pane-business-rules">4. Kho Business Rule</button>
+      <button class="tab-button" data-tab="pane-automation">5. Tác Vụ Tự Động</button>
+      <button class="tab-button" data-tab="pane-users" id="tab-users-btn" style="display:none;">6. Phân Quyền</button>
+    </nav>
+
+    <!-- TAB 5: TÁC VỤ TỰ ĐỘNG (Playwright, ghi lại khi khám phá module) -->
+    <section class="tab-pane" id="pane-automation">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Tác vụ có thể tự động hóa (ghi lại khi khám phá module)</span>
+          <span style="display:flex;gap:6px;"><button class="btn btn-outline" id="at-reload" title="Lấy tác vụ mới nhất từ server, giữ nguyên kết quả đang hiển thị">↻ Làm mới</button><select class="form-control" id="at-module" style="width:auto;"><option value="">Tất cả module</option></select></span>
+        </div>
+        <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:8px;">
+          Mỗi tác vụ có code Playwright. Code sinh ra dùng được ngay, người có quyền sửa được code ngay trong nút <b>Sửa</b>. Chỉ chạy trên Staging, tự chọn tài khoản theo vai trò, dữ liệu tạo ra có tiền tố <code>[AI TEST]</code>. Cần QA Launcher đang chạy trên máy bạn.
+        </p>
+        <div id="at-notice"></div>
+        <details id="at-lib" class="card" style="padding:8px 12px;margin-bottom:10px;">
+          <summary style="cursor:pointer;font-weight:600;font-size:12.5px;">Kho file test <span class="badge badge-blue" id="at-lib-count">0</span></summary>
+          <p style="font-size:11.5px;color:var(--text-subtle);margin:6px 0;">Tải file lên đây một lần (ảnh, PDF, Word, Excel, PowerPoint, txt, csv, zip; mỗi file tối đa 10 MB). Khi tác vụ cần đính kèm, bấm <b>Chọn file</b> trong mô tả bước rồi tick tên file là xong.</p>
+          <label class="btn btn-outline" style="cursor:pointer;display:inline-block;">Tải file lên kho<input type="file" id="at-lib-input" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.rtf,.zip" hidden></label>
+          <span id="at-lib-msg" style="font-size:11.5px;margin-left:8px;"></span>
+          <div id="at-lib-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;"></div>
+        </details>
+        <div id="at-list"></div>
+      </div>
+    </section>
+
+    <!-- TAB 4: KHO BUSINESS RULE -->
+    <section class="tab-pane" id="pane-business-rules">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Kho Business Rule Haraworks</span>
+          <span style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-primary" id="br-add" style="display:none;">+ Thêm rule</button>
+          <button class="btn btn-outline" id="br-refresh" style="display:none;" title="Nạp lại từ thư mục kb-snapshot trên máy chạy server (nơi Explore xuất rule)">⟳ Cập nhật rule từ kho</button>
+          <label class="btn btn-outline" id="br-import-l" style="display:none;cursor:pointer;" title="Chọn file gói rule do lệnh sync-business-rules --export tạo">Nhập file kho<input type="file" id="br-import" accept=".json,application/json" hidden></label>
+          <a class="btn btn-outline" id="br-open-kb" href="#" target="_blank" rel="noopener">↗ Mở Kho Business Rule</a></span>
+        </div>
+        <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:8px;">
+          Rule đồng bộ từ Kho Business Rule, kèm rule thêm hoặc sửa trực tiếp trên platform. AI dùng các rule này làm nguồn trích dẫn khi phân tích bug. <span id="br-synced"></span>
+        </p>
+        <div id="br-refresh-msg" style="font-size:11.5px;margin-bottom:6px;"></div>
+        <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px;margin-bottom:10px;">
+          <select class="form-control" id="br-module"><option value="">Tất cả module</option></select>
+          <input class="form-control" id="br-q" placeholder="Tìm theo mã, tên, nội dung..." />
+        </div>
+        <label style="font-size:12px;display:flex;gap:6px;align-items:center;margin-bottom:6px;"><input type="checkbox" id="br-confirmed" /> Chỉ hiện rule đã xác nhận</label>
+        <div id="br-count" style="font-size:11.5px;margin-bottom:6px;"></div>
+        <div id="br-list"></div>
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- TAB 1: TÀI KHOẢN & MÔI TRƯỜNG                           -->
+    <!-- ======================================================== -->
+    <section class="tab-pane active" id="pane-accounts">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Cấu Hình Môi Trường & Cổng Kiểm Tra Org Test (Org Confirmation Gate)</span>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-outline" id="btn-add-env">+ Thêm Môi Trường</button>
+            <button class="btn btn-outline" id="btn-edit-env">✎ Sửa Link Môi Trường</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Chọn Môi Trường Kiểm Thử:</label>
+          <select class="form-control" id="select-env" style="font-weight:600;font-size:13px;"></select>
+        </div>
+
+        <!-- Ghi chú Production: hệ thống đã chặn bot -->
+        <div id="prod-note" class="alert-box alert-amber" style="display:none;">
+          <div style="font-size:18px;">ℹ️</div>
+          <div style="flex:1;">
+            <strong>Production không chạy tự động được vì hệ thống đã chặn bot</strong>
+            <div style="font-size:11.5px;margin-top:2px;">
+              Môi trường Production chặn công cụ tự động nên không chạy được tác vụ tự động ở đây. Bấm tài khoản chỉ mở cửa sổ và thử đăng nhập; nếu bị chặn, hãy tự đăng nhập trong cửa sổ vừa mở rồi thao tác thủ công. Tác vụ tự động chỉ chạy trên Staging.
+            </div>
+          </div>
+        </div>
+
+        <div id="env-details-box" style="background:var(--surface-alt);border:1px dashed var(--border);border-radius:6px;padding:8px 12px;font-size:11.5px;color:var(--text-subtle);margin-bottom:14px;"></div>
+
+        <!-- Accounts List Under Selected Environment -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <strong style="font-size:13px;">Danh Sách Tài Khoản Thuộc Môi Trường:</strong>
+          <button class="btn btn-primary" id="btn-add-account">+ Thêm Tài Khoản Vào Môi Trường Này</button>
+        </div>
+        <div id="accounts-list-container"></div>
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- TAB 2: PHÂN TÍCH BUG                                     -->
+    <!-- ======================================================== -->
+    <section class="tab-pane" id="pane-bug-analysis">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Phân Tích Bug: tự tìm rule và bug cũ liên quan</span>
+          <button class="btn btn-outline" id="btn-load-sample-bug">📥 Nạp ví dụ</button>
+        </div>
+        <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:8px;">
+          Mô tả càng cụ thể càng tốt (module, màn hình, thao tác, kết quả sai). Khi bạn gõ, hệ thống tự tìm <b>rule đã xác nhận</b> và <b>bug cũ giống nhất</b>.
+          Đây là tìm theo từ khóa và độ hiếm của từ, không phải mô hình ngôn ngữ; gõ không dấu cũng được.
+        </p>
+        <textarea class="form-control" id="bug-input-desc" rows="5" placeholder="Ví dụ: Cửa hàng không hoàn tất được đánh giá phiếu Bảo trì trên mobile..."></textarea>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;">
+          <div class="form-group">
+            <label class="form-label">Module (để Tự nhận diện nếu chưa chắc):</label>
+            <select class="form-control" id="bug-module-select"><option value="">Tự nhận diện, tìm trên mọi module</option></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Nền tảng:</label>
+            <select class="form-control" id="bug-platform-select">
+              <option value="Web">Web Desktop</option>
+              <option value="Mobile">Mobile</option>
+            </select>
+          </div>
+        </div>
+        <div id="ba-hints" style="font-size:11.5px;margin-top:6px;"></div>
+      </div>
+
+      <div id="ba-results" style="display:none;">
+        <div class="card" style="padding:10px 14px;margin-bottom:10px;" id="ba-summary"></div>
+        <div class="card" style="padding:10px 14px;margin-bottom:10px;" id="ba-ai">
+          <div class="card-header" style="margin-bottom:6px;"><span class="card-title">AI phân tích</span>
+            <button class="btn btn-outline" id="ba-ai-run" style="font-size:11.5px;">Phân tích lại</button></div>
+          <div id="ba-ai-body" style="font-size:12px;"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="card" style="margin-bottom:0;">
+            <div class="card-header"><span class="card-title">Rule liên quan</span><span class="badge badge-blue" id="ba-rules-count">0</span></div>
+            <div id="ba-rules"></div>
+          </div>
+          <div class="card" style="margin-bottom:0;">
+            <div class="card-header"><span class="card-title">Bug cũ tương tự</span><span class="badge badge-amber" id="ba-bugs-count">0</span></div>
+            <div id="ba-bugs"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- TAB 3: BUG CŨ (từ Kho Business Rule)                      -->
+    <!-- ======================================================== -->
+    <section class="tab-pane" id="pane-bug-history">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Tra cứu bug</span>
+          <span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span class="badge badge-blue" id="bh-total"></span>
+            <span class="badge badge-amber" id="bh-live" style="cursor:help;"></span>
+            <button class="btn btn-outline" id="bh-refresh" title="Lấy ngay từ Haraworks" style="padding:2px 8px;">⟳</button>
+          </span>
+        </div>
+        <div class="bh-filters">
+          <select class="form-control" id="bh-module"><option value="">Tất cả module</option></select>
+          <input class="form-control" id="bh-q" type="search" placeholder="Tìm trong tiêu đề bug..." />
+          <select class="form-control" id="bh-st"><option value="">Mọi trạng thái</option></select>
+          <select class="form-control" id="bh-cl"><option value="">Đang mở và đã đóng</option><option value="open">Đang mở</option><option value="closed">Đã đóng</option></select>
+          <select class="form-control" id="bh-as"><option value="">Mọi người thực hiện</option></select>
+          <select class="form-control" id="bh-cat"><option value="">Mọi phân loại</option></select>
+          <select class="form-control" id="bh-year"><option value="">Mọi năm</option></select>
+        </div>
+        <div id="bh-count" style="font-size:11.5px;margin-bottom:6px;"></div>
+        <div id="bh-list"></div>
+        <button class="btn btn-outline" id="bh-more" style="display:none;margin-top:8px;">Xem thêm 50 bug</button>
+      </div>
+      <aside id="bh-drawer" aria-label="Chi tiết bug">
+        <div style="display:flex;justify-content:flex-end;padding:8px 10px;"><button class="btn btn-outline" id="bh-drawer-close">Đóng ✕</button></div>
+        <div id="bh-drawer-body"></div>
+      </aside>
+    </section>
+
+<!-- ===== TAB 6: PHÂN QUYỀN (chỉ quản trị viên) ===== -->
+    <section class="tab-pane" id="pane-users">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Phân quyền người dùng</span>
+          <button class="btn btn-primary" id="u-add">+ Thêm người dùng</button>
+        </div>
+        <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:8px;">
+          Quản trị viên có mọi quyền. Thành viên chỉ làm được phần được cấp ở các ô bên dưới. Thay đổi có hiệu lực ngay, không cần khởi động lại server.
+          Token chỉ hiện <b>một lần</b> lúc tạo hoặc cấp mới; hãy gửi riêng cho người đó.
+        </p>
+        <div id="u-msg" style="font-size:12px;margin-bottom:6px;"></div>
+        <div style="overflow-x:auto;"><table class="qa-table" id="u-table"><thead><tr id="u-head"></tr></thead><tbody id="u-body"></tbody></table></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ======================================================== -->
+  <!-- MODALS                                                   -->
+  <!-- ======================================================== -->
+
+  <!-- Modal: Thêm / Sửa Môi Trường -->
+  <div class="modal-overlay" id="modal-env">
+    <div class="modal-content">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <strong style="font-size:14px;" id="modal-env-title">Thêm Môi Trường Mới</strong>
+        <button class="btn btn-outline" style="padding:2px 8px;" onclick="closeModals()">✕</button>
+      </div>
+      <input type="hidden" id="env-mode" value="add" />
+      <div class="form-group">
+        <label class="form-label">Mã môi trường (ID - viết hoa):</label>
+        <input type="text" class="form-control" id="env-id-input" placeholder="VD: UAT, PREPROD" required />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tên hiển thị:</label>
+        <input type="text" class="form-control" id="env-name-input" placeholder="VD: Môi trường UAT Khách Hàng" required />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Loại môi trường:</label>
+        <select class="form-control" id="env-type-select">
+          <option value="STAGING">STAGING</option>
+          <option value="PRODUCTION_TEST">PRODUCTION_TEST (Production OrgID DEMO)</option>
+          <option value="TASK_SYSTEM">TASK_SYSTEM</option>
+          <option value="PRODUCTION">PRODUCTION (OrgID khác DEMO, chỉ đọc)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Base URL:</label>
+        <input type="text" class="form-control" id="env-base-url-input" placeholder="https://..." required />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Login URL:</label>
+        <input type="text" class="form-control" id="env-login-url-input" placeholder="https://.../login" required />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Org Identifier (Định danh Org):</label>
+        <input type="text" class="form-control" id="env-org-input" placeholder="VD: staging-org hoặc test-org" />
+      </div>
+      <button class="btn btn-primary" id="btn-save-env-modal" style="width:100%;margin-top:6px;">Lưu Cấu Hình Môi Trường</button>
+    </div>
+  </div>
+
+  <!-- Modal: Thêm / Sửa Tài Khoản -->
+  <div class="modal-overlay" id="modal-account">
+    <div class="modal-content">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <strong style="font-size:14px;">Thêm Tài Khoản Kiểm Thử</strong>
+        <button class="btn btn-outline" style="padding:2px 8px;" onclick="closeModals()">✕</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tên người dùng / Chủ tài khoản:</label>
+        <input type="text" class="form-control" id="acc-name-input" placeholder="VD: Lê Vĩnh Ngọc Châu (Kỹ thuật)" required />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Vai trò (Role):</label>
+        <input type="text" class="form-control" id="acc-role-input" placeholder="VD: Nhân viên bảo trì" required />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Môi trường gán:</label>
+        <select class="form-control" id="acc-env-select"></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Username / Email:</label>
+        <input type="text" class="form-control" id="acc-username-input" placeholder="chau.le@erp.local" required />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Mật khẩu (tùy chọn, chỉ Staging và Production OrgID DEMO):</label>
+        <input type="password" class="form-control" id="acc-password-input" autocomplete="new-password" placeholder="Lưu mã hóa trên máy này, không hiển thị lại" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Đường dẫn mặc định (Default Route):</label>
+        <input type="text" class="form-control" id="acc-route-input" value="/maintenance/tickets" />
+      </div>
+      <button class="btn btn-primary" id="btn-save-account-modal" style="width:100%;margin-top:6px;">Lưu Tài Khoản</button>
+    </div>
+  </div>
+
+  <!-- Modal: Đặt mật khẩu cho tài khoản -->
+  <div class="modal-overlay" id="modal-secret">
+    <div class="modal-content" style="max-width:420px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <strong style="font-size:14px;" id="secret-title">Đặt mật khẩu</strong>
+        <button class="btn btn-outline" style="padding:2px 8px;" onclick="closeModals()">✕</button>
+      </div>
+      <input type="hidden" id="secret-account-id" />
+      <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:8px;">Mật khẩu được mã hóa (AES-256-GCM, khóa bọc bằng Windows DPAPI) và chỉ dùng cho đăng nhập tự động. Không hiển thị lại được, chỉ ghi đè hoặc xóa.</p>
+      <div class="form-group"><label class="form-label">Mật khẩu mới:</label>
+        <input type="password" class="form-control" id="secret-input" autocomplete="new-password" /></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" id="btn-save-secret" style="flex:1;">Lưu mật khẩu</button>
+        <button class="btn btn-outline" id="btn-delete-secret" style="color:var(--danger);">Xóa mật khẩu đã lưu</button>
+      </div>
+      <div id="secret-msg" style="font-size:11.5px;margin-top:8px;"></div>
+    </div>
+  </div>
+
+
+  <!-- Modal: Sửa link (route) của tài khoản -->
+  <div class="modal-overlay" id="modal-routes">
+    <div class="modal-content" style="max-width:640px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <strong style="font-size:14px;" id="routes-title">Sửa link</strong>
+        <button class="btn btn-outline" style="padding:2px 8px;" onclick="closeModals()">✕</button>
+      </div>
+      <input type="hidden" id="routes-account-id" />
+      <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:8px;">Mỗi dòng một link, dạng <code>Tên | https://...</code> (tên có thể bỏ trống, hoặc chỉ ghi đường dẫn bắt đầu bằng <code>/</code>). Link phải là https và cùng tên miền với môi trường. Link đầu tiên là mặc định.</p>
+      <textarea class="form-control" id="routes-text" rows="8" style="font-family:monospace;font-size:12px;"></textarea>
+      <button class="btn btn-primary" id="btn-save-routes" style="width:100%;margin-top:10px;">Lưu danh sách link</button>
+      <div id="routes-msg" style="font-size:11.5px;margin-top:8px;color:var(--danger);"></div>
+    </div>
+  </div>
+
+    <!-- ===== MODAL: SỬA TÁC VỤ TỰ ĐỘNG ===== -->
+  <div class="modal-overlay" id="modal-task">
+    <div class="modal-content" style="max-width:860px;max-height:90vh;overflow:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <strong style="font-size:14px;" id="te-title">Sửa tác vụ</strong>
+        <button class="btn btn-outline" style="padding:2px 8px;" onclick="closeModals()">✕</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="form-group"><label class="form-label">Tên tác vụ:</label><input class="form-control" id="te-name" /></div>
+        <div class="form-group"><label class="form-label">Link bắt đầu (https, cùng tên miền Staging):</label><input class="form-control" id="te-url" /></div>
+      </div>
+      <div class="form-group"><label class="form-label">Mô tả:</label><textarea class="form-control" id="te-desc" rows="2"></textarea></div>
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;">
+        <div class="form-group"><label class="form-label">Vai trò tài khoản cần (cách nhau bằng dấu phẩy, để trống: tài khoản nào cũng được):</label><input class="form-control" id="te-roles" /></div>
+        <label style="display:flex;gap:6px;align-items:center;font-size:12px;margin-top:20px;"><input type="checkbox" id="te-writes"> Tạo hoặc sửa dữ liệu</label>
+      </div>
+      <div class="form-group"><label class="form-label">Các bước (mỗi dòng một bước). Viết <code>{{khoa_thamso}}</code> để chèn ô giá trị vào câu; đổi giá trị trong ô là đổi cách tác vụ chạy, không cần sửa code:</label>
+        <textarea class="form-control" id="te-steps" rows="7"></textarea></div>
+      <div class="form-group"><label class="form-label">Tham số (code đọc bằng <code>ctx.params.khoa_thamso</code>, <code>ctx.val(khoa, macDinh)</code>, <code>ctx.list(khoa)</code>; file đính kèm bằng <code>attachFiles(input, khoa)</code>). Để trống: tham số tùy chọn thì code bỏ qua, tham số bắt buộc thì chọn mục đầu tiên hoặc ngẫu nhiên theo cột cuối:</label>
+        <table class="qa-table"><thead><tr><th>Khóa</th><th>Tên hiển thị</th><th>Giá trị mặc định</th><th>Loại</th><th>Khi trống hoặc không có</th><th></th></tr></thead><tbody id="te-params"></tbody></table>
+        <button type="button" class="btn btn-outline" id="te-add-param" style="margin-top:6px;">+ Thêm tham số</button></div>
+      <div class="form-group"><label class="form-label">Code Playwright (dùng <code>page</code>, <code>ctx</code>, <code>step</code>, <code>assert</code>, <code>pickOption(danhSachMuc, 'khoa_thamso')</code>, <code>attachFiles(input, 'khoa_thamso')</code>):</label>
+        <textarea class="form-control" id="te-script" rows="16" spellcheck="false" style="font-family:monospace;font-size:11.5px;white-space:pre;overflow:auto;"></textarea></div>
+      <p style="font-size:11px;color:var(--text-subtle);">Sửa code làm tác vụ <b>mất duyệt</b> (về Nháp); người có quyền Duyệt phải đọc lại. Chỉ đổi mô tả, bước hoặc tham số thì tác vụ giữ nguyên trạng thái.</p>
+      <button class="btn btn-primary" id="te-save" style="width:100%;">Lưu tác vụ</button>
+      <div id="te-msg" style="font-size:12px;margin-top:8px;color:var(--danger);"></div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: THÊM / SỬA RULE ===== -->
+  <div class="modal-overlay" id="modal-rule">
+    <div class="modal-content" style="max-width:640px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <strong style="font-size:14px;" id="rule-form-title">Thêm rule</strong>
+        <button class="btn btn-outline" style="padding:2px 8px;" onclick="closeModals()">✕</button>
+      </div>
+      <input type="hidden" id="rf-id" />
+      <div class="form-group" id="rf-module-row"><label class="form-label">Module:</label><select class="form-control" id="rf-module"></select></div>
+      <div class="form-group"><label class="form-label">Tên rule:</label><input class="form-control" id="rf-title" maxlength="200" /></div>
+      <div class="form-group"><label class="form-label">Mô tả chi tiết (điều kiện, hành vi, giới hạn, ngoại lệ):</label><textarea class="form-control" id="rf-desc" rows="6" maxlength="3000"></textarea></div>
+      <div class="form-group"><label class="form-label">Vai trò tương ứng (mỗi dòng một vai trò):</label><textarea class="form-control" id="rf-roles" rows="3"></textarea></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="form-group"><label class="form-label">Luồng:</label><select class="form-control" id="rf-flow"></select></div>
+        <div class="form-group"><label class="form-label">Loại thiết lập:</label>
+          <select class="form-control" id="rf-setting">
+            <option value="unknown">Chưa xác định</option><option value="fixed">Cố định</option>
+            <option value="org_config">Cấu hình theo tổ chức</option><option value="default_editable">Mặc định có thể đổi</option>
+          </select></div>
+      </div>
+      <p style="font-size:11px;color:var(--text-subtle);">Rule thêm hoặc sửa ở đây chỉ nằm trên platform, không tự ghi ngược về Kho Business Rule và không bị đồng bộ từ Kho ghi đè. Rule mới có mã dạng DV5S-P001.</p>
+      <button class="btn btn-primary" id="rf-save" style="width:100%;margin-top:6px;">Lưu rule</button>
+      <div id="rf-msg" style="font-size:12px;margin-top:8px;color:var(--danger);"></div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: THÊM NGƯỜI DÙNG ===== -->
+  <div class="modal-overlay" id="modal-newuser">
+    <div class="modal-content" style="max-width:520px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <strong style="font-size:14px;">Thêm người dùng</strong>
+        <button class="btn btn-outline" style="padding:2px 8px;" onclick="closeModals()">✕</button>
+      </div>
+      <div class="form-group"><label class="form-label">Tên hiển thị:</label><input class="form-control" id="nu-name" maxlength="80" /></div>
+      <div class="form-group"><label class="form-label">Vai trò:</label>
+        <select class="form-control" id="nu-role"><option value="member">Thành viên</option><option value="admin">Quản trị viên (mọi quyền)</option></select></div>
+      <div class="form-group" id="nu-perms"></div>
+      <button class="btn btn-primary" id="nu-save" style="width:100%;">Tạo và lấy token</button>
+      <div id="nu-msg" style="font-size:12px;margin-top:8px;color:var(--danger);"></div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: HIỂN THỊ TOKEN (một lần) ===== -->
+  <div class="modal-overlay" id="modal-token">
+    <div class="modal-content" style="max-width:520px;">
+      <strong style="font-size:14px;" id="tk-title">Token</strong>
+      <p style="font-size:12px;margin:8px 0;">Token chỉ hiện <b>một lần</b>. Sao chép và gửi riêng cho người đó, đừng dán vào nơi công khai. Không lưu lại được: nếu mất phải cấp token mới.</p>
+      <input class="form-control" id="tk-value" readonly style="font-family:monospace;" />
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn btn-primary" id="tk-copy" style="flex:1;">Sao chép token</button>
+        <button class="btn btn-outline" onclick="closeModals()">Đã lưu, đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: HƯỚNG DẪN ===== -->
+  <div class="modal-overlay" id="modal-help">
+    <div class="modal-content help-modal">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <strong style="font-size:15px;">Hướng dẫn cài đặt và sử dụng</strong>
+        <button class="btn btn-outline" style="padding:2px 8px;" onclick="closeModals()">✕</button>
+      </div>
+      <div class="help-tabs" id="help-tabs">
+        <button data-help="overview" class="active">Tổng quan</button>
+        <button data-help="server-win">Cài máy chủ (Windows)</button>
+        <button data-help="member-win">Thành viên (Windows)</button>
+        <button data-help="member-mac">Thành viên (macOS)</button>
+        <button data-help="daily">Chạy hằng ngày</button>
+        <button data-help="admin">Quản trị</button>
+        <button data-help="errors">Lỗi thường gặp</button>
+      </div>
+      <div id="help-body"></div>
+    </div>
+  </div>
+
+  <script src="help-content.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

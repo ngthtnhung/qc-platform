@@ -1,0 +1,1 @@
+{ "name": "@qa/database", "private": true, "version": "0.1.0", "scripts": { "db:migrate": "node -e \"console.log('Migrations are not implemented yet')\"" } }

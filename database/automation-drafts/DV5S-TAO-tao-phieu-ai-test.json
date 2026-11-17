@@ -1,0 +1,79 @@
+{
+  "name": "Tạo phiếu bảo trì [AI TEST] và kiểm tra phiếu xuất hiện trong danh sách",
+  "module": "DV5S",
+  "flow": "TAO",
+  "description": "Mở form Tạo phiếu, nhập đủ các trường bắt buộc (vấn đề, thời gian, phân loại, mức độ xử lý, đơn vị phát sinh), tạo phiếu và kiểm tra phiếu có trong tab Tất cả. Tạo một phiếu thật trên Staging với tiền tố [AI TEST].",
+  "start_url": "https://tasks.zuizui.io/maintenance/doing/list",
+  "required_roles": [
+    "quản trị"
+  ],
+  "writes": true,
+  "rule_ids": [
+    "DV5S-047"
+  ],
+  "source": {
+    "explore_date": "2026-11-16",
+    "note": "Đã làm tay trên Staging bằng tài khoản NTTN191919 (quản trị), tạo phiếu #47494, thành công. Các selector lấy từ trang thật (placeholder, class DayPicker-Day, hrw-button-primary). Lần chạy đầu bị hết thời gian ở bước chọn ngày giờ vì chọn nhầm danh sách giờ ẩn (lịch có hai nửa bắt đầu và kết thúc); đã sửa ngày 16/11/2026, cần chạy lại để xác nhận. Phân loại Máy in và đơn vị Công nghệ thông tin là dữ liệu của THL, đổi nếu danh mục thay đổi. Lưu ý: gán giá trị trực tiếp vào ô vấn đề không được form nhận, phải gõ phím thật, nên script dùng pressSequentially. Giá trị cứng đã chuyển thành tham số: đổi ở ô trong mô tả bước, không cần sửa code; không có trong danh mục của tài khoản thì chọn mục đầu tiên (xem log). CHƯA chạy lại bằng Playwright sau khi chuyển sang tham số; chạy thử một lần rồi duyệt. Đã thêm hình đính kèm tùy chọn (ô input[type=file] có sẵn trong form); CHƯA thử đính kèm thật qua Playwright."
+  },
+  "steps": [
+    "Đăng nhập Staging bằng tài khoản quản trị, mở Danh sách xử lý phiếu",
+    "Bấm Tạo phiếu, form hiện ra",
+    "Gõ vấn đề gặp phải: [AI TEST] {{van_de}}",
+    "Đính kèm hình mô tả: {{anh_mo_ta}} (không chọn: bỏ qua)",
+    "Mở ô Thời gian, chọn ngày hôm nay cộng {{ngay_them}} ngày (qua cuối tháng thì lấy ngày cuối tháng), giờ {{gio}}",
+    "Chọn phân loại phiếu {{phan_loai}}, mức độ xử lý {{muc_do_xu_ly}} (để trống: lấy mức đầu tiên), đơn vị phát sinh {{don_vi}}",
+    "Bấm Tạo khi nút đã sáng, form đóng lại",
+    "Mở tab Tất cả và kiểm tra phiếu vừa tạo có trong danh sách"
+  ],
+  "script": "const text = `${ctx.testPrefix} ${ctx.params.van_de || 'Phiếu tự động'}`;\nconst dlg = page.locator('[role=dialog]');\n\nawait step('Mở form Tạo phiếu', async () => {\n  await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});\n  await page.getByRole('button', { name: 'Tạo phiếu' }).click();\n  await dlg.waitFor({ timeout: 10000 });\n});\n\nawait step('Nhập vấn đề gặp phải', async () => {\n  const ta = dlg.locator('textarea[placeholder=\"Nhập vấn đề gặp phải\"]');\n  await ta.click();\n  await ta.pressSequentially(text);\n});\n\nawait step('Đính kèm hình mô tả (nếu có)', async () => {\n  if (!(await attachFiles(dlg.locator('input[type=file]').first(), 'anh_mo_ta'))) { ctx.log('Không có hình mô tả, bỏ qua'); return; }\n  await page.waitForTimeout(2000);\n});\n\nawait step('Chọn ngày và giờ', async () => {\n  // Lịch có hai nửa (bắt đầu và kết thúc) nên danh sách giờ xuất hiện hai lần; chỉ nửa kết thúc hiện ra.\n  const label = dlg.locator('.rc-input-calendar__label').first();\n  await label.click();\n  const days = page.locator('.DayPicker-Day:not(.DayPicker-Day--outside)');\n  await days.first().waitFor({ state: 'visible', timeout: 8000 }).catch(async () => {\n    await label.dispatchEvent('click');\n    await days.first().waitFor({ state: 'visible', timeout: 8000 });\n  });\n  // Ngày = hôm nay cộng ngay_them ngày; qua cuối tháng thì lấy ngày cuối tháng (lịch chỉ hiện tháng này)\n  const now = new Date();\n  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();\n  const offset = Math.max(parseInt(ctx.params.ngay_them || '1', 10) || 0, 0);\n  const day = Math.min(now.getDate() + offset, last);\n  await days.filter({ hasText: new RegExp('^' + day + '$') }).first().click();\n  await page.locator('.hrv-date-time-picker-end-day input.hrv-date-time-picker-input-time').click();\n  await pickOption(page.locator('.hrv-date-time-picker-end-day .hrv-date-time-picker-input-menu-item'), 'gio');\n  await dlg.getByText('Tạo phiếu', { exact: true }).first().click();\n});\n\nawait step('Chọn phân loại, mức độ xử lý, đơn vị phát sinh', async () => {\n  // Giá trị lấy từ tham số; không có trong danh mục của tài khoản này thì chọn mục đầu tiên (xem log)\n  const opens = dlg.getByRole('button', { name: 'Open' });\n  const items = page.locator('[role=listbox] li');\n  await opens.nth(0).click();\n  await pickOption(items, 'phan_loai');\n  await opens.nth(1).click();\n  await pickOption(items, 'muc_do_xu_ly');\n  await opens.nth(2).click();\n  await pickOption(items, 'don_vi');\n});\n\nawait step('Bấm Tạo', async () => {\n  const btn = dlg.locator('.hrw-button-primary:not(.hrw-button_disable)', { hasText: /^Tạo$/ });\n  await btn.first().waitFor({ timeout: 10000 });\n  await btn.first().click();\n  await dlg.waitFor({ state: 'hidden', timeout: 15000 });\n});\n\nawait step('Phiếu xuất hiện trong tab Tất cả', async () => {\n  await page.getByText('Tất cả', { exact: true }).first().click();\n  await page.getByText(text).first().waitFor({ timeout: 30000 });\n});\nctx.log('Đã tạo phiếu: ' + text);",
+  "id": "at_1794812100036_k471",
+  "params": [
+    {
+      "key": "van_de",
+      "label": "Nội dung vấn đề (tự thêm tiền tố [AI TEST])",
+      "value": "Phiếu tự động",
+      "auto": true
+    },
+    {
+      "key": "ngay_them",
+      "label": "Số ngày cộng thêm so với hôm nay",
+      "value": "1",
+      "auto": true
+    },
+    {
+      "key": "gio",
+      "label": "Giờ (phải có trong danh sách giờ)",
+      "value": "17:00",
+      "auto": false
+    },
+    {
+      "key": "phan_loai",
+      "label": "Phân loại phiếu",
+      "value": "Máy in",
+      "auto": true,
+      "fallback": "random"
+    },
+    {
+      "key": "muc_do_xu_ly",
+      "label": "Mức độ xử lý (để trống: lấy mức đầu tiên)",
+      "value": "",
+      "auto": true,
+      "fallback": "random"
+    },
+    {
+      "key": "don_vi",
+      "label": "Đơn vị phát sinh",
+      "value": "Công nghệ thông tin",
+      "auto": true,
+      "fallback": "random"
+    },
+    {
+      "key": "anh_mo_ta",
+      "label": "File mô tả (ảnh, PDF, Word, Excel, zip...; không chọn: bỏ qua)",
+      "value": "",
+      "auto": false,
+      "type": "file",
+      "fallback": "first"
+    }
+  ]
+}

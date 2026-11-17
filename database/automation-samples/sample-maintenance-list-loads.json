@@ -1,0 +1,18 @@
+{
+  "name": "MẪU: Danh sách phiếu bảo trì tải được (kiểm tra khung, chưa phải kết quả khám phá)",
+  "module": "DV5S",
+  "flow": "DS",
+  "description": "Tác vụ mẫu chỉ đọc để thử cơ chế chạy. Không dùng selector của ứng dụng nên không đại diện cho một luồng thật. Hãy thay bằng tác vụ ghi từ lần khám phá module.",
+  "start_url": "https://tasks.zuizui.io/maintenance/doing/list",
+  "required_roles": ["quản trị"],
+  "writes": false,
+  "rule_ids": ["DV5S-001"],
+  "source": { "kind": "sample", "note": "Viết tay để thử khung, link lấy từ danh sách link của tài khoản trong Kho Business Rule" },
+  "steps": [
+    "Đăng nhập Staging bằng tài khoản quản trị",
+    "Mở danh sách phiếu bảo trì đang xử lý",
+    "Kiểm tra không bị chuyển về trang đăng nhập",
+    "Kiểm tra trang có nội dung và không báo thiếu quyền"
+  ],
+  "script": "await step('Trang tải xong', async () => { await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {}); });\nawait step('Không bị chuyển về đăng nhập', async () => {\n  const u = new URL(page.url());\n  assert(u.hostname === 'tasks.zuizui.io', 'Đang ở ' + page.url());\n  assert(!/login|account\\/org/i.test(u.pathname + u.search), 'Trang yêu cầu đăng nhập lại');\n});\nawait step('Trang có nội dung, không báo thiếu quyền', async () => {\n  const t = (await page.locator('body').innerText()).trim();\n  assert(t.length > 50, 'Trang gần như trống');\n  assert(!/không có quyền|403/i.test(t.slice(0, 400)), 'Trang báo không có quyền');\n});"
+}
