@@ -5,6 +5,7 @@ import { normalizeTask, normalizeParams, mergeParams, chooseAccount, isRunnable,
 import { runTask } from '../apps/launcher/task-runner.js';
 import { fetchTaskFiles } from '../apps/launcher/task-files.js';
 import { analyzeLocal, analyzeAI, matchTasks } from '../packages/bug-search/analysis.js';
+import { shapeDetail, htmlToText, extractMedia, mediaKind } from '../packages/haraworks-live/detail.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -159,4 +160,18 @@ const gemFetch = async (url, o) => { assert(url.includes('gemini-3.5-flash:gener
 const gm = await analyzeAI({ text: 'mô tả bug dài đủ', rules: [], bugs: [], tasks: tasksX }, { provider: 'gemini', apiKey: 'g', fetchImpl: gemFetch });
 assert(gm.engine === 'ai' && gm.tasks[0].id === 'at_1' && /gemini/.test(gm.engine_note), 'Gemini trả kết quả đúng');
 console.log('✓ Test 7 Passed: phân tích bug (khớp tác vụ, AI lọc mã bịa)');
+
+// chi tiết bug: HTML thành chữ an toàn, không lấy email hay số điện thoại, ánh xạ người, lịch sử, bình luận
+assert(htmlToText('<p>Module: <b>HRM</b></p><script>alert(1)</script><p>Kết quả</p>').includes('Module: HRM') && !/<|>/.test(htmlToText('<p>a</p><b>b</b>')), 'bỏ thẻ HTML');
+const det = shapeDetail(
+  { id: 'a'.repeat(24), name: 'Bug', content: '<p>Mô tả<br>dòng 2</p>', ticket_Status: 1, priority: 4, comment_Token: 't', assignTo: { name: 'An', departmentName: 'QC', email: 'a@x.vn', phone: '09' }, followers: [{ name: 'B', email: 'b@x.vn' }], attachments: [{ name: 'f.jpg', url: 'https://x/f.jpg' }], additionalInfo: [{ key: 'customer', value: 'Every Half' }] },
+  [{ log_Type: 12, additional_Info: [{ key: 'Project', value: 'P' }], created_At: '2026-11-17T02:52:04Z', created_By: { name: 'Nhi' } }],
+  { totalCount: 1, data: [{ id: 'c1', content: '<p>Ok</p>', created_At: '2026-11-17T03:00:00Z', created_By: { name: 'Lâm' }, replies: { data: [{ id: 'r1', content: 'Rep', created_By: { name: 'An' } }] } }] }
+);
+assert(det.description === 'Mô tả' + String.fromCharCode(10) + 'dòng 2' && det.assignee.name === 'An' && !JSON.stringify(det).includes('@x.vn') && !JSON.stringify(det).includes('"09"'), 'không lộ email hoặc số điện thoại');
+assert(det.logs[0].info.Project === 'P' && det.comments.total === 1 && det.comments.items[0].replies[0].by === 'An' && det.info.customer === 'Every Half', 'lịch sử, bình luận, trả lời');
+const mm = extractMedia('<p>Lỗi <img src="https://cdn.x/a.png?x=1&amp;y=2"> <video src="https://cdn.x/v.mp4"></video> <a href="https://cdn.x/b.JPG">xem</a> <a href="https://x/doc.docx">doc</a> <img src="javascript:alert(1)"></p>');
+assert(mm.length === 3 && mm[0].url === 'https://cdn.x/a.png?x=1&y=2' && mm[0].kind === 'image' && mm.some(m => m.kind === 'video') && !JSON.stringify(mm).includes('javascript'), 'tách ảnh, video nhúng, bỏ đường dẫn lạ');
+assert(mediaKind('https://x/a.mov') === 'video' && mediaKind('', 'ghi-am.mp3') === 'audio' && mediaKind('https://x/f.pdf') === 'pdf' && mediaKind('https://x/f.zip') === 'file', 'phân loại tệp theo đuôi');
+console.log('✓ Test 8 Passed: chi tiết bug (HTML an toàn, không lộ dữ liệu cá nhân)');
 }

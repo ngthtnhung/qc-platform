@@ -29,3 +29,4 @@ database/kb-snapshot/
 database/kb-drafts/
 *.tmp
 *.log
+database/bugs-enrich.json

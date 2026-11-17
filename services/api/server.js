@@ -24,6 +24,7 @@ import { buildBundle } from '../../packages/kb-sync/bundle.js';
 import { analyzeLocal, analyzeAI } from '../../packages/bug-search/analysis.js';
 import { BusinessRuleStore } from '../ai-service/business-rule-store.js';
 import { startBugLive } from '../../packages/haraworks-live/index.js';
+import { getBugDetail } from '../../packages/haraworks-live/detail.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -572,9 +573,20 @@ const handler = async (req, res) => {
       const q = urlObj.searchParams;
       return sendJson(res, 200, { success: true, data: BugStore.list({
         module: q.get('module') || '', q: q.get('q') || '', category: q.get('category') || '', year: q.get('year') || '',
-        status: q.get('status') || '', assignee: q.get('assignee') || '', closed: q.get('closed') || '',
+        status: q.get('status') || '', assignee: q.get('assignee') || '', approver: q.get('approver') || '', closed: q.get('closed') || '', age: q.get('age') || '',
         unknown: q.get('unknown') === '1', offset: Math.max(0, +q.get('offset') || 0), limit: Math.min(200, +q.get('limit') || 50)
       }) });
+    }
+    // Chi tiết một bug (mô tả, người, lịch sử, bình luận) lấy trực tiếp từ Haraworks bằng cookie phiên trên server
+    {
+      const dm = /^\/api\/v1\/bugs\/([0-9a-f]{24})\/detail$/.exec(pathname);
+      if (dm && method === 'GET') {
+        try { return sendJson(res, 200, { success: true, data: await getBugDetail(dm[1]) }); }
+        catch (e) {
+          const code = e.code || 'ERROR';
+          return sendJson(res, code === 'NO_COOKIE' || code === 'AUTH' ? 503 : code === 'NOT_FOUND' ? 404 : 502, { success: false, error: { code, message: e.message } });
+        }
+      }
     }
     // Bug realtime từ Haraworks: trạng thái nguồn + số bản (giao diện hỏi nhẹ để biết có đổi không)
     if (pathname === '/api/v1/bugs/live' && method === 'GET') {
@@ -608,7 +620,7 @@ const handler = async (req, res) => {
       const rules = similarRules(text, used, 8);
       return sendJson(res, 200, { success: true, data: {
         module_guess: guess, module_used: used, artifact_url: rules.artifact_url,
-        rules: rules.rules, bugs: BugStore.similar(text, used, 10)
+        rules: rules.rules, bugs: BugStore.similar(text, used, 10, ['new', 'old'].includes(body.age) ? body.age : '')
       } });
     }
 
@@ -620,7 +632,7 @@ const handler = async (req, res) => {
       const used = body.module || '';
       const guess = used ? '' : guessModule(text);
       const rules = similarRules(text, used, 8).rules;
-      const bugs = BugStore.similar(text, used, 10);
+      const bugs = BugStore.similar(text, used, 10, ['new', 'old'].includes(body.age) ? body.age : '');
       const tasks = await db.find('automation_tasks', t => t.status !== 'retired');
       const input = { text, moduleUsed: used, moduleGuess: guess, rules, bugs, tasks };
       let out;
@@ -742,6 +754,7 @@ const handler = async (req, res) => {
     if (pathname === '/' || pathname === '/index.html') {
       return serveStaticFile(res, path.join(WEB_DIR, 'index.html'), 'text/html');
     }
+    if (pathname === '/logo.svg' || pathname === '/favicon.ico') return serveStaticFile(res, path.join(WEB_DIR, 'logo.svg'), 'image/svg+xml');
     if (pathname.endsWith('.js')) {
       return serveStaticFile(res, path.join(WEB_DIR, pathname), 'application/javascript');
     }

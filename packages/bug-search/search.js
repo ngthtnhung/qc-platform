@@ -13,6 +13,8 @@ import { BusinessRuleStore } from '../../services/ai-service/business-rule-store
 const DB_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../database');
 const BUGS_FILE = path.join(DB_DIR, 'bugs.json');
 const NOTES_FILE = path.join(DB_DIR, 'bug_notes.json');
+// Người duyệt lấy tạm (khi server chưa có cookie Haraworks): {names: [...], map: {mãBug: chỉ số tên}}
+const ENRICH_FILE = path.join(DB_DIR, 'bugs-enrich.json');
 
 const fold = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase();
 // Từ quá phổ biến trong mô tả lỗi tiếng Việt, không giúp phân biệt
@@ -30,11 +32,14 @@ let cache = { mtime: 0, bugs: null, meta: null, df: null, tok: null, notes: new 
 
 function load() {
   const hasFile = fs.existsSync(BUGS_FILE);
-  const mtime = (hasFile ? fs.statSync(BUGS_FILE).mtimeMs : 0) + (fs.existsSync(NOTES_FILE) ? fs.statSync(NOTES_FILE).mtimeMs : 0) + liveRev;
+  const mtime = (hasFile ? fs.statSync(BUGS_FILE).mtimeMs : 0) + (fs.existsSync(NOTES_FILE) ? fs.statSync(NOTES_FILE).mtimeMs : 0) + (fs.existsSync(ENRICH_FILE) ? fs.statSync(ENRICH_FILE).mtimeMs : 0) + liveRev;
   if (cache.bugs && cache.mtime === mtime) return cache;
   const raw = hasFile ? JSON.parse(fs.readFileSync(BUGS_FILE, 'utf8')) : { bugs: [] };
   // Bug cũ + bug realtime lưu TÁCH nhau, trùng cũng không gộp (bug realtime có cờ live)
-  const bugs = [...(raw.bugs || []), ...liveBugs];
+  let enrich = null;
+  try { enrich = fs.existsSync(ENRICH_FILE) ? JSON.parse(fs.readFileSync(ENRICH_FILE, 'utf8')) : null; } catch { enrich = null; }
+  const live = enrich ? liveBugs.map(b => (!b.approver && enrich.map?.[b.id] != null && enrich.names?.[enrich.map[b.id]] ? { ...b, approver: enrich.names[enrich.map[b.id]] } : b)) : liveBugs;
+  const bugs = [...(raw.bugs || []), ...live];
   const tok = bugs.map(b => grams(tokens(b.t)));
   const df = new Map();
   tok.forEach(set => set.forEach(g => df.set(g, (df.get(g) || 0) + 1)));
@@ -42,7 +47,7 @@ function load() {
   if (fs.existsSync(NOTES_FILE)) JSON.parse(fs.readFileSync(NOTES_FILE, 'utf8')).forEach(n => notes.set(String(n.task_id || n.id), n));
   const { source, count, range, synced_at, revision } = raw;
   const dates = bugs.map(b => b.d).filter(Boolean).sort();
-  const liveInfo = liveBugs.length ? { live: true, live_count: liveBugs.length, live_at: liveAt } : { live: false };
+  const liveInfo = live.length ? { live: true, live_count: live.length, live_at: liveAt } : { live: false };
   return cache = { mtime, bugs, meta: { source, count: bugs.length || count, range: dates.length ? [dates[0], dates[dates.length - 1]] : range, synced_at: synced_at || null, revision: revision || 0, ...liveInfo }, df, tok, notes };
 }
 
@@ -61,6 +66,14 @@ export function moduleMembers(code) {
 
 /** Trạng thái đóng của bug realtime: 5 Hoàn thành, 11 Không thực hiện (suy ra từ tên trạng thái, cần QC xác nhận) */
 export const CLOSED_STATUS = new Set([5, 11]);
+
+/** Mốc "bug mới": tạo trong vòng N ngày gần đây (so chuỗi ngày dạng YYYY-MM-DD) */
+export const NEW_DAYS = 30;
+export function newCutoff(days = NEW_DAYS) {
+  const d = new Date(Date.now() - days * 86400000), p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+const ageOk = (b, age, cut) => (age !== 'new' && age !== 'old') || (age === 'new' ? String(b.d || '') >= cut : !!b.d && String(b.d) < cut);
 
 export const BugStore = {
   meta() { return load().meta; },
@@ -89,9 +102,9 @@ export const BugStore = {
   },
 
   /** Danh sách có lọc. q để trống: mới nhất trước; có q: xếp theo độ giống. */
-  list({ module, q = '', category = '', year = '', unknown = false, status = '', assignee = '', closed = '', offset = 0, limit = 50 } = {}) {
+  list({ module, q = '', category = '', year = '', unknown = false, status = '', assignee = '', approver = '', closed = '', age = '', offset = 0, limit = 50 } = {}) {
     const c = load();
-    const members = moduleMembers(module);
+    const members = moduleMembers(module), cut = newCutoff();
     const qg = grams(tokens(q));
     let items = [];
     for (let i = 0; i < c.bugs.length; i++) {
@@ -100,8 +113,10 @@ export const BugStore = {
       if (unknown && b.m) continue;
       if (category && (b.c || '(chưa phân loại)') !== category) continue;
       if (year && !String(b.d || '').startsWith(year)) continue;
+      if (!ageOk(b, age, cut)) continue;
       if (status !== '' && String(b.status) !== String(status)) continue;
       if (assignee && (b.assignee || '') !== assignee) continue;
+      if (approver === '__none__' ? (!b.live || b.approver) : (approver && (b.approver || '') !== approver)) continue;
       if (closed === 'open' && (!b.live || CLOSED_STATUS.has(b.status))) continue;
       if (closed === 'closed' && !(b.live && CLOSED_STATUS.has(b.status))) continue;
       let score = 0;
@@ -122,15 +137,15 @@ export const BugStore = {
     const c = load();
     const cat = {}, years = {}, mods = {};
     c.bugs.forEach(b => { const k = b.c || '(chưa phân loại)'; cat[k] = (cat[k] || 0) + 1; const y = String(b.d || '').slice(0, 4); if (y) years[y] = (years[y] || 0) + 1; const m = b.m || ''; mods[m] = (mods[m] || 0) + 1; });
-    const statuses = {}, assignees = {};
-    c.bugs.forEach(b => { if (!b.live) return; statuses[b.status] = (statuses[b.status] || 0) + 1; if (b.assignee) assignees[b.assignee] = (assignees[b.assignee] || 0) + 1; });
+    const statuses = {}, assignees = {}, approvers = {};
+    c.bugs.forEach(b => { if (!b.live) return; statuses[b.status] = (statuses[b.status] || 0) + 1; if (b.assignee) assignees[b.assignee] = (assignees[b.assignee] || 0) + 1; if (b.approver) approvers[b.approver] = (approvers[b.approver] || 0) + 1; });
     const unknown = c.bugs.filter(b => !b.m).length;
-    return { categories: cat, years, modules: mods, statuses, assignees, unknown };
+    return { categories: cat, years, modules: mods, statuses, assignees, approvers, unknown };
   },
 
   /** Bug cũ giống mô tả nhất */
-  similar(text, module = '', limit = 10) {
-    const c = load();
+  similar(text, module = '', limit = 10, age = '') {
+    const c = load(), cut = newCutoff();
     const qg = grams(tokens(text));
     if (!qg.size) return [];
     const members = moduleMembers(module);
@@ -141,6 +156,7 @@ export const BugStore = {
       for (const g of qg) if (c.tok[i].has(g)) score += idf(c.df, c.bugs.length, g) * (g.includes('_') ? 2 : 1);
       if (!score) continue;
       if (members && !members.has(b.m)) continue;
+      if (!ageOk(b, age, cut)) continue;
       out.push({ b, score });
     }
     out.sort((x, y) => y.score - x.score || String(y.b.d).localeCompare(String(x.b.d)));
@@ -150,8 +166,8 @@ export const BugStore = {
 
 function present(b, c, score) {
   const n = c.notes.get(String(b.id));
-  return { id: b.id, title: b.t, category: b.c || '', date: b.d, module: b.m || '', url: b.u, score: Math.round(score * 10) / 10,
-    ...(b.live ? { live: true, status: b.status, closed: CLOSED_STATUS.has(b.status), assignee: b.assignee || '', project: b.project || '', customer: b.customer || '', updated: b.updated || '' } : {}),
+  return { id: b.id, title: b.t, category: b.c || '', date: b.d, is_new: String(b.d || '') >= newCutoff(), module: b.m || '', url: b.u, score: Math.round(score * 10) / 10,
+    ...(b.live ? { live: true, status: b.status, closed: CLOSED_STATUS.has(b.status), assignee: b.assignee || '', approver: b.approver || '', project: b.project || '', customer: b.customer || '', updated: b.updated || '' } : {}),
     note: n ? { root_cause: n.root_cause || '', fix: n.fix || '', rule_ids: n.rule_ids || [], comments: n.comments || '' } : null };
 }
 

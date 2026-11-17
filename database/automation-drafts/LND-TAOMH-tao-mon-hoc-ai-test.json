@@ -55,7 +55,8 @@
       "key": "mo_ta",
       "label": "Mô tả môn học (tự thêm tiền tố [AI TEST])",
       "value": "Mô tả môn học thử",
-      "auto": true
+      "auto": true,
+      "type": "multiline"
     },
     {
       "key": "ten_bai",

@@ -17,7 +17,7 @@ import { startRealtime } from './realtime.js';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-function readCookie() {
+export function readCookie() {
   if (process.env.HARAWORKS_COOKIE?.trim()) return process.env.HARAWORKS_COOKIE.trim();
   try {
     const j = JSON.parse(fs.readFileSync(path.join(ROOT, 'secrets', 'haraworks.json'), 'utf8'));
@@ -57,6 +57,7 @@ export function toStoreBugs(rows, modules = []) {
       live: true,
       status: r.status,
       assignee: r.assignee || '',
+      approver: r.approver || '',
       project: r.projectName || '',
       customer: r.customerName || '',
       platform: r.platform || '',

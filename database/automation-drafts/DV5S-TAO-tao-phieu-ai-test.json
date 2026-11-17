@@ -32,7 +32,8 @@
       "key": "van_de",
       "label": "Nội dung vấn đề (tự thêm tiền tố [AI TEST])",
       "value": "Phiếu tự động",
-      "auto": true
+      "auto": true,
+      "type": "multiline"
     },
     {
       "key": "ngay_them",

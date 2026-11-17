@@ -52,7 +52,7 @@
       "label": "Nội dung thư (trống: bỏ qua)",
       "value": "Nội dung thư thử tự động.",
       "auto": true,
-      "type": "text",
+      "type": "multiline",
       "fallback": "first"
     },
     {
