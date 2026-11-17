@@ -29,7 +29,7 @@
     </aside>
     <div class="app-main">
       <header class="navbar topbar">
-        <div class="crumb"><button class="sb-toggle" id="sb-toggle" type="button" aria-label="Mở menu">☰</button><span class="crumb-root">QC Platform</span><span class="crumb-sep">/</span><span class="crumb-page" id="crumb-page">Tổng quan</span></div>
+        <div class="crumb"><button class="sb-toggle" id="sb-toggle" type="button" aria-label="Mở menu">☰</button><span class="crumb-root">QC Platform</span><span class="crumb-sep">/</span><span class="crumb-page" id="crumb-page">Tổng quan</span><span class="crumb-sep" id="crumb-sep2" style="display:none;">/</span><span class="crumb-sub" id="crumb-sub" style="display:none;"></span></div>
         <div class="top-right">
           <span class="srv-status" id="api-status-badge"><i class="srv-dot"></i><span>Server Online</span></span>
           <button class="help-btn" id="btn-theme" type="button" aria-label="Đổi giao diện"></button>
@@ -63,6 +63,7 @@
 
     <!-- TAB 5: TÁC VỤ TỰ ĐỘNG (Playwright, ghi lại khi khám phá module) -->
     <section class="tab-pane" id="pane-automation">
+      <div class="back-bar" id="at-backbar"><button type="button" class="back-link" id="at-backlink">← Quay lại danh sách tác vụ</button></div>
       <div class="page-head"><h1>Tác Vụ Tự Động</h1><p>Chọn tác vụ, chỉnh trường thông tin, chạy và xem kết quả.</p></div>
       <div class="stat-grid" id="at-stats"></div>
       <div class="filter-bar">

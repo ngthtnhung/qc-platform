@@ -101,6 +101,7 @@ function setupTabs() {
       const paneId = btn.getAttribute('data-tab');
       document.getElementById(paneId)?.classList.add('active');
       const crumb = document.getElementById('crumb-page'); if (crumb) crumb.textContent = btn.textContent.trim();
+      if (window.syncAtCrumb) window.syncAtCrumb(paneId);
       document.getElementById('sidebar')?.classList.remove('open');
     });
   });
@@ -557,36 +558,103 @@ window.closeModals = function() {
 
   // Bước mô tả: {{khóa}} thành ô nhập giá trị ngay trong câu (chữ, danh sách nhiều giá trị, hoặc chọn file)
   const fmtSize = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+  const hintOf = p => esc(p.label) + (p.type === 'list' ? ' (nhiều giá trị, cách nhau bằng dấu phẩy)' : '')
+    + (p.type === 'file' ? ' (bỏ trống thì bỏ qua)' : (p.auto ? (p.fallback === 'random' ? ' (trống hoặc không có thì chọn ngẫu nhiên)' : ' (trống hoặc không có thì chọn mục đầu tiên)') : ''));
+  const ML_KEYS = /^(noi_dung|mo_ta|van_de|ghi_chu|payload|du_lieu|test_data)$/;
+  const isMl = p => p.type === 'multiline' || (p.type !== 'file' && p.type !== 'list' && (ML_KEYS.test(p.key) || /\n/.test(p.value || '')));
+  const limitOf = p => p.type === 'multiline' ? 5000 : p.type === 'list' ? 1000 : 200;
+  const chipText = p => {
+    if (p.type === 'file') return String(p.value || '').split(',').filter(Boolean).map(nameOf).join(', ') || '(chưa chọn)';
+    const v = String(p.value || '').replace(/\s*\n\s*/g, ' ⏎ ');
+    return v ? (v.length > 40 ? v.slice(0, 40) + '…' : v) : '(trống)';
+  };
+  // Trong câu mô tả bước: chỉ hiện giá trị hiện tại (bấm để nhảy tới trường); sửa ở mục "Trường thông tin"
   function stepHtml(text, params) {
     return String(text).split(/\{\{([a-z][a-z0-9_]*)\}\}/g).map((seg, i) => {
       if (i % 2 === 0) return esc(seg);
       const p = params.find(x => x.key === seg);
       if (!p) return `<code>{{${esc(seg)}}}</code>`;
-      const hint = esc(p.label) + (p.type === 'list' ? ' (nhiều giá trị, cách nhau bằng dấu phẩy)' : '') + (p.type === 'file' ? ' (bỏ trống thì bỏ qua)' : p.auto ? (p.fallback === 'random' ? ' (trống hoặc không có thì chọn ngẫu nhiên)' : ' (trống hoặc không có thì chọn mục đầu tiên)') : '');
-      if (p.type === 'file') {
-        const names = String(p.value || '').split(',').filter(Boolean).map(nameOf).map(esc).join(', ');
-        return `<span class="step-file" data-key="${esc(p.key)}" data-fid="${esc(p.value)}" title="${hint}">
-          <button type="button" class="step-filebtn" style="background:none;border:0;padding:0;font:inherit;">Chọn file ▾</button>
-          <span class="step-fname">${names || '(chưa chọn, bỏ qua)'}</span>
-          <button type="button" class="linkbtn step-fclear" style="background:none;border:0;color:var(--danger);cursor:pointer;font-size:11px;${p.value ? '' : 'display:none;'}">xóa</button></span>`;
-      }
-      if (p.type === 'multiline') { const first = String(p.value || '').split('\n')[0].slice(0, 36); return `<button type="button" class="step-ml" data-key="${esc(p.key)}" title="${hint}">✎ ${esc(p.label.replace(/\s*\(.*$/, '') || p.key)}${first ? ': ' + esc(first) + '…' : ' (trống)'}</button>`; }
-      if (p.type === 'list') return `<input class="step-param" data-key="${esc(p.key)}" value="${esc(p.value)}" title="${hint}" style="width:${Math.max(24, String(p.value).length + 4)}ch;" placeholder="mã1, mã2, ...">`;
-      return `<input class="step-param" data-key="${esc(p.key)}" value="${esc(p.value)}" title="${hint}" style="width:${Math.max(7, String(p.value).length + 3)}ch;" placeholder="(trống)">`;
+      return `<a class="step-chip" href="#" data-key="${esc(p.key)}" title="${hintOf(p)}">${esc(chipText(p))}</a>`;
     }).join('');
+  }
+  function editorHtml(p) {
+    return `<div class="ed"><div class="ed-bar"><select class="ed-fmt" title="Định dạng để kiểm tra cú pháp"><option value="text">Văn bản</option><option value="json">JSON</option><option value="yaml">YAML</option><option value="xml">XML</option></select><span class="ed-keep">Giữ nguyên định dạng</span><span class="ed-spacer"></span><button type="button" class="ed-grow">Mở rộng</button><button type="button" class="ed-clear">Xóa</button></div>
+      <div class="ed-wrap"><pre class="ed-gutter">1</pre><textarea class="step-param ed-area" data-key="${esc(p.key)}" rows="8" spellcheck="false" wrap="off" placeholder="Nhập nội dung. Xuống dòng và khoảng trắng được giữ nguyên khi chạy.">${esc(p.value)}</textarea></div>
+      <div class="ed-status"><span class="ed-valid"></span><span class="ed-meta"></span><span class="ed-limit" data-limit="${limitOf(p)}"></span></div></div>`;
+  }
+  function fieldHtml(p) {
+    let ctl;
+    if (p.type === 'file') {
+      const names = String(p.value || '').split(',').filter(Boolean).map(nameOf).map(esc).join(', ');
+      ctl = `<span class="step-file" data-key="${esc(p.key)}" data-fid="${esc(p.value)}">
+        <button type="button" class="step-filebtn" style="background:none;border:0;padding:0;font:inherit;">Chọn file ▾</button>
+        <span class="step-fname">${names || '(chưa chọn, bỏ qua)'}</span>
+        <button type="button" class="linkbtn step-fclear" style="background:none;border:0;color:var(--danger);cursor:pointer;font-size:11px;${p.value ? '' : 'display:none;'}">xóa</button></span>`;
+    } else if (isMl(p)) ctl = editorHtml(p);
+    else ctl = `<div class="fld-row"><input class="step-param fld-input form-control" data-key="${esc(p.key)}" value="${esc(p.value)}" placeholder="${p.type === 'list' ? 'mã1, mã2, ...' : '(trống)'}">${p.type === 'list' ? '' : '<button type="button" class="btn btn-outline fld-ed" title="Soạn bằng editor nhiều dòng">✎ Editor</button>'}</div>`;
+    return `<div class="fld" data-key="${esc(p.key)}"><label class="fld-label">${esc(p.label)}</label>${ctl}<div class="fld-hint">${hintOf(p)}</div></div>`;
+  }
+  function wireEditor(ed) {
+    const ta = ed.querySelector('.ed-area'), gut = ed.querySelector('.ed-gutter'), fmt = ed.querySelector('.ed-fmt');
+    const valid = ed.querySelector('.ed-valid'), meta = ed.querySelector('.ed-meta'), lim = ed.querySelector('.ed-limit'), limit = +lim.dataset.limit;
+    const upd = () => {
+      const lines = ta.value ? ta.value.split('\n').length : 1;
+      gut.textContent = Array.from({ length: lines }, (_, i) => i + 1).join('\n');
+      meta.textContent = `${ta.value ? lines : 0} dòng · ${ta.value.length} ký tự · UTF-8`;
+      lim.textContent = `${ta.value.length}/${limit}`; lim.classList.toggle('over', ta.value.length > limit);
+      const f = fmt.value;
+      if (f === 'json') {
+        if (!ta.value.trim()) { valid.textContent = 'JSON: chưa có nội dung'; valid.className = 'ed-valid'; return; }
+        try { JSON.parse(ta.value); valid.textContent = 'JSON hợp lệ'; valid.className = 'ed-valid ok'; }
+        catch (e) { valid.textContent = 'JSON chưa hợp lệ: ' + String(e.message).slice(0, 60); valid.className = 'ed-valid bad'; }
+      } else { valid.textContent = f === 'text' ? 'Văn bản thuần' : f.toUpperCase() + ' (không kiểm tra cú pháp)'; valid.className = 'ed-valid'; }
+    };
+    ta.addEventListener('input', upd);
+    ta.addEventListener('scroll', () => { gut.scrollTop = ta.scrollTop; });
+    fmt.addEventListener('change', upd);
+    ed.querySelector('.ed-grow').onclick = e => { const big = ta.rows < 20; ta.rows = big ? 26 : 8; e.target.textContent = big ? 'Thu gọn' : 'Mở rộng'; };
+    ed.querySelector('.ed-clear').onclick = () => { ta.value = ''; ta.dispatchEvent(new Event('input', { bubbles: true })); ta.focus(); };
+    // Phím Tab chèn 2 khoảng trắng (giữ cấu trúc JSON, YAML) thay vì chuyển ô
+    ta.addEventListener('keydown', e => { if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); ta.setRangeText('  ', ta.selectionStart, ta.selectionEnd, 'end'); ta.dispatchEvent(new Event('input', { bubbles: true })); } });
+    upd();
+  }
+  function refreshChips(card, t) {
+    const vals = Object.fromEntries(collect(card));
+    card.querySelectorAll('.step-chip').forEach(c => { const p = (t.params || []).find(x => x.key === c.dataset.key); if (p) c.textContent = chipText({ ...p, value: vals[p.key] ?? p.value }); });
+  }
+  function wireFields(card, t) {
+    card.querySelectorAll('.ed').forEach(wireEditor);
+    card.addEventListener('input', () => refreshChips(card, t));
+    card.querySelectorAll('.step-chip').forEach(c => c.onclick = e => {
+      e.preventDefault(); e.stopPropagation();
+      const f = card.querySelector(`.fld[data-key="${c.dataset.key}"]`);
+      if (f) { f.scrollIntoView({ block: 'center' }); const ctl = f.querySelector('.step-param, .step-filebtn'); if (ctl) ctl.focus(); }
+    });
+    card.querySelectorAll('.fld-ed').forEach(b => b.onclick = () => {
+      const f = b.closest('.fld'), p = (t.params || []).find(x => x.key === f.dataset.key);
+      f.querySelector('.fld-row').outerHTML = editorHtml({ ...p, value: f.querySelector('.step-param').value });
+      wireEditor(f.querySelector('.ed')); f.querySelector('.ed-area').focus();
+    });
   }
 
   // Danh sách gọn; bấm một tác vụ để vào trang chi tiết (chỉnh trường, chạy, xem kết quả)
+  // Breadcrumb: Tác Vụ Tự Động / <tên tác vụ>; bấm "Tác Vụ Tự Động" để quay lại danh sách
+  window.syncAtCrumb = pane => {
+    const open = document.querySelector('#at-list .at-card.open'), on = pane === 'pane-automation' && !!open;
+    $('crumb-sep2').style.display = $('crumb-sub').style.display = on ? '' : 'none';
+    $('crumb-page').classList.toggle('link', on);
+    if (on) $('crumb-sub').textContent = open.querySelector('strong').textContent;
+  };
   function openTask(card) {
     document.querySelectorAll('#at-list .at-card').forEach(c => c.classList.toggle('open', c === card));
-    $('at-list').classList.add('at-detail');
+    $('at-list').classList.add('at-detail'); $('pane-automation').classList.add('detail-mode'); window.syncAtCrumb('pane-automation');
     $('at-lib') && ($('at-lib').style.display = 'none');
     card.scrollIntoView({ block: 'start' });
     try { sessionStorage.setItem('qa_open_task', card.dataset.id); } catch {}
   }
   function closeTask() {
     document.querySelectorAll('#at-list .at-card').forEach(c => c.classList.remove('open'));
-    $('at-list').classList.remove('at-detail');
+    $('at-list').classList.remove('at-detail'); $('pane-automation').classList.remove('detail-mode'); window.syncAtCrumb('pane-automation');
     $('at-lib') && ($('at-lib').style.display = '');
     try { sessionStorage.removeItem('qa_open_task'); } catch {}
   }
@@ -629,7 +697,7 @@ window.closeModals = function() {
             <span class="badge ${t.runnable ? 'badge-green' : 'badge-amber'}">${t.runnable ? 'Sẵn sàng chạy' : 'Chưa sẵn sàng'}</span>
             ${t.writes ? '<span class="badge badge-red">Tạo/sửa dữ liệu</span>' : '<span class="badge badge-blue">Chỉ đọc</span>'}</div>
           <div class="at-ctl" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-            <button class="btn btn-primary at-open">Mở chi tiết</button><button class="btn btn-outline at-back">← Danh sách</button>
+            <button class="btn btn-primary at-open">Mở chi tiết</button>
             <select class="form-control at-acc" style="width:auto;font-size:11.5px;"><option value="">Tự chọn tài khoản</option>${stagingAccounts.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}</select>
             ${t.runnable ? '<span style="display:inline-flex;gap:4px;align-items:center;font-size:11.5px;">Số lần <input type="number" class="form-control at-times" min="1" max="50" value="1" style="width:58px;padding:2px 6px;"> <label title="Dừng ngay khi một lần không đạt"><input type="checkbox" class="at-stop" checked> dừng khi lỗi</label></span><button class="btn btn-primary at-run">▶ Chạy tác vụ</button><button class="btn btn-outline at-halt" style="display:none;color:var(--danger);">Dừng</button>' : (canApprove() ? '<button class="btn btn-warning at-approve">Xem code & Duyệt</button>' : '<span class="badge badge-amber">Chờ người có quyền duyệt</span>')}
             <button class="btn btn-outline at-code">Xem code</button>
@@ -641,11 +709,13 @@ window.closeModals = function() {
           ${t.required_roles.length ? ` · Vai trò cần: <b>${esc(t.required_roles.join(', '))}</b>` : ''}
           ${t.rule_ids.length ? ` · Rule: ${esc(t.rule_ids.join(', '))}` : ''}</div>
         <div class="at-body">
-        <ol style="margin:6px 0 0 18px;font-size:11.5px;line-height:1.9;">${t.steps.map(s => `<li>${stepHtml(s, t.params || [])}</li>`).join('')}</ol>
-        ${(t.params || []).filter(p => p.type === 'multiline').map(p => `<div class="ml-block" data-for="${esc(p.key)}"><div class="ml-head"><b>${esc(p.label)}</b><span class="ml-count"></span></div><textarea class="step-param ml-area" data-key="${esc(p.key)}" rows="8" spellcheck="false" placeholder="Nhập nội dung. Giữ nguyên xuống dòng và khoảng trắng khi chạy.">${esc(p.value)}</textarea><div class="ml-tools"><button type="button" class="btn btn-outline ml-grow">Mở rộng</button><button type="button" class="btn btn-outline ml-clear">Xóa nội dung</button><span>Mỗi dòng sẽ được gõ như bấm Enter.</span></div></div>`).join('')}
-        ${(t.params || []).length ? `<div style="font-size:11px;color:var(--text-subtle);margin-top:4px;">Sửa giá trị trong ô để chạy với giá trị khác (chỉ lần chạy này).
-          ${canEdit() ? '<button class="linkbtn at-save-params" style="background:none;border:0;color:var(--primary);cursor:pointer;text-decoration:underline;font-size:11px;">Lưu làm mặc định</button>' : ''}
-          Không có trong danh mục của tài khoản thì chọn mục đầu tiên (xem ghi chú sau khi chạy).</div>` : ''}
+        <h3 class="at-sec"><i>01</i> Các bước</h3>
+        <ol style="margin:6px 0 0 18px;font-size:12px;line-height:1.9;">${t.steps.map(s => `<li>${stepHtml(s, t.params || [])}</li>`).join('')}</ol>
+        ${(t.params || []).length ? `<h3 class="at-sec"><i>02</i> Trường thông tin</h3>
+          <div class="fld-grid">${(t.params || []).map(fieldHtml).join('')}</div>
+          <div class="fld-note">Sửa giá trị để chạy với giá trị khác (chỉ lần chạy này).
+            ${canEdit() ? '<button class="linkbtn at-save-params" style="background:none;border:0;color:var(--primary);cursor:pointer;text-decoration:underline;font-size:11px;">Lưu làm mặc định</button>' : ''}
+            Không có trong danh mục của tài khoản thì chọn mục đầu tiên (xem ghi chú sau khi chạy).</div>` : ''}
         <pre class="at-codebox" style="display:none;background:var(--surface-alt);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:11px;overflow:auto;max-height:260px;margin-top:8px;">${esc(t.script)}</pre>
         <div class="at-result" style="font-size:11.5px;margin-top:6px;"></div>
         </div>
@@ -654,16 +724,8 @@ window.closeModals = function() {
       const t = tasks.find(x => x.id === card.dataset.id);
       const box = card.querySelector('.at-codebox');
       card.querySelector('.at-open').onclick = () => openTask(card);
-      card.querySelector('.at-back').onclick = () => closeTask();
       card.addEventListener('click', e => { if (!card.classList.contains('open') && !e.target.closest('button,select,input,a,label')) openTask(card); });
-      card.querySelectorAll('.step-ml').forEach(b => b.onclick = () => { const ta = card.querySelector(`.ml-area[data-key="${b.dataset.key}"]`); if (ta) { ta.scrollIntoView({ block: 'center' }); ta.focus(); } });
-      card.querySelectorAll('.ml-block').forEach(blk => {
-        const ta = blk.querySelector('.ml-area'), cnt = blk.querySelector('.ml-count');
-        const upd = () => { cnt.textContent = `${ta.value.length} ký tự · ${ta.value ? ta.value.split('\n').length : 0} dòng`; const chip = card.querySelector(`.step-ml[data-key="${blk.dataset.for}"]`); if (chip) { const f = ta.value.split('\n')[0].slice(0, 36); chip.textContent = `✎ ${(chip.textContent.replace(/^✎\s*/, '').split(':')[0].replace(/ \(trống\)$/, ''))}${f ? ': ' + f + '…' : ' (trống)'}`; } };
-        ta.addEventListener('input', upd); upd();
-        blk.querySelector('.ml-grow').onclick = e => { const big = ta.rows < 20; ta.rows = big ? 24 : 8; e.target.textContent = big ? 'Thu gọn' : 'Mở rộng'; };
-        blk.querySelector('.ml-clear').onclick = () => { ta.value = ''; upd(); ta.focus(); };
-      });
+      wireFields(card, t);
       card.querySelector('.at-code').onclick = () => { box.style.display = box.style.display === 'none' ? 'block' : 'none'; };
       const rt = card.querySelector('.at-retire');
       if (rt) rt.onclick = async () => {
@@ -704,6 +766,7 @@ window.closeModals = function() {
     box.dataset.fid = ids.join(',');
     box.querySelector('.step-fname').textContent = ids.map(nameOf).join(', ') || '(chưa chọn, bỏ qua)';
     box.querySelector('.step-fclear').style.display = ids.length ? '' : 'none';
+    box.closest('.at-card')?.dispatchEvent(new Event('input'));
   }
   function closePicker() { const o = document.getElementById('at-pop'); if (o) o.remove(); }
   document.addEventListener('click', e => { if (!e.target.closest('#at-pop')) closePicker(); });
@@ -859,6 +922,8 @@ window.closeModals = function() {
   document.addEventListener('DOMContentLoaded', () => {
     $('at-module').addEventListener('change', load);
     $('at-reload').addEventListener('click', load);
+    $('at-backlink').addEventListener('click', closeTask);
+    $('crumb-page').addEventListener('click', () => { if ($('pane-automation').classList.contains('detail-mode') && $('pane-automation').classList.contains('active')) closeTask(); });
     $('at-q').addEventListener('input', () => render());
     $('at-kind').addEventListener('change', () => render());
     { let opened = false; document.querySelector("[data-tab='pane-automation']").addEventListener('click', () => { if (!opened) { opened = true; load(); } }); } // đổi tab không nạp lại: giữ nguyên kết quả, chỉ nạp lại khi tải lại trang
