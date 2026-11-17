@@ -17,7 +17,7 @@ import { startRealtime } from './realtime.js';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-function readCookie() {
+export function readCookie() {
   if (process.env.HARAWORKS_COOKIE?.trim()) return process.env.HARAWORKS_COOKIE.trim();
   try {
     const j = JSON.parse(fs.readFileSync(path.join(ROOT, 'secrets', 'haraworks.json'), 'utf8'));

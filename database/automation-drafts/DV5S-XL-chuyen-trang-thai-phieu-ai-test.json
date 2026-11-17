@@ -38,7 +38,8 @@
       "key": "ghi_chu",
       "label": "Ghi chú hoặc lý do (tự thêm tiền tố [AI TEST])",
       "value": "Chuyển trạng thái thử",
-      "auto": true
+      "auto": true,
+      "type": "multiline"
     },
     {
       "key": "tep",

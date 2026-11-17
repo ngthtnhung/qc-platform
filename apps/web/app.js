@@ -47,10 +47,12 @@ async function ensureLogin() {
     return false;
   }
   me = (await res.json()).data;
-  const label = document.getElementById('current-user-label');
-  if (label) label.innerHTML = `Người dùng: <strong>${me.display_name}</strong>`;
+  const nameEl = document.getElementById('current-user-name');
+  if (nameEl) nameEl.textContent = me.display_name;
   const role = document.getElementById('current-user-role');
-  if (role) role.textContent = `Role: ${me.role}`;
+  if (role) role.textContent = me.role;
+  const av = document.getElementById('sb-avatar');
+  if (av) av.textContent = String(me.display_name || 'QC').split(/\s+/).map(w => w[0]).slice(-2).join('').toUpperCase();
   document.dispatchEvent(new Event('qa-me-ready'));
   return true;
 }
@@ -98,6 +100,8 @@ function setupTabs() {
       btn.classList.add('active');
       const paneId = btn.getAttribute('data-tab');
       document.getElementById(paneId)?.classList.add('active');
+      const crumb = document.getElementById('crumb-page'); if (crumb) crumb.textContent = btn.textContent.trim();
+      document.getElementById('sidebar')?.classList.remove('open');
     });
   });
 }
@@ -107,11 +111,10 @@ async function checkApiHealth() {
     const res = await fetch(`${API_BASE}/health`);
     const json = await res.json();
     if (json.status === 'HEALTHY') {
-      document.getElementById('api-status-badge').textContent = '🟢 API Connected (Port 3001)';
+      { const b = document.getElementById('api-status-badge'); b.className = 'srv-status'; b.lastElementChild.textContent = 'Server Online'; }
     }
   } catch {
-    document.getElementById('api-status-badge').textContent = '🔴 API Disconnected';
-    document.getElementById('api-status-badge').className = 'badge badge-red';
+    const b = document.getElementById('api-status-badge'); b.className = 'srv-status off'; b.lastElementChild.textContent = 'Mất kết nối server';
   }
 }
 
@@ -567,17 +570,33 @@ window.closeModals = function() {
           <span class="step-fname">${names || '(chưa chọn, bỏ qua)'}</span>
           <button type="button" class="linkbtn step-fclear" style="background:none;border:0;color:var(--danger);cursor:pointer;font-size:11px;${p.value ? '' : 'display:none;'}">xóa</button></span>`;
       }
+      if (p.type === 'multiline') { const first = String(p.value || '').split('\n')[0].slice(0, 36); return `<button type="button" class="step-ml" data-key="${esc(p.key)}" title="${hint}">✎ ${esc(p.label.replace(/\s*\(.*$/, '') || p.key)}${first ? ': ' + esc(first) + '…' : ' (trống)'}</button>`; }
       if (p.type === 'list') return `<input class="step-param" data-key="${esc(p.key)}" value="${esc(p.value)}" title="${hint}" style="width:${Math.max(24, String(p.value).length + 4)}ch;" placeholder="mã1, mã2, ...">`;
       return `<input class="step-param" data-key="${esc(p.key)}" value="${esc(p.value)}" title="${hint}" style="width:${Math.max(7, String(p.value).length + 3)}ch;" placeholder="(trống)">`;
     }).join('');
   }
 
+  // Danh sách gọn; bấm một tác vụ để vào trang chi tiết (chỉnh trường, chạy, xem kết quả)
+  function openTask(card) {
+    document.querySelectorAll('#at-list .at-card').forEach(c => c.classList.toggle('open', c === card));
+    $('at-list').classList.add('at-detail');
+    $('at-lib') && ($('at-lib').style.display = 'none');
+    card.scrollIntoView({ block: 'start' });
+    try { sessionStorage.setItem('qa_open_task', card.dataset.id); } catch {}
+  }
+  function closeTask() {
+    document.querySelectorAll('#at-list .at-card').forEach(c => c.classList.remove('open'));
+    $('at-list').classList.remove('at-detail');
+    $('at-lib') && ($('at-lib').style.display = '');
+    try { sessionStorage.removeItem('qa_open_task'); } catch {}
+  }
   let runningCount = 0;
   function render() {
     if (runningCount > 0) return; // đang chạy: không vẽ lại để khỏi mất kết quả đang hiển thị
-    const keep = {};
+    const keep = {}; const openId = document.querySelector('#at-list .at-card.open')?.dataset.id || '';
     document.querySelectorAll('#at-list [data-id]').forEach(c => { keep[c.dataset.id] = { res: c.querySelector('.at-result').innerHTML, vals: collect(c), acc: c.querySelector('.at-acc').value, times: (c.querySelector('.at-times') || {}).value, code: c.querySelector('.at-codebox').style.display }; });
     try { renderCards(); } finally {
+      if (openId) { const oc = document.querySelector(`#at-list .at-card[data-id="${openId}"]`); if (oc) openTask(oc); }
       document.querySelectorAll('#at-list [data-id]').forEach(c => {
         const k = keep[c.dataset.id]; if (!k) return;
         c.querySelector('.at-result').innerHTML = k.res;
@@ -590,13 +609,14 @@ window.closeModals = function() {
   function renderCards() {
     if (!tasks.length) { $('at-list').innerHTML = '<div style="padding:14px;color:var(--text-subtle);">Chưa có tác vụ. Tác vụ được ghi khi khám phá module (xem docs/operations/automation-tasks.md).</div>'; return; }
     $('at-list').innerHTML = tasks.map(t => `
-      <div class="card" style="padding:10px 14px;margin-bottom:8px;" data-id="${esc(t.id)}">
+      <div class="card at-card" style="padding:10px 14px;margin-bottom:8px;" data-id="${esc(t.id)}">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
           <div><strong>${esc(t.name)}</strong>
             <span class="badge badge-blue">${esc(t.module)}${t.flow ? ' · ' + esc(t.flow) : ''}</span>
             <span class="badge ${t.runnable ? 'badge-green' : 'badge-amber'}">${t.runnable ? 'Sẵn sàng chạy' : 'Chưa sẵn sàng'}</span>
             ${t.writes ? '<span class="badge badge-red">Tạo/sửa dữ liệu</span>' : '<span class="badge badge-blue">Chỉ đọc</span>'}</div>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <div class="at-ctl" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <button class="btn btn-primary at-open">Mở chi tiết</button><button class="btn btn-outline at-back">← Danh sách</button>
             <select class="form-control at-acc" style="width:auto;font-size:11.5px;"><option value="">Tự chọn tài khoản</option>${stagingAccounts.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}</select>
             ${t.runnable ? '<span style="display:inline-flex;gap:4px;align-items:center;font-size:11.5px;">Số lần <input type="number" class="form-control at-times" min="1" max="50" value="1" style="width:58px;padding:2px 6px;"> <label title="Dừng ngay khi một lần không đạt"><input type="checkbox" class="at-stop" checked> dừng khi lỗi</label></span><button class="btn btn-primary at-run">▶ Chạy tác vụ</button><button class="btn btn-outline at-halt" style="display:none;color:var(--danger);">Dừng</button>' : (canApprove() ? '<button class="btn btn-warning at-approve">Xem code & Duyệt</button>' : '<span class="badge badge-amber">Chờ người có quyền duyệt</span>')}
             <button class="btn btn-outline at-code">Xem code</button>
@@ -607,16 +627,30 @@ window.closeModals = function() {
         <div style="font-size:11.5px;color:var(--text-subtle);margin-top:4px;">${esc(t.description)}
           ${t.required_roles.length ? ` · Vai trò cần: <b>${esc(t.required_roles.join(', '))}</b>` : ''}
           ${t.rule_ids.length ? ` · Rule: ${esc(t.rule_ids.join(', '))}` : ''}</div>
+        <div class="at-body">
         <ol style="margin:6px 0 0 18px;font-size:11.5px;line-height:1.9;">${t.steps.map(s => `<li>${stepHtml(s, t.params || [])}</li>`).join('')}</ol>
+        ${(t.params || []).filter(p => p.type === 'multiline').map(p => `<div class="ml-block" data-for="${esc(p.key)}"><div class="ml-head"><b>${esc(p.label)}</b><span class="ml-count"></span></div><textarea class="step-param ml-area" data-key="${esc(p.key)}" rows="8" spellcheck="false" placeholder="Nhập nội dung. Giữ nguyên xuống dòng và khoảng trắng khi chạy.">${esc(p.value)}</textarea><div class="ml-tools"><button type="button" class="btn btn-outline ml-grow">Mở rộng</button><button type="button" class="btn btn-outline ml-clear">Xóa nội dung</button><span>Mỗi dòng sẽ được gõ như bấm Enter.</span></div></div>`).join('')}
         ${(t.params || []).length ? `<div style="font-size:11px;color:var(--text-subtle);margin-top:4px;">Sửa giá trị trong ô để chạy với giá trị khác (chỉ lần chạy này).
           ${canEdit() ? '<button class="linkbtn at-save-params" style="background:none;border:0;color:var(--primary);cursor:pointer;text-decoration:underline;font-size:11px;">Lưu làm mặc định</button>' : ''}
           Không có trong danh mục của tài khoản thì chọn mục đầu tiên (xem ghi chú sau khi chạy).</div>` : ''}
         <pre class="at-codebox" style="display:none;background:var(--surface-alt);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:11px;overflow:auto;max-height:260px;margin-top:8px;">${esc(t.script)}</pre>
         <div class="at-result" style="font-size:11.5px;margin-top:6px;"></div>
+        </div>
       </div>`).join('');
     document.querySelectorAll('#at-list [data-id]').forEach(card => {
       const t = tasks.find(x => x.id === card.dataset.id);
       const box = card.querySelector('.at-codebox');
+      card.querySelector('.at-open').onclick = () => openTask(card);
+      card.querySelector('.at-back').onclick = () => closeTask();
+      card.addEventListener('click', e => { if (!card.classList.contains('open') && !e.target.closest('button,select,input,a,label')) openTask(card); });
+      card.querySelectorAll('.step-ml').forEach(b => b.onclick = () => { const ta = card.querySelector(`.ml-area[data-key="${b.dataset.key}"]`); if (ta) { ta.scrollIntoView({ block: 'center' }); ta.focus(); } });
+      card.querySelectorAll('.ml-block').forEach(blk => {
+        const ta = blk.querySelector('.ml-area'), cnt = blk.querySelector('.ml-count');
+        const upd = () => { cnt.textContent = `${ta.value.length} ký tự · ${ta.value ? ta.value.split('\n').length : 0} dòng`; const chip = card.querySelector(`.step-ml[data-key="${blk.dataset.for}"]`); if (chip) { const f = ta.value.split('\n')[0].slice(0, 36); chip.textContent = `✎ ${(chip.textContent.replace(/^✎\s*/, '').split(':')[0].replace(/ \(trống\)$/, ''))}${f ? ': ' + f + '…' : ' (trống)'}`; } };
+        ta.addEventListener('input', upd); upd();
+        blk.querySelector('.ml-grow').onclick = e => { const big = ta.rows < 20; ta.rows = big ? 24 : 8; e.target.textContent = big ? 'Thu gọn' : 'Mở rộng'; };
+        blk.querySelector('.ml-clear').onclick = () => { ta.value = ''; upd(); ta.focus(); };
+      });
       card.querySelector('.at-code').onclick = () => { box.style.display = box.style.display === 'none' ? 'block' : 'none'; };
       const rt = card.querySelector('.at-retire');
       if (rt) rt.onclick = async () => {
@@ -769,9 +803,9 @@ window.closeModals = function() {
   const paramRow = (p = {}) => `<tr class="tp-row">
     <td><input class="form-control tp-key" value="${esc(p.key || '')}" placeholder="khoa_thamso" style="width:110px;"></td>
     <td><input class="form-control tp-label" value="${esc(p.label || '')}" placeholder="Tên hiển thị"></td>
-    <td><input class="form-control tp-value" value="${esc(p.value || '')}" placeholder="Giá trị mặc định"></td>
+    <td><textarea class="form-control tp-value" rows="1" style="resize:vertical;min-height:30px;" placeholder="Giá trị mặc định">${esc(p.value || '')}</textarea></td>
     <td><select class="form-control tp-type" title="Chữ: một giá trị. Danh sách: nhiều giá trị cách nhau bằng dấu phẩy. File: chọn file để đính kèm.">
-      <option value="text" ${(p.type || 'text') === 'text' ? 'selected' : ''}>Chữ</option><option value="list" ${p.type === 'list' ? 'selected' : ''}>Danh sách</option><option value="file" ${p.type === 'file' ? 'selected' : ''}>File</option></select></td>
+      <option value="text" ${(p.type || 'text') === 'text' ? 'selected' : ''}>Chữ</option><option value="multiline" ${p.type === 'multiline' ? 'selected' : ''}>Nhiều dòng</option><option value="list" ${p.type === 'list' ? 'selected' : ''}>Danh sách</option><option value="file" ${p.type === 'file' ? 'selected' : ''}>File</option></select></td>
     <td><select class="form-control tp-auto" title="Khi để trống hoặc không có trong danh mục của tài khoản">
       <option value="skip" ${p.auto === false ? 'selected' : ''}>Báo lỗi nếu không có</option><option value="first" ${p.auto !== false && p.fallback !== 'random' ? 'selected' : ''}>Chọn mục đầu tiên</option><option value="random" ${p.auto !== false && p.fallback === 'random' ? 'selected' : ''}>Chọn ngẫu nhiên</option></select></td>
     <td><button type="button" class="linkbtn tp-del" style="background:none;border:0;color:var(--danger);cursor:pointer;">Xóa</button></td></tr>`;
@@ -994,13 +1028,43 @@ window.closeModals = function() {
       ${row('Ngày tạo', esc((b.date || '').slice(0, 16) || '-'))}
       ${live ? row('Trạng thái', esc(bhStatusLabel(b.status))) : row('Trạng thái', '<i>bản lưu cũ, không có trạng thái</i>')}
       ${live ? row('Người thực hiện', esc(b.assignee || '-')) : ''}
-      ${live ? row('Người duyệt', na) : ''}
-      ${live ? row('Bình luận', na) : ''}
       ${live ? row('Dự án', esc(b.project || '-')) : ''}
       ${live ? row('Cập nhật lần cuối', esc((b.updated || '').slice(0, 16) || '-')) : ''}
       ${note}
-      <p style="margin-top:12px;"><a href="${esc(safeUrl(b.url))}" target="_blank" rel="noopener">Mở bug trên Haraworks ↗</a></p>`;
+      <p style="margin-top:12px;"><a href="${esc(safeUrl(b.url))}" target="_blank" rel="noopener">Mở bug trên Haraworks ↗</a></p>
+      <div id="bh-detail" style="margin-top:10px;color:var(--text-subtle);">Đang tải chi tiết từ Haraworks...</div>`;
     $('bh-drawer').classList.add('open');
+    loadBhDetail(b.id);
+  }
+
+  // Chi tiết đầy đủ lấy từ Haraworks (mô tả, người, lịch sử, bình luận); cần cookie Haraworks trên server
+  const vnTime = iso => { if (!iso) return '-'; const d = new Date(iso); return isNaN(d) ? esc(iso) : d.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }); };
+  const LOG_TYPE = { 1: 'Tạo công việc', 12: 'Thay đổi dự án' };
+  const names = a => a.length ? a.map(p => esc(p.name)).join(', ') : '-';
+  async function loadBhDetail(id) {
+    const box = $('bh-detail'); if (!box) return;
+    try {
+      const res = await fetch(`${API_BASE}/bugs/${encodeURIComponent(id)}/detail`);
+      let j = null; try { j = await res.json(); } catch {}
+      if ($('bh-detail') !== box) return; // đã mở bug khác
+      if (!res.ok) { box.innerHTML = `<div class="alert-box alert-amber" style="font-size:12px;">${esc(j?.error?.message || ('Không lấy được chi tiết (lỗi ' + res.status + ')'))}</div>`; return; }
+      const d = j.data, row = (k, v) => `<div class="bh-row"><span>${k}</span><b style="text-align:right;">${v}</b></div>`;
+      const att = a => a.length ? a.map(f => f.url ? `<a href="${esc(safeUrl(f.url))}" target="_blank" rel="noopener">${esc(f.name || 'tệp')}</a>` : esc(f.name)).join(', ') : '-';
+      const logs = d.logs.slice().sort((x, y) => String(y.at).localeCompare(String(x.at))).map(l => `<li><b>${esc(l.by || '-')}</b>: ${esc(LOG_TYPE[l.type] || ('Thay đổi (mã ' + l.type + ')'))}${l.info.Project ? ': ' + esc(l.info.Project) : ''}${l.reason ? ' · ' + esc(l.reason) : ''}<br><span style="color:var(--text-muted);">${vnTime(l.at)}</span></li>`).join('');
+      const cm = d.comments.items.map(c => `<div class="bh-comment"><b>${esc(c.by || '-')}</b> <span style="color:var(--text-muted);font-size:11px;">${vnTime(c.at)}</span>
+        <div style="white-space:pre-wrap;">${esc(c.text)}</div>${c.attachments.length ? `<div style="font-size:11.5px;">Đính kèm: ${att(c.attachments)}</div>` : ''}
+        ${c.replies.map(r => `<div class="bh-reply"><b>${esc(r.by || '-')}</b> <span style="color:var(--text-muted);font-size:11px;">${vnTime(r.at)}</span><div style="white-space:pre-wrap;">${esc(r.text)}</div></div>`).join('')}</div>`).join('');
+      box.style.color = '';
+      box.innerHTML = `<h4 style="margin:6px 0;">Chi tiết từ Haraworks</h4>
+        ${d.status != null ? row('Trạng thái (Haraworks)', esc(bhStatusLabel(d.status))) : ''}
+        ${d.code ? row('Mã', esc(d.code)) : ''}${row('Người tạo', esc(d.created_by?.name || '-'))}${row('Người thực hiện', d.assignee ? esc(d.assignee.name) + (d.assignee.dept ? ' · ' + esc(d.assignee.dept) : '') : '-')}
+        ${row('Chủ sở hữu', esc(d.owner?.name || '-'))}${d.supporters.length ? row('Người hỗ trợ', names(d.supporters)) : ''}${row('Người theo dõi (' + d.followers.length + ')', names(d.followers))}
+        ${row('Hạn thực hiện', vnTime(d.plan_end_at))}${row('Ưu tiên (mã)', d.priority ?? '-')}${row('Cập nhật gần nhất', vnTime(d.updated_at) + (d.updated_by?.name ? ' · ' + esc(d.updated_by.name) : ''))}
+        ${d.project ? row('Dự án', esc(d.project)) : ''}${row('File đính kèm', att(d.attachments))}
+        ${d.description ? `<h4 style="margin:10px 0 4px;">Mô tả</h4><div style="white-space:pre-wrap;font-size:12px;">${esc(d.description)}</div>` : ''}
+        <h4 style="margin:10px 0 4px;">Lịch sử cập nhật (${d.logs.length})</h4>${logs ? `<ul class="bh-logs">${logs}</ul>` : '<div style="color:var(--text-muted);">Không có.</div>'}
+        <h4 style="margin:10px 0 4px;">Bình luận (${d.comments.total})</h4>${cm || '<div style="color:var(--text-muted);">Chưa có bình luận.</div>'}`;
+    } catch (e) { if ($('bh-detail') === box) box.textContent = 'Không lấy được chi tiết: ' + e.message; }
   }
   function closeBh() { $('bh-drawer').classList.remove('open'); }
 
@@ -1303,6 +1367,7 @@ window.closeModals = function() {
   function applyVisibility() {
     const show = me && me.auth_required && me.role === 'admin';
     $('tab-users-btn').style.display = show ? '' : 'none';
+    const adm = document.getElementById('sb-admin-label'); if (adm) adm.style.display = show ? '' : 'none';
     if (show) load();
   }
 
@@ -1347,4 +1412,32 @@ window.closeModals = function() {
     $('btn-help').addEventListener('click', () => { show('overview'); document.getElementById('modal-help').classList.add('open'); });
     $('help-tabs').addEventListener('click', e => { const b = e.target.closest('button[data-help]'); if (b) show(b.dataset.help); });
   });
+})();
+
+
+// -----------------------------------------------------------
+// Tổng quan: số liệu thật từ các API sẵn có, lối tắt sang các trang
+// -----------------------------------------------------------
+(function setupOverview() {
+  const $ = id => document.getElementById(id);
+  const open = pane => document.querySelector(`[data-tab='${pane}']`)?.click();
+  document.addEventListener('DOMContentLoaded', () => {
+    $('sb-toggle')?.addEventListener('click', () => $('sidebar').classList.toggle('open'));
+    document.querySelectorAll('.quick[data-go]').forEach(b => b.addEventListener('click', () => open(b.dataset.go)));
+  });
+  const get = async p => { try { const r = await fetch(`${API_BASE}${p}`); return r.ok ? (await r.json()).data : null; } catch { return null; } };
+  async function load() {
+    const hour = new Date().getHours();
+    const hello = hour < 11 ? 'Chào buổi sáng' : hour < 18 ? 'Chào buổi chiều' : 'Chào buổi tối';
+    $('ov-greeting').textContent = `${hello}, ${me?.display_name || 'bạn'}`;
+    const [bugs, rules, tasks, accounts, live] = await Promise.all([get('/bugs/meta'), get('/business-rules/meta'), get('/automation/tasks'), get('/accounts'), get('/bugs/live')]);
+    if (bugs) { $('ov-bugs').textContent = bugs.count; const f = bugs.facets || {}; $('ov-bugs-sub').textContent = f.unknown != null ? `${f.unknown} chưa rõ module` : ''; }
+    if (rules) { $('ov-rules').textContent = rules.count; $('ov-rules-sub').textContent = rules.synced_at ? `Bản ${rules.revision}` : 'Chưa đồng bộ'; }
+    if (tasks) { $('ov-tasks').textContent = tasks.length; $('ov-tasks-sub').textContent = `${tasks.filter(t => t.runnable).length} sẵn sàng chạy`; }
+    if (accounts) { $('ov-accounts').textContent = accounts.length; }
+    const row = (k, v) => `<div class="status-row"><span>${k}</span><b>${v}</b></div>`;
+    const rt = live ? (!live.enabled ? 'Chưa có cookie Haraworks' : live.error ? 'Lỗi hoặc cookie hết hạn' : 'Đang cập nhật') : 'Không rõ';
+    $('ov-status').innerHTML = row('Server', 'Online') + row('Bug realtime từ Haraworks', rt) + row('Dữ liệu bug', bugs ? bugs.count + ' bug' : '-');
+  }
+  document.addEventListener('qa-me-ready', load);
 })();

@@ -8,35 +8,62 @@
 </head>
 <body>
 
-  <!-- Top Navigation Bar -->
-  <header class="navbar">
-    <div class="brand-group">
-      <span class="brand-title">Internal AI QA Platform</span>
-      <span class="badge badge-green" id="api-status-badge">🟢 API Connected (Port 3001)</span>
-    </div>
-    <div style="display:flex;align-items:center;gap:10px;">
-      <button class="help-btn" id="btn-theme" type="button" aria-label="Đổi giao diện"></button>
-      <button class="help-btn" id="btn-help" type="button" title="Hướng dẫn cài đặt và sử dụng" aria-label="Hướng dẫn">?</button>
-      <span id="current-user-label" style="font-size:12px;color:var(--text-subtle);">Người dùng: <strong>QC Tester (Me)</strong></span>
-      <span class="badge badge-blue" id="current-user-role">Role: QC Lead</span>
-    </div>
-  </header>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sb-brand"><span class="sb-logo">QC</span><span class="sb-name">QC Platform</span></div>
+      <nav class="tabs-header">
+        <div class="sb-label">KHÔNG GIAN LÀM VIỆC</div>
+        <button class="tab-button active" data-tab="pane-overview">Tổng quan</button>
+        <button class="tab-button" data-tab="pane-accounts">Tài Khoản &amp; Môi Trường</button>
+        <button class="tab-button" data-tab="pane-bug-analysis">Phân Tích Bug</button>
+        <button class="tab-button" data-tab="pane-bug-history">Tra Cứu Bug</button>
+        <button class="tab-button" data-tab="pane-business-rules">Kho Business Rule</button>
+        <button class="tab-button" data-tab="pane-automation">Tác Vụ Tự Động</button>
+        <div class="sb-label" id="sb-admin-label" style="display:none;">QUẢN TRỊ</div>
+        <button class="tab-button" data-tab="pane-users" id="tab-users-btn" style="display:none;">Phân Quyền</button>
+      </nav>
+      <div class="sb-user">
+        <span class="sb-avatar" id="sb-avatar">QC</span>
+        <span class="sb-user-text"><strong id="current-user-name">QC Tester</strong><span id="current-user-role" class="sb-role">QC Lead</span></span>
+      </div>
+    </aside>
+    <div class="app-main">
+      <header class="navbar topbar">
+        <div class="crumb"><button class="sb-toggle" id="sb-toggle" type="button" aria-label="Mở menu">☰</button><span class="crumb-root">QC Platform</span><span class="crumb-sep">/</span><span class="crumb-page" id="crumb-page">Tổng quan</span></div>
+        <div class="top-right">
+          <span class="srv-status" id="api-status-badge"><i class="srv-dot"></i><span>Server Online</span></span>
+          <button class="help-btn" id="btn-theme" type="button" aria-label="Đổi giao diện"></button>
+          <button class="help-btn" id="btn-help" type="button" title="Hướng dẫn cài đặt và sử dụng" aria-label="Hướng dẫn">?</button>
+          <span id="current-user-label" class="top-user"></span>
+        </div>
+      </header>
+      <main class="container">
 
-  <!-- Main Container -->
-  <main class="container">
-
-    <!-- Navigation Tabs -->
-    <nav class="tabs-header">
-      <button class="tab-button active" data-tab="pane-accounts">1. Tài Khoản & Môi Trường</button>
-      <button class="tab-button" data-tab="pane-bug-analysis">2. Phân Tích Bug</button>
-      <button class="tab-button" data-tab="pane-bug-history">3. Tra cứu bug</button>
-      <button class="tab-button" data-tab="pane-business-rules">4. Kho Business Rule</button>
-      <button class="tab-button" data-tab="pane-automation">5. Tác Vụ Tự Động</button>
-      <button class="tab-button" data-tab="pane-users" id="tab-users-btn" style="display:none;">6. Phân Quyền</button>
-    </nav>
+    <!-- TỔNG QUAN -->
+    <section class="tab-pane active" id="pane-overview">
+      <div class="page-head"><h1 id="ov-greeting">Tổng quan</h1><p>Tình hình dữ liệu và hoạt động của nền tảng QC hôm nay.</p></div>
+      <div class="stat-grid">
+        <div class="stat-card"><span>Bug đã lưu</span><b id="ov-bugs">-</b><small id="ov-bugs-sub"></small></div>
+        <div class="stat-card"><span>Business rule</span><b id="ov-rules">-</b><small id="ov-rules-sub"></small></div>
+        <div class="stat-card"><span>Tác vụ tự động</span><b id="ov-tasks">-</b><small id="ov-tasks-sub"></small></div>
+        <div class="stat-card"><span>Tài khoản test</span><b id="ov-accounts">-</b><small id="ov-accounts-sub"></small></div>
+      </div>
+      <div class="ov-grid">
+        <div class="card"><div class="card-header"><span class="card-title">Truy cập nhanh</span></div>
+          <div class="quick-list">
+            <button class="quick" data-go="pane-bug-analysis"><b>Phân tích bug mới</b><span>Tìm rule và bug cũ liên quan, gợi ý nguyên nhân</span></button>
+            <button class="quick" data-go="pane-bug-history"><b>Tra cứu bug</b><span>Lọc theo module, trạng thái, người thực hiện</span></button>
+            <button class="quick" data-go="pane-automation"><b>Chạy tác vụ tự động</b><span>Chọn tác vụ, chỉnh trường thông tin rồi chạy</span></button>
+            <button class="quick" data-go="pane-business-rules"><b>Kho Business Rule</b><span>Xem, thêm, sửa rule; cập nhật từ kho</span></button>
+          </div></div>
+        <div class="card"><div class="card-header"><span class="card-title">Trạng thái hệ thống</span></div>
+          <div id="ov-status" class="quick-list"></div></div>
+      </div>
+    </section>
 
     <!-- TAB 5: TÁC VỤ TỰ ĐỘNG (Playwright, ghi lại khi khám phá module) -->
     <section class="tab-pane" id="pane-automation">
+      <div class="page-head"><h1>Tác Vụ Tự Động</h1><p>Chọn tác vụ, chỉnh trường thông tin, chạy và xem kết quả.</p></div>
       <div class="card">
         <div class="card-header">
           <span class="card-title">Tác vụ có thể tự động hóa (ghi lại khi khám phá module)</span>
@@ -59,6 +86,7 @@
 
     <!-- TAB 4: KHO BUSINESS RULE -->
     <section class="tab-pane" id="pane-business-rules">
+      <div class="page-head"><h1>Kho Business Rule</h1><p>Rule nghiệp vụ đã trích xuất kèm trạng thái xác nhận.</p></div>
       <div class="card">
         <div class="card-header">
           <span class="card-title">Kho Business Rule Haraworks</span>
@@ -84,7 +112,8 @@
     <!-- ======================================================== -->
     <!-- TAB 1: TÀI KHOẢN & MÔI TRƯỜNG                           -->
     <!-- ======================================================== -->
-    <section class="tab-pane active" id="pane-accounts">
+    <section class="tab-pane" id="pane-accounts">
+      <div class="page-head"><h1>Tài Khoản &amp; Môi Trường</h1><p>Tài khoản test và môi trường; bấm để mở và tự đăng nhập.</p></div>
       <div class="card">
         <div class="card-header">
           <span class="card-title">Cấu Hình Môi Trường & Cổng Kiểm Tra Org Test (Org Confirmation Gate)</span>
@@ -125,6 +154,7 @@
     <!-- TAB 2: PHÂN TÍCH BUG                                     -->
     <!-- ======================================================== -->
     <section class="tab-pane" id="pane-bug-analysis">
+      <div class="page-head"><h1>Phân Tích Bug</h1><p>Mô tả bug, hệ thống tìm rule và bug cũ liên quan rồi gợi ý nguyên nhân.</p></div>
       <div class="card">
         <div class="card-header">
           <span class="card-title">Phân Tích Bug: tự tìm rule và bug cũ liên quan</span>
@@ -175,6 +205,7 @@
     <!-- TAB 3: BUG CŨ (từ Kho Business Rule)                      -->
     <!-- ======================================================== -->
     <section class="tab-pane" id="pane-bug-history">
+      <div class="page-head"><h1>Tra Cứu Bug</h1><p>Tìm kiếm và xem lịch sử bug trên toàn bộ hệ thống.</p></div>
       <div class="card">
         <div class="card-header">
           <span class="card-title">Tra cứu bug</span>
@@ -205,6 +236,7 @@
 
 <!-- ===== TAB 6: PHÂN QUYỀN (chỉ quản trị viên) ===== -->
     <section class="tab-pane" id="pane-users">
+      <div class="page-head"><h1>Phân Quyền</h1><p>Quản lý người dùng và quyền truy cập.</p></div>
       <div class="card">
         <div class="card-header">
           <span class="card-title">Phân quyền người dùng</span>
@@ -220,6 +252,8 @@
     </section>
 
   </main>
+    </div>
+  </div>
 
   <!-- ======================================================== -->
   <!-- MODALS                                                   -->

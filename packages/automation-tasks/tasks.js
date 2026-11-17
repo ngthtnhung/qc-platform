@@ -11,7 +11,7 @@ import crypto from 'node:crypto';
  * Code đọc qua ctx.params.<key>. auto = true: không tìm thấy giá trị thì chọn lựa chọn đầu tiên thay vì báo lỗi.
  * Đổi tham số không làm mất duyệt, vì code không đổi; giá trị chỉ là chữ đưa vào code đã duyệt.
  */
-export const MAX_LEN = { text: 200, list: 1000, file: 400 };
+export const MAX_LEN = { text: 200, multiline: 5000, list: 1000, file: 400 };
 export const FILE_ID = /^f_[a-z0-9]{8,24}$/;
 
 export function normalizeParams(input) {
@@ -21,7 +21,7 @@ export function normalizeParams(input) {
     if (!/^[a-z][a-z0-9_]{0,30}$/.test(key)) { errors.push(`Khóa tham số "${key}" không hợp lệ (chữ thường, số, gạch dưới, tối đa 31 ký tự)`); continue; }
     if (seen.has(key)) { errors.push(`Trùng khóa tham số "${key}"`); continue; }
     seen.add(key);
-    const type = ['text', 'list', 'file'].includes(p.type) ? p.type : 'text';
+    const type = ['text', 'multiline', 'list', 'file'].includes(p.type) ? p.type : 'text';
     const value = String(p.value ?? '');
     if (value.length > MAX_LEN[type]) { errors.push(`Giá trị của "${key}" tối đa ${MAX_LEN[type]} ký tự`); continue; }
     if (type === 'file' && value && !value.split(',').every(v => FILE_ID.test(v.trim()))) { errors.push(`Giá trị của "${key}" phải là mã file đã tải lên`); continue; }

@@ -24,6 +24,7 @@ import { buildBundle } from '../../packages/kb-sync/bundle.js';
 import { analyzeLocal, analyzeAI } from '../../packages/bug-search/analysis.js';
 import { BusinessRuleStore } from '../ai-service/business-rule-store.js';
 import { startBugLive } from '../../packages/haraworks-live/index.js';
+import { getBugDetail } from '../../packages/haraworks-live/detail.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -575,6 +576,17 @@ const handler = async (req, res) => {
         status: q.get('status') || '', assignee: q.get('assignee') || '', closed: q.get('closed') || '',
         unknown: q.get('unknown') === '1', offset: Math.max(0, +q.get('offset') || 0), limit: Math.min(200, +q.get('limit') || 50)
       }) });
+    }
+    // Chi tiết một bug (mô tả, người, lịch sử, bình luận) lấy trực tiếp từ Haraworks bằng cookie phiên trên server
+    {
+      const dm = /^\/api\/v1\/bugs\/([0-9a-f]{24})\/detail$/.exec(pathname);
+      if (dm && method === 'GET') {
+        try { return sendJson(res, 200, { success: true, data: await getBugDetail(dm[1]) }); }
+        catch (e) {
+          const code = e.code || 'ERROR';
+          return sendJson(res, code === 'NO_COOKIE' || code === 'AUTH' ? 503 : code === 'NOT_FOUND' ? 404 : 502, { success: false, error: { code, message: e.message } });
+        }
+      }
     }
     // Bug realtime từ Haraworks: trạng thái nguồn + số bản (giao diện hỏi nhẹ để biết có đổi không)
     if (pathname === '/api/v1/bugs/live' && method === 'GET') {
