@@ -896,7 +896,30 @@ window.closeModals = function() {
     $('te-params').innerHTML = (t.params || []).map(paramRow).join('');
     $('te-script').value = t.script;
     $('te-msg').textContent = '';
+    $('te-ai-error').value = '';
+    $('te-ai-msg').textContent = '';
+    $('te-ai-msg').className = '';
     document.getElementById('modal-task').classList.add('open');
+  }
+
+  async function requestCodeFix() {
+    const error = $('te-ai-error').value.trim(), button = $('te-ai-fix'), message = $('te-ai-msg');
+    if (!editing) return;
+    if (!error) { message.textContent = 'Hãy dán lỗi của lần chạy trước.'; message.className = 'error'; return; }
+    const taskId = editing.id;
+    button.disabled = true;
+    message.textContent = 'AI đang phân tích lỗi và đề xuất code...';
+    message.className = '';
+    try {
+      const result = await call('POST', `/automation/tasks/${encodeURIComponent(taskId)}/repair`, { error });
+      if (!editing || editing.id !== taskId) return;
+      $('te-script').value = result.script;
+      message.textContent = `${result.engine_note || 'Đã có đề xuất sửa.'} Code đã được điền vào ô soạn thảo.`;
+      message.className = 'success';
+    } catch (e) {
+      message.textContent = e.message;
+      message.className = 'error';
+    } finally { button.disabled = false; }
   }
 
   async function saveEdit() {
@@ -929,6 +952,7 @@ window.closeModals = function() {
     { let opened = false; document.querySelector("[data-tab='pane-automation']").addEventListener('click', () => { if (!opened) { opened = true; load(); } }); } // đổi tab không nạp lại: giữ nguyên kết quả, chỉ nạp lại khi tải lại trang
     $('te-add-param').addEventListener('click', () => $('te-params').insertAdjacentHTML('beforeend', paramRow({ auto: true })));
     $('te-params').addEventListener('click', e => { if (e.target.closest('.tp-del')) e.target.closest('.tp-row').remove(); });
+    $('te-ai-fix').addEventListener('click', requestCodeFix);
     $('te-save').addEventListener('click', saveEdit);
   });
 })();
@@ -1021,17 +1045,24 @@ window.closeModals = function() {
     const my = ++aiSeq;
     $('ba-ai-body').innerHTML = '<span style="color:var(--text-subtle);">Đang phân tích...</span>';
     try {
-      const res = await fetch(`${API_BASE}/bug-analysis`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, module: $('bug-module-select').value, age: $('ba-age').value }) });
+      const res = await fetch(`${API_BASE}/bug-analysis`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, module: $('bug-module-select').value, age: $('ba-age').value, platform: $('bug-platform-select').value }) });
       let j = null; try { j = await res.json(); } catch {}
       if (my !== aiSeq) return;
       if (!res.ok) throw new Error(j?.error?.message || (res.status === 404 ? 'Server chưa chạy bản mới, hãy khởi động lại server' : 'Lỗi ' + res.status));
       const d = j.data, list = a => a.length ? `<ul style="margin:2px 0 6px 18px;padding:0;">${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '<div style="color:var(--text-subtle);">Không có.</div>';
-      $('ba-ai-body').innerHTML = `<div style="font-size:11px;color:var(--text-subtle);margin-bottom:6px;">${esc(d.engine_note)}</div>
-        <b>Có thể do:</b>${list(d.causes)}<b>Cần kiểm tra:</b>${list(d.checks)}
-        <b>Test case nên tạo:</b>${list(d.testcases || [])}
-        <b>Ai nên tạo test case:</b>${(d.testcase_owner || []).length ? `<ul style="margin:2px 0 6px 18px;padding:0;">${d.testcase_owner.map(o => `<li><b>${esc(o.name)}</b> <span style="color:var(--text-subtle);">${esc(o.why)}</span></li>`).join('')}</ul>` : `<div style="color:var(--text-subtle);margin:2px 0 6px;">${esc(d.owner_note || 'Chưa có dữ liệu người xử lý.')}</div>`}
-        <b>Tác vụ tự động hóa gợi ý:</b>${d.tasks.length ? `<ul style="margin:2px 0 6px 18px;padding:0;">${d.tasks.map(t => `<li><a href="#" class="ba-task" data-id="${esc(t.id)}">${esc(t.name)}</a> <span class="badge badge-blue">${esc(t.module)}</span> <span style="color:var(--text-subtle);">${esc(t.why)}</span></li>`).join('')}</ul>` : '<div style="color:var(--text-subtle);">Chưa có tác vụ phù hợp.</div>'}
-        ${d.new_task ? `<div style="margin-top:4px;"><b>Gợi ý tạo tác vụ mới:</b> ${esc(d.new_task)}</div>` : ''}`;
+      const reproduction = d.reproduction_steps?.length ? d.reproduction_steps : (d.testcases || []);
+      $('ba-ai-body').innerHTML = `<div class="ba-ai-note">${esc(d.engine_note)}</div>
+        <div class="ba-insight-grid">
+          <section class="ba-insight"><h3>1. Nguyên nhân bug</h3>${list(d.causes || [])}</section>
+          <section class="ba-insight"><h3>2. Cách tái hiện</h3>${list(reproduction)}</section>
+          <section class="ba-insight"><h3>3. Tác vụ tự động đã có liên quan</h3>${d.tasks.length ? `<ul>${d.tasks.map(t => `<li><a href="#" class="ba-task" data-id="${esc(t.id)}">${esc(t.name)}</a> <span class="badge badge-blue">${esc(t.module)}</span><div class="ba-detail">${esc(t.why)}</div></li>`).join('')}</ul>` : '<p class="ba-empty">Chưa có tác vụ phù hợp với mô tả này.</p>'}</section>
+          <section class="ba-insight"><h3>4. Đề xuất tác vụ tự động</h3>${d.new_task ? `<p>${esc(d.new_task)}</p>` : '<p class="ba-empty">Có thể dùng lại tác vụ liên quan ở mục trên.</p>'}</section>
+        </div>
+        <details class="ba-more"><summary>Thông tin kiểm tra bổ sung</summary>
+          <b>Cần kiểm tra</b>${list(d.checks || [])}
+          <b>Test case nên tạo</b>${list(d.testcases || [])}
+          <b>Người phù hợp để tạo test case</b>${(d.testcase_owner || []).length ? `<ul>${d.testcase_owner.map(o => `<li><b>${esc(o.name)}</b> <span class="ba-detail">${esc(o.why)}</span></li>`).join('')}</ul>` : `<p class="ba-empty">${esc(d.owner_note || 'Chưa có dữ liệu người xử lý.')}</p>`}
+        </details>`;
       $('ba-ai-body').querySelectorAll('.ba-task').forEach(a => a.onclick = e => { e.preventDefault(); document.querySelector("[data-tab='pane-automation']").click(); });
     } catch (e) { if (my === aiSeq) $('ba-ai-body').innerHTML = `<span style="color:var(--danger);">Không phân tích được: ${esc(e.message)}</span>`; }
   }
@@ -1049,7 +1080,7 @@ window.closeModals = function() {
       facetsLoaded = true;
       const f = data.facets || {};
       $('bh-total').textContent = `${data.count} bug`;
-      const fill = (id, html) => { const sel = $(id); const keep = sel.value; const none = id === 'bh-ap' ? '<option value="__none__">Chưa có người duyệt</option>' : ''; sel.innerHTML = sel.options[0].outerHTML + none + html; sel.value = keep; };
+        const fill = (id, html) => { const sel = $(id); const keep = sel.value; const none = id === 'bh-ap' ? '<option value="__none__">Chưa có người duyệt</option>' : ''; sel.innerHTML = sel.options[0].outerHTML + none + html; sel.value = keep; };
       // module: "Chưa rõ module" chỉ lọc trong tab này
       const mod = $('bh-module'), unk = mod.querySelector('option[value="__unknown__"]');
       if (unk) unk.textContent = `Chưa rõ module (${f.unknown || 0})`;
@@ -1211,13 +1242,8 @@ window.closeModals = function() {
 
     document.querySelector("[data-tab='pane-bug-history']").addEventListener('click', async () => { if (!$('bh-list').children.length) { await loadFacets(); loadBugs(true); } });
     const FILTERS = ['bh-module', 'bh-cat', 'bh-year', 'bh-st', 'bh-as', 'bh-ap', 'bh-age', 'bh-cl'];
-    const badge = () => { const n = FILTERS.filter(id => $(id).value).length; const el = $('bh-filter-n'); el.textContent = n; el.style.display = n ? '' : 'none'; };
-    FILTERS.forEach(id => $(id).addEventListener('change', () => { badge(); reload(); }));
-    const panel = open => { $('bh-filters').classList.toggle('open', open); $('bh-filter-overlay').classList.toggle('open', open); };
-    $('bh-filter-btn').addEventListener('click', () => panel(!$('bh-filters').classList.contains('open')));
-    $('bh-filter-close').addEventListener('click', () => panel(false));
-    $('bh-filter-overlay').addEventListener('click', () => panel(false));
-    $('bh-filter-clear').addEventListener('click', () => { FILTERS.forEach(id => { $(id).value = ''; }); badge(); reload(); });
+    FILTERS.forEach(id => $(id).addEventListener('change', reload));
+    $('bh-filter-clear').addEventListener('click', () => { FILTERS.forEach(id => { $(id).value = ''; }); reload(); });
     // ảnh lớn khi bấm vào ảnh trong chi tiết; PDF chỉ nạp khi mở
     document.addEventListener('click', e => { const a = e.target.closest('[data-light]'); if (a) { e.preventDefault(); const lb = $('bh-lightbox'); lb.querySelector('img').src = a.dataset.light; lb.hidden = false; } else if (e.target.closest('#bh-lightbox')) { $('bh-lightbox').hidden = true; } });
     document.addEventListener('toggle', e => { const d = e.target; if (d.classList?.contains('bh-pdfd') && d.open) { const f = d.querySelector('iframe'); if (f && !f.src) f.src = f.dataset.src; } }, true);
@@ -1283,14 +1309,18 @@ window.closeModals = function() {
 
   function card(r, kb) {
     const ed = canEdit();
+    const addedAt = r.created_at || r.approved_at;
+    const addedDate = addedAt && !Number.isNaN(Date.parse(addedAt)) ? new Date(addedAt).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '';
+    const sourceDate = r.source?.doc_date || '';
     return `
-      <details style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px;">
-        <summary><strong>${esc(r.rule_id)}</strong>${r.version > 1 ? ' v' + r.version : ''} · ${esc(r.title)} <span class="badge badge-blue">${esc(r.flow_name)}</span>
+      <details class="br-rule">
+        <summary><span class="br-rule-title"><strong>${esc(r.rule_id)}</strong>${r.version > 1 ? ' v' + r.version : ''} · ${esc(r.title)}</span><span class="badge badge-blue">${esc(r.flow_name)}</span>
           ${r.state === 'pending' ? ' <span class="badge badge-amber" title="Claude vừa khám phá, chưa có người xác nhận">Chưa xác nhận</span>' : ''}
           ${r.local === 'created' ? ' <span class="badge badge-green">Tạo trên platform</span>' : r.local === 'edited' ? ' <span class="badge badge-green">Sửa trên platform</span>' : ''}</summary>
         ${r.state === 'pending' ? '<p style="font-size:11.5px;margin:6px 0;color:var(--text-subtle);">Rule do AI khám phá, <b>chưa có người xác nhận</b>: dùng để tham khảo, đối chiếu lại trước khi dựa vào.' + (r.analysis ? ' ' + esc(r.analysis.explanation || '') : '') + '</p>' : ''}
         <p style="font-size:12px;margin:6px 0;white-space:pre-line;">${esc(r.description)}</p>
         <div style="font-size:11px;color:var(--text-subtle);">Vai trò: ${esc((r.user_roles || []).join(', ') || 'Chưa ghi')} · ${esc(r.setting_label || r.setting_type || '')}${r.config_path ? ' · ' + esc(r.config_path) : ''}
+          ${addedDate ? ` · Ngày thêm: ${esc(addedDate)}` : sourceDate ? ` · Ngày trong tài liệu: ${esc(sourceDate)}` : ''}
           ${r.local === 'created' ? '' : ` · <a href="${esc(kb)}#rule-${esc(r.rule_id)}" target="_blank" rel="noopener">Mở trong kho</a>`}
           ${r.edited_by ? ` · sửa bởi ${esc(r.edited_by)}` : ''}</div>
         ${ed ? `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">

@@ -67,14 +67,15 @@
       <div class="back-bar" id="at-backbar"><button type="button" class="back-link" id="at-backlink">← Quay lại danh sách tác vụ</button></div>
       <div class="page-head"><h1>Tác Vụ Tự Động</h1><p>Chọn tác vụ, chỉnh trường thông tin, chạy và xem kết quả.</p></div>
       <div class="stat-grid" id="at-stats"></div>
-      <div class="filter-bar">
+      <div class="filter-bar filter-toolbar at-toolbar">
         <input class="form-control" id="at-q" type="search" placeholder="Tìm tác vụ theo tên, module, mô tả..." />
         <select class="form-control" id="at-kind"><option value="">Mọi loại tác vụ</option><option value="write">Tạo hoặc sửa dữ liệu</option><option value="read">Chỉ đọc</option></select>
+        <select class="form-control" id="at-module"><option value="">Tất cả module</option></select>
       </div>
       <div class="card">
         <div class="card-header">
           <span class="card-title">Tác vụ có thể tự động hóa (ghi lại khi khám phá module)</span>
-          <span style="display:flex;gap:6px;"><button class="btn btn-outline" id="at-reload" title="Lấy tác vụ mới nhất từ server, giữ nguyên kết quả đang hiển thị">↻ Làm mới</button><select class="form-control" id="at-module" style="width:auto;"><option value="">Tất cả module</option></select></span>
+          <button class="btn btn-outline" id="at-reload" title="Lấy tác vụ mới nhất từ server, giữ nguyên kết quả đang hiển thị">↻ Làm mới</button>
         </div>
         <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:8px;">
           Mỗi tác vụ có code Playwright. Code sinh ra dùng được ngay, người có quyền sửa được code ngay trong nút <b>Sửa</b>. Chỉ chạy trên Staging, tự chọn tài khoản theo vai trò, dữ liệu tạo ra có tiền tố <code>[AI TEST]</code>. Cần QA Launcher đang chạy trên máy bạn.
@@ -106,11 +107,11 @@
           Rule đồng bộ từ Kho Business Rule, kèm rule thêm hoặc sửa trực tiếp trên platform. AI dùng các rule này làm nguồn trích dẫn khi phân tích bug. <span id="br-synced"></span>
         </p>
         <div id="br-refresh-msg" style="font-size:11.5px;margin-bottom:6px;"></div>
-        <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px;margin-bottom:10px;">
+        <div class="filter-bar filter-toolbar br-toolbar">
+          <input class="form-control" id="br-q" type="search" placeholder="Tìm theo mã, tên, nội dung..." />
           <select class="form-control" id="br-module"><option value="">Tất cả module</option></select>
-          <input class="form-control" id="br-q" placeholder="Tìm theo mã, tên, nội dung..." />
+          <label class="filter-check"><input type="checkbox" id="br-confirmed" /> Chỉ hiện rule đã xác nhận</label>
         </div>
-        <label style="font-size:12px;display:flex;gap:6px;align-items:center;margin-bottom:6px;"><input type="checkbox" id="br-confirmed" /> Chỉ hiện rule đã xác nhận</label>
         <div id="br-count" style="font-size:11.5px;margin-bottom:6px;"></div>
         <div id="br-list"></div>
       </div>
@@ -172,22 +173,10 @@
           Đây là tìm theo từ khóa và độ hiếm của từ, không phải mô hình ngôn ngữ; gõ không dấu cũng được.
         </p>
         <textarea class="form-control" id="bug-input-desc" rows="5" placeholder="Ví dụ: Cửa hàng không hoàn tất được đánh giá phiếu Bảo trì trên mobile..."></textarea>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:10px;">
-          <div class="form-group">
-            <label class="form-label">Module (để Tự nhận diện nếu chưa chắc):</label>
-            <select class="form-control" id="bug-module-select"><option value="">Tự nhận diện, tìm trên mọi module</option></select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Nền tảng:</label>
-            <select class="form-control" id="bug-platform-select">
-              <option value="Web">Web Desktop</option>
-              <option value="Mobile">Mobile</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Bug liên quan theo thời gian:</label>
-            <select class="form-control" id="ba-age"><option value="">Mọi lúc</option><option value="new">Bug mới (30 ngày gần đây)</option><option value="old">Bug cũ (trước đó)</option></select>
-          </div>
+        <div class="filter-bar filter-toolbar ba-toolbar">
+          <label class="filter-field"><span class="form-label">Module</span><select class="form-control" id="bug-module-select"><option value="">Tự nhận diện, tìm trên mọi module</option></select></label>
+          <label class="filter-field"><span class="form-label">Nền tảng</span><select class="form-control" id="bug-platform-select"><option value="Web">Web Desktop</option><option value="Mobile">Mobile</option></select></label>
+          <label class="filter-field"><span class="form-label">Thời gian bug liên quan</span><select class="form-control" id="ba-age"><option value="">Mọi lúc</option><option value="new">Bug mới (30 ngày gần đây)</option><option value="old">Bug cũ (trước đó)</option></select></label>
         </div>
         <div id="ba-hints" style="font-size:11.5px;margin-top:6px;"></div>
       </div>
@@ -199,7 +188,7 @@
             <button class="btn btn-outline" id="ba-ai-run" style="font-size:11.5px;">Phân tích lại</button></div>
           <div id="ba-ai-body" style="font-size:12px;"></div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="ba-ref-grid">
           <div class="card" style="margin-bottom:0;">
             <div class="card-header"><span class="card-title">Rule liên quan</span><span class="badge badge-blue" id="ba-rules-count">0</span></div>
             <div id="ba-rules"></div>
@@ -228,7 +217,17 @@
         </div>
         <div class="bh-top">
           <input class="form-control" id="bh-q" type="search" placeholder="Tìm trong tiêu đề bug..." />
-          <button class="btn btn-outline" id="bh-filter-btn" type="button">☰ Bộ lọc <span class="badge badge-blue" id="bh-filter-n" style="display:none;"></span></button>
+        </div>
+        <div class="bh-filters-panel" id="bh-filters" aria-label="Bộ lọc bug">
+          <div class="bhf-head"><b>Bộ lọc</b><button type="button" class="linkbtn" id="bh-filter-clear">Xóa bộ lọc</button></div>
+          <label class="filter-field"><span class="form-label">Module</span><select class="form-control" id="bh-module"><option value="">Tất cả module</option></select></label>
+          <label class="filter-field"><span class="form-label">Trạng thái</span><select class="form-control" id="bh-st"><option value="">Mọi trạng thái</option></select></label>
+          <label class="filter-field"><span class="form-label">Mở / đóng</span><select class="form-control" id="bh-cl"><option value="">Đang mở và đã đóng</option><option value="open">Đang mở</option><option value="closed">Đã đóng</option></select></label>
+          <label class="filter-field"><span class="form-label">Người thực hiện</span><select class="form-control" id="bh-as"><option value="">Mọi người thực hiện</option></select></label>
+          <label class="filter-field"><span class="form-label">Người duyệt</span><select class="form-control" id="bh-ap"><option value="">Mọi người duyệt</option><option value="__none__">Chưa có người duyệt</option></select></label>
+          <label class="filter-field"><span class="form-label">Thời gian tạo</span><select class="form-control" id="bh-age"><option value="">Mọi lúc</option><option value="new">Bug mới (30 ngày gần đây)</option><option value="old">Bug cũ (trước đó)</option></select></label>
+          <label class="filter-field"><span class="form-label">Phân loại</span><select class="form-control" id="bh-cat"><option value="">Mọi phân loại</option></select></label>
+          <label class="filter-field"><span class="form-label">Năm</span><select class="form-control" id="bh-year"><option value="">Mọi năm</option></select></label>
         </div>
         <div class="bh-body">
           <div class="bh-results">
@@ -236,19 +235,7 @@
             <div id="bh-list"></div>
             <button class="btn btn-outline" id="bh-more" style="display:none;margin-top:8px;">Xem thêm 50 bug</button>
           </div>
-          <aside class="bh-filters-panel" id="bh-filters" aria-label="Bộ lọc bug">
-            <div class="bhf-head"><b>Bộ lọc</b><button type="button" class="linkbtn" id="bh-filter-clear">Xóa bộ lọc</button><button type="button" class="btn btn-outline bhf-close" id="bh-filter-close">Đóng ✕</button></div>
-            <label class="bhf-l">Module</label><select class="form-control" id="bh-module"><option value="">Tất cả module</option></select>
-            <label class="bhf-l">Trạng thái</label><select class="form-control" id="bh-st"><option value="">Mọi trạng thái</option></select>
-            <label class="bhf-l">Đang mở hay đã đóng</label><select class="form-control" id="bh-cl"><option value="">Đang mở và đã đóng</option><option value="open">Đang mở</option><option value="closed">Đã đóng</option></select>
-            <label class="bhf-l">Người thực hiện</label><select class="form-control" id="bh-as"><option value="">Mọi người thực hiện</option></select>
-            <label class="bhf-l">Người duyệt</label><select class="form-control" id="bh-ap"><option value="">Mọi người duyệt</option><option value="__none__">Chưa có người duyệt</option></select>
-            <label class="bhf-l">Thời gian tạo</label><select class="form-control" id="bh-age"><option value="">Mọi lúc</option><option value="new">Bug mới (30 ngày gần đây)</option><option value="old">Bug cũ (trước đó)</option></select>
-            <label class="bhf-l">Phân loại</label><select class="form-control" id="bh-cat"><option value="">Mọi phân loại</option></select>
-            <label class="bhf-l">Năm</label><select class="form-control" id="bh-year"><option value="">Mọi năm</option></select>
-          </aside>
         </div>
-        <div class="bhf-overlay" id="bh-filter-overlay"></div>
       </div>
       <aside id="bh-drawer" aria-label="Chi tiết bug">
         <div style="display:flex;justify-content:flex-end;padding:8px 10px;"><button class="btn btn-outline" id="bh-drawer-close">Đóng ✕</button></div>
@@ -415,7 +402,12 @@
         <button type="button" class="btn btn-outline" id="te-add-param" style="margin-top:6px;">+ Thêm tham số</button></div>
       <div class="form-group"><label class="form-label">Code Playwright (dùng <code>page</code>, <code>ctx</code>, <code>step</code>, <code>assert</code>, <code>pickOption(danhSachMuc, 'khoa_thamso')</code>, <code>attachFiles(input, 'khoa_thamso')</code>):</label>
         <textarea class="form-control" id="te-script" rows="16" spellcheck="false" style="font-family:monospace;font-size:11.5px;white-space:pre;overflow:auto;"></textarea></div>
-      <p style="font-size:11px;color:var(--text-subtle);">Sửa code làm tác vụ <b>mất duyệt</b> (về Nháp); người có quyền Duyệt phải đọc lại. Chỉ đổi mô tả, bước hoặc tham số thì tác vụ giữ nguyên trạng thái.</p>
+      <section class="ai-code-help" aria-labelledby="te-ai-title">
+        <div class="ai-code-head"><div><strong id="te-ai-title">Nhờ AI sửa code theo lỗi chạy</strong><p>Dán lỗi từ lần chạy gần nhất. AI đề xuất code để bạn xem lại; không tự lưu hoặc chạy.</p></div></div>
+        <textarea class="form-control" id="te-ai-error" rows="4" placeholder="Dán thông báo lỗi hoặc log lỗi tại đây..."></textarea>
+        <div class="ai-code-actions"><button type="button" class="btn btn-outline" id="te-ai-fix">✦ Đề xuất sửa code</button><span id="te-ai-msg" role="status"></span></div>
+      </section>
+      <p style="font-size:11px;color:var(--text-subtle);">Code đã lưu có thể chạy ngay ở lần tiếp theo. Hãy đọc kỹ code, kể cả phần AI đề xuất, trước khi lưu. Chỉ đổi mô tả, bước hoặc tham số thì không thay đổi code.</p>
       <button class="btn btn-primary" id="te-save" style="width:100%;">Lưu tác vụ</button>
       <div id="te-msg" style="font-size:12px;margin-top:8px;color:var(--danger);"></div>
     </div>

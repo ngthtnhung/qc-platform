@@ -18,11 +18,12 @@ import { browserRunner } from '../automation-runner/browser-runner.js';
 import { getRoutes, parseRouteLines } from '../../packages/account-routes/routes.js';
 import { SecretVault, VAULT_ENV_TYPES } from '../../packages/secret-vault/vault.js';
 import { authenticate, hasUsers, setUserAccess, createUser, resetToken, revokeUser } from '../../packages/team-auth/auth.js';
-import { normalizeTask, normalizeParams, mergeParams, chooseAccount, isRunnable, FILE_ID } from '../../packages/automation-tasks/tasks.js';
+import { normalizeTask, normalizeParams, mergeParams, chooseAccount, isRunnable, validateScript, FILE_ID } from '../../packages/automation-tasks/tasks.js';
 import { BugStore, similarRules, guessModule, moduleMembers } from '../../packages/bug-search/search.js';
 import { buildBundle } from '../../packages/kb-sync/bundle.js';
 import { analyzeLocal, analyzeAI } from '../../packages/bug-search/analysis.js';
 import { BusinessRuleStore } from '../ai-service/business-rule-store.js';
+import { suggestAutomationFix } from '../ai-service/automation-code-assistant.js';
 import { startBugLive } from '../../packages/haraworks-live/index.js';
 import { getBugDetail } from '../../packages/haraworks-live/detail.js';
 
@@ -410,14 +411,50 @@ const handler = async (req, res) => {
       const existing = task.id && await db.findById('automation_tasks', task.id);
       let saved;
       if (existing) {
-        const changed = existing.script_sha !== task.script_sha;
-        // Sửa code thì mất duyệt, phải duyệt lại
+        // Code mới được chấp nhận ngay; người dùng cần đọc kỹ trước khi lưu.
         saved = await db.update('automation_tasks', existing.id, { ...task, status: 'approved', approved_sha: task.script_sha, approved_by: 'auto', approved_at: new Date().toISOString() });
       } else {
         saved = await db.insert('automation_tasks', { ...task, id: task.id || `at_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, status: 'approved', approved_sha: task.script_sha, approved_by: 'auto', approved_at: new Date().toISOString(), created_by: DEFAULT_QC_USER.id, created_at: new Date().toISOString() });
       }
       await PolicyEngine.logAudit({ actor: DEFAULT_QC_USER, action: 'AUTOMATION_TASK_SAVE', decision: 'ALLOW', reason: `${saved.id} (${saved.name}) sha ${saved.script_sha.slice(0, 12)}`, correlationId: `corr_at_${saved.id}` });
       return sendJson(res, 201, { success: true, data: { ...saved, runnable: isRunnable(saved) } });
+    }
+    let repair;
+    if ((repair = /^\/api\/v1\/automation\/tasks\/([^/]+)\/repair$/.exec(pathname)) && method === 'POST') {
+      if (!requireAdmin(['automation', 'automation_push'])) return;
+      const task = await db.findById('automation_tasks', repair[1]);
+      if (!task || task.status === 'retired') return jerr(404, 'Không thấy tác vụ');
+      const body = await parseJsonBody(req);
+      if (typeof body.error !== 'string' || !body.error.trim()) return jerr(400, 'Cần dán lỗi của lần chạy để AI phân tích.');
+      if (body.error.length > 10000) return jerr(413, 'Lỗi chạy quá dài (tối đa 10000 ký tự).');
+      const providers = [
+        process.env.GEMINI_API_KEY && { provider: 'gemini', apiKey: process.env.GEMINI_API_KEY, baseUrl: process.env.GEMINI_BASE_URL || undefined },
+        process.env.ANTHROPIC_API_KEY && { provider: 'anthropic', apiKey: process.env.ANTHROPIC_API_KEY, baseUrl: process.env.ANTHROPIC_BASE_URL || undefined }
+      ].filter(Boolean);
+      if (!providers.length) return jerr(503, 'Chưa cấu hình GEMINI_API_KEY hoặc ANTHROPIC_API_KEY trên server.');
+      const failures = [];
+      for (let i = 0; i < providers.length; i++) {
+        const ai = providers[i];
+        try {
+          const suggestion = await suggestAutomationFix(task, body.error, { ...ai, model: i === 0 ? process.env.QA_AI_MODEL || undefined : undefined });
+          const errors = validateScript(suggestion.script);
+          if (errors.length) return jerr(422, errors.join('; '));
+          const fallbackNote = failures.length ? `Nhà cung cấp chính gặp sự cố (${failures[0]}); đã dùng dự phòng. ` : '';
+          const providerName = suggestion.provider === 'gemini' ? 'Gemini' : 'Claude';
+          return sendJson(res, 200, {
+            success: true,
+            data: {
+              script: suggestion.script,
+              engine_note: `${fallbackNote}Đề xuất từ ${providerName} (${suggestion.model}); hãy đọc kỹ code trước khi lưu.`
+            }
+          });
+        } catch (e) {
+          const status = Number(e.status) || 502;
+          failures.push(e.message);
+          const transient = status === 408 || status === 425 || status === 429 || status >= 500;
+          if (!transient || i === providers.length - 1) return jerr(status, `Không nhận được đề xuất sửa code: ${failures.join(' · ')}`);
+        }
+      }
     }
     let am;
     if ((am = /^\/api\/v1\/automation\/tasks\/([^/]+)\/(approve|run)$/.exec(pathname)) && method === 'POST') {
@@ -634,7 +671,7 @@ const handler = async (req, res) => {
       const rules = similarRules(text, used, 8).rules;
       const bugs = BugStore.similar(text, used, 10, ['new', 'old'].includes(body.age) ? body.age : '');
       const tasks = await db.find('automation_tasks', t => t.status !== 'retired');
-      const input = { text, moduleUsed: used, moduleGuess: guess, rules, bugs, tasks };
+      const input = { text, moduleUsed: used, moduleGuess: guess, platform: body.platform === 'Mobile' ? 'Mobile' : 'Web', rules, bugs, tasks };
       let out;
       const ai = process.env.GEMINI_API_KEY ? { provider: 'gemini', apiKey: process.env.GEMINI_API_KEY, baseUrl: process.env.GEMINI_BASE_URL || undefined }
         : process.env.ANTHROPIC_API_KEY ? { provider: 'anthropic', apiKey: process.env.ANTHROPIC_API_KEY, baseUrl: process.env.ANTHROPIC_BASE_URL || undefined } : null;

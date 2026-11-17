@@ -1,10 +1,11 @@
 /**
  * Kiểm thử tác vụ tự động: chuẩn hóa/chặn code, chọn tài khoản, quy tắc duyệt, tham số và runner.
  */
-import { normalizeTask, normalizeParams, mergeParams, chooseAccount, isRunnable, sha } from '../packages/automation-tasks/tasks.js';
+import { normalizeTask, normalizeParams, mergeParams, chooseAccount, isRunnable, validateScript, sha } from '../packages/automation-tasks/tasks.js';
 import { runTask } from '../apps/launcher/task-runner.js';
 import { fetchTaskFiles } from '../apps/launcher/task-files.js';
 import { analyzeLocal, analyzeAI, matchTasks } from '../packages/bug-search/analysis.js';
+import { suggestAutomationFix } from '../services/ai-service/automation-code-assistant.js';
 import { shapeDetail, htmlToText, extractMedia, mediaKind } from '../packages/haraworks-live/detail.js';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -152,14 +153,42 @@ console.log('✓ Test 6 Passed: danh sách, file, ngẫu nhiên khi trống, ch�
 const tasksX = [{ id: 'at_1', name: 'Tạo phiếu bảo trì', module: 'DV5S', steps: ['Chọn phân loại'], flow: 'TAO' }, { id: 'at_2', name: 'Soạn thư', module: 'MAIL', steps: [] }];
 assert(matchTasks('không tạo được phiếu bảo trì', tasksX)[0].id === 'at_1', 'khớp tác vụ theo từ khóa');
 const loc = analyzeLocal({ text: 'xyz', moduleUsed: '', moduleGuess: '', rules: [], bugs: [], tasks: tasksX });
-assert(loc.engine === 'local' && loc.causes.length && loc.new_task, 'không có dữ liệu thì nói rõ và gợi ý tạo tác vụ');
-const fakeFetch = async () => ({ ok: true, json: async () => ({ content: [{ text: 'Kết quả: {"causes":["a"],"checks":["b"],"task_ids":["at_2","at_bia"],"new_task":""}' }] }) });
+assert(loc.engine === 'local' && loc.causes.length && loc.new_task && loc.reproduction_steps.length, 'không có dữ liệu thì nói rõ nguyên nhân, cách tái hiện và gợi ý tạo tác vụ');
+const fakeFetch = async () => ({ ok: true, json: async () => ({ content: [{ text: 'Kết quả: {"causes":["a"],"checks":["b"],"task_ids":["at_2","at_bia"],"new_task":"","reproduction_steps":["Bước 1"]}' }] }) });
 const ai = await analyzeAI({ text: 'mô tả bug dài đủ', rules: [], bugs: [], tasks: tasksX }, { apiKey: 'k', fetchImpl: fakeFetch });
-assert(ai.engine === 'ai' && ai.tasks.length === 1 && ai.tasks[0].id === 'at_2', 'mã tác vụ bịa bị loại');
+assert(ai.engine === 'ai' && ai.tasks.length === 1 && ai.tasks[0].id === 'at_2' && ai.reproduction_steps[0] === 'Bước 1', 'mã tác vụ bịa bị loại và cách tái hiện được trả về');
 const gemFetch = async (url, o) => { assert(url.includes('gemini-3.5-flash:generateContent') && o.headers['x-goog-api-key'] === 'g' && !url.includes('key='), 'Gemini: đúng địa chỉ, khóa nằm trong header'); return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: '{"causes":["c"],"checks":[],"task_ids":["at_1"],"new_task":""}' }] } }] }) }; };
 const gm = await analyzeAI({ text: 'mô tả bug dài đủ', rules: [], bugs: [], tasks: tasksX }, { provider: 'gemini', apiKey: 'g', fetchImpl: gemFetch });
 assert(gm.engine === 'ai' && gm.tasks[0].id === 'at_1' && /gemini/.test(gm.engine_note), 'Gemini trả kết quả đúng');
 console.log('✓ Test 7 Passed: phân tích bug (khớp tác vụ, AI lọc mã bịa)');
+
+let repairPrompt = '';
+const repair = await suggestAutomationFix(
+  { name: 'Tạo phiếu', description: 'Tạo phiếu bảo trì', steps: ['Gửi phiếu'], params: [], script: "await step('gửi', async () => {});" },
+  'Timeout khi nhấn Gửi',
+  { apiKey: 'k', fetchImpl: async (url, opts) => {
+    repairPrompt = JSON.parse(opts.body).messages[0].content;
+    return { ok: true, json: async () => ({ content: [{ text: JSON.stringify({ script: "await step('gửi', async () => { await page.getByRole('button', { name: 'Gửi' }).click(); });" }) }] }) };
+  } }
+);
+assert(repair.script.includes('getByRole') && repairPrompt.includes('Timeout khi nhấn Gửi'), 'trợ lý trả code sửa theo log lỗi');
+assert(validateScript(repair.script).length === 0 && validateScript('process.exit(1)').length > 0, 'code AI tuân theo giới hạn an toàn của automation');
+let repairAttempts = 0;
+const retryDelays = [];
+const retried = await suggestAutomationFix(
+  { name: 'Tạo phiếu', steps: [], params: [], script: "await step('gửi', async () => {});" },
+  '503 high demand',
+  {
+    provider: 'gemini', apiKey: 'g', sleepImpl: async ms => retryDelays.push(ms),
+    fetchImpl: async () => {
+      repairAttempts++;
+      return repairAttempts === 1
+        ? { ok: false, status: 503, headers: { get: () => null }, json: async () => ({ error: { message: 'high demand' } }) }
+        : { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify({ script: 'await step("gửi", async () => {});' }) }] } }] }) };
+    }
+  }
+);
+assert(retried.provider === 'gemini' && repairAttempts === 2 && retryDelays.length === 1, '503 tạm thời được retry trước khi báo lỗi');
 
 // chi tiết bug: HTML thành chữ an toàn, không lấy email hay số điện thoại, ánh xạ người, lịch sử, bình luận
 assert(htmlToText('<p>Module: <b>HRM</b></p><script>alert(1)</script><p>Kết quả</p>').includes('Module: HRM') && !/<|>/.test(htmlToText('<p>a</p><b>b</b>')), 'bỏ thẻ HTML');
@@ -174,4 +203,5 @@ const mm = extractMedia('<p>Lỗi <img src="https://cdn.x/a.png?x=1&amp;y=2"> <v
 assert(mm.length === 3 && mm[0].url === 'https://cdn.x/a.png?x=1&y=2' && mm[0].kind === 'image' && mm.some(m => m.kind === 'video') && !JSON.stringify(mm).includes('javascript'), 'tách ảnh, video nhúng, bỏ đường dẫn lạ');
 assert(mediaKind('https://x/a.mov') === 'video' && mediaKind('', 'ghi-am.mp3') === 'audio' && mediaKind('https://x/f.pdf') === 'pdf' && mediaKind('https://x/f.zip') === 'file', 'phân loại tệp theo đuôi');
 console.log('✓ Test 8 Passed: chi tiết bug (HTML an toàn, không lộ dữ liệu cá nhân)');
+console.log('✓ Test 9 Passed: AI sửa code automation, kiểm tra giới hạn code');
 }

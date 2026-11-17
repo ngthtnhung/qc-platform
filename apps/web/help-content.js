@@ -131,9 +131,17 @@ window.HELP_PAGES = {
     </ol>
     <h3>Thêm bug</h3>
     <ol>
-      <li><b>Bug realtime từ Haraworks (admin làm một lần trên máy chạy server):</b> đăng nhập tasks.haraworks.vn, mở DevTools (F12), tab Network, bấm một yêu cầu tới tasks.haraworks.vn, sao chép giá trị header <code>cookie</code>. Tạo file <code>secrets\\haraworks.json</code>:
-        <pre class="help-code">{ "cookie": "dán nguyên giá trị header cookie vào đây" }</pre>
-        Khởi động lại server (<code>.\\start-team.ps1</code>). Thanh trạng thái ở Tra Cứu Bug sẽ báo <b>Realtime</b>. Cookie hết hạn thì thanh báo "Chưa realtime", di chuột vào để xem lý do, rồi lấy cookie mới. Cookie chỉ nằm trên server, không đưa lên GitHub.</li>
+      <li><b>Bug realtime từ Haraworks (admin làm một lần trên máy chạy server):</b>
+        <p><b>Lưu ý:</b> token QA bắt đầu bằng <code>qa_</code> chỉ dùng để đăng nhập QC Platform. Muốn đọc bug realtime cần <b>cookie phiên Haraworks</b> của tài khoản có quyền xem các bug cần đồng bộ.</p>
+        <ol>
+          <li>Trên máy chạy server, đăng nhập <code>https://tasks.haraworks.vn</code> bằng tài khoản được phép xem bug.</li>
+          <li>Mở DevTools bằng <b>F12</b> → <b>Network</b>, tải lại trang hoặc mở danh sách bug. Chọn một request tới <code>tasks.haraworks.vn</code> → <b>Headers</b> → <b>Request Headers</b>; sao chép toàn bộ giá trị của header <code>Cookie</code> (chỉ giá trị, không chép chữ <code>Cookie:</code>).</li>
+          <li>Trong thư mục gốc project trên máy server, tạo hoặc cập nhật <code>secrets\\haraworks.json</code>:
+            <pre class="help-code">{ "cookie": "dán toàn bộ giá trị Cookie vừa sao chép vào đây" }</pre>
+            Giữ nguyên dấu chấm phẩy và khoảng trắng trong giá trị cookie. Thư mục <code>secrets</code> đã được Git bỏ qua; không gửi cookie qua chat, không đưa vào mã nguồn hoặc Git.</li>
+          <li>Khởi động lại server bằng <code>.\\start-team.ps1</code>. Vào <b>Tra Cứu Bug</b>, bấm nút làm mới nếu cần; nhãn trạng thái phải hiện <b>Realtime</b>.</li>
+        </ol>
+        Cookie có thể hết hạn. Di chuột lên nhãn <b>Chưa realtime</b> để xem lý do, đăng nhập Haraworks lại và thay cookie trong file trên server, rồi khởi động lại server. Cookie chỉ dùng để đọc dữ liệu Haraworks và xem chi tiết bug; không gửi xuống trình duyệt.</li>
       <li><b>Bug cũ:</b> Claude xuất <code>data/bugs.json</code> từ Kho vào <code>database/kb-snapshot/data/bugs.json</code>, rồi:
         <pre class="help-code">node scripts/sync-bugs.mjs</pre>
         (cần token quyền rules, đã lưu bằng <code>--save-config</code>).</li>
@@ -153,6 +161,7 @@ window.HELP_PAGES = {
       <tr><td>Launcher báo không tin chứng chỉ HTTPS</td><td>Thêm <code>--ca "đường-dẫn/rootCA.pem"</code> vào lệnh chạy launcher.</td></tr>
       <tr><td>Launcher báo cổng 3002 đang được dùng</td><td>Đã có một launcher đang chạy rồi, không cần chạy thêm.</td></tr>
       <tr><td>Không vào được trang</td><td>Máy phải cùng mạng hoặc VPN với server, server đang chạy, tường lửa mở cổng 3001. Thử mở <code>{{ORIGIN}}/api/v1/health</code>, phải thấy HEALTHY.</td></tr>
+      <tr><td>Tra Cứu Bug báo "Chưa realtime"</td><td>Đăng nhập Haraworks bằng tài khoản được phép xem bug, lấy cookie phiên (không phải token QA <code>qa_...</code>) trong DevTools → Network → Request Headers → <code>Cookie</code>, rồi lưu trên máy server vào <code>secrets\\haraworks.json</code> và khởi động lại server. Xem tab "Thêm rule và bug" để biết chi tiết.</td></tr>
       <tr><td>Script đẩy dữ liệu báo lỗi chứng chỉ</td><td>Thêm <code>--ca "đường-dẫn/rootCA.pem"</code> vào cuối lệnh, hoặc đặt biến <code>NODE_EXTRA_CA_CERTS</code> trỏ tới file đó.</td></tr>
       <tr><td>Tác vụ tự động hết thời gian chờ</td><td>Xem dòng lỗi của bước thất bại (có dòng "waiting for locator" cho biết đang chờ phần tử nào) rồi báo lại cho người soạn tác vụ.</td></tr>
       <tr><td>Production không chạy tự động được</td><td>Hệ thống Production đã chặn bot. Chỉ mở cửa sổ và tự đăng nhập, thao tác thủ công.</td></tr>

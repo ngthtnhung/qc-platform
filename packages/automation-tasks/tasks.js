@@ -45,6 +45,13 @@ const rootDomain = h => h.split('.').slice(-2).join('.');
 // setInputFiles/setFiles/filechooser: chỉ được đính kèm file người dùng đã tải lên, qua attachFiles(); không được trỏ tới đường dẫn tùy ý trên máy
 const FORBIDDEN = /\b(require|process|child_process|eval|Function|globalThis|constructor|__proto__|setInputFiles|setFiles|filechooser)\b|\bimport\s*\(|\bfs\./;
 
+export function validateScript(script) {
+  const errors = [];
+  if (typeof script !== 'string' || script.length > 20000) errors.push('Script quá dài (tối đa 20000 ký tự)');
+  if (typeof script === 'string' && FORBIDDEN.test(script)) errors.push('Script dùng cú pháp bị cấm (require, process, import(), eval, Function, constructor, fs, setInputFiles). Chỉ dùng page, ctx, step, assert, pickOption, attachFiles.');
+  return errors;
+}
+
 /** Kiểm tra và chuẩn hóa một tác vụ; trả { task } hoặc { errors } */
 export function normalizeTask(input, stagingEnv) {
   const errors = [];
@@ -53,8 +60,7 @@ export function normalizeTask(input, stagingEnv) {
   const name = str(t.name, 'name');
   const module_ = str(t.module, 'module');
   const script = typeof t.script === 'string' && t.script.trim() ? t.script : (errors.push('Thiếu script'), '');
-  if (script.length > 20000) errors.push('Script quá dài (tối đa 20000 ký tự)');
-  if (FORBIDDEN.test(script)) errors.push('Script dùng cú pháp bị cấm (require, process, import(), eval, Function, constructor, fs, setInputFiles). Chỉ dùng page, ctx, step, assert, pickOption, attachFiles.');
+  errors.push(...validateScript(script));
 
   let start_url = '';
   try {

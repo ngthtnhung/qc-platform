@@ -36,14 +36,20 @@ Sau đó trên platform bấm **Nhập file kho** và chọn `kho-rule.json` (c�
 Có hai nguồn, hiển thị chung ở tab **Tra Cứu Bug**; bug lấy từ Haraworks được đánh dấu có trạng thái, người thực hiện và người duyệt.
 
 ### Nguồn 1. Bug realtime từ Haraworks (tự cập nhật)
-Server đọc bug từ tasks.haraworks.vn bằng cookie đăng nhập, cập nhật mỗi 30 giây và ngay khi có thay đổi. Việc **admin làm một lần trên máy chạy server**:
-1. Đăng nhập tasks.haraworks.vn bằng trình duyệt. Mở DevTools (F12), tab Network, bấm một yêu cầu bất kỳ tới `tasks.haraworks.vn`, sao chép giá trị header `cookie`.
-2. Tạo file `secrets\haraworks.json` (thư mục `secrets` đã bị `.gitignore` chặn, không bao giờ đưa lên GitHub):
+Server đọc bug từ tasks.haraworks.vn bằng cookie đăng nhập, cập nhật mỗi 30 giây và ngay khi có thay đổi. Việc **admin làm một lần trên máy chạy server**, bằng tài khoản Haraworks có quyền xem các bug cần đồng bộ:
+
+> **Phân biệt hai thông tin:** token QA (`qa_...`) dùng để đăng nhập QC Platform/đẩy dữ liệu; bug realtime cần cookie phiên Haraworks. Không dùng token QA thay cho cookie.
+
+1. Trên máy chạy server, đăng nhập `https://tasks.haraworks.vn`. Mở DevTools bằng **F12** → **Network**, tải lại trang hoặc mở danh sách bug.
+2. Chọn một request tới `tasks.haraworks.vn` → **Headers** → **Request Headers**. Sao chép toàn bộ giá trị của header `Cookie` (chỉ lấy giá trị, không lấy chữ `Cookie:`). Đây là thông tin đăng nhập nhạy cảm của tài khoản Haraworks.
+3. Trong thư mục gốc project trên máy server, tạo hoặc cập nhật file `secrets\haraworks.json` (thư mục `secrets` đã bị `.gitignore` chặn):
 ```json
-{ "cookie": "dán nguyên giá trị header cookie vào đây" }
+{ "cookie": "dán toàn bộ giá trị Cookie vừa sao chép vào đây" }
 ```
-3. Khởi động lại server (`.\start-team.ps1`). Thanh trạng thái ở tab Tra Cứu Bug chuyển sang **● Realtime**.
-Cookie hết hạn thì thanh trạng thái báo "Chưa realtime" kèm lý do khi di chuột vào; lặp lại các bước trên để lấy cookie mới. Cookie chỉ nằm trên server, không gửi xuống trình duyệt.
+Giữ nguyên dấu chấm phẩy và khoảng trắng trong giá trị cookie. Không dán cookie vào chat, issue, mã nguồn hoặc Git; chỉ lưu ở máy server.
+4. Khởi động lại server (`.\start-team.ps1`). Vào tab **Tra Cứu Bug**, bấm nút làm mới nếu cần; nhãn trạng thái phải chuyển sang **● Realtime**. Dữ liệu cũng được hỏi lại mỗi 30 giây.
+
+Nếu nhãn báo **Chưa realtime**, di chuột lên nhãn để xem lý do. Cookie hết hạn thì đăng nhập Haraworks lại, thay giá trị trong file trên server và khởi động lại server. Cookie chỉ dùng để đọc dữ liệu Haraworks và tải chi tiết bug; không gửi xuống trình duyệt. Có thể đặt `HARAWORKS_COOKIE` trong môi trường server thay cho file, nhưng không nên ghi cookie trực tiếp vào lệnh hoặc script.
 
 Mở một bug trong tab Tra Cứu Bug, ngăn chi tiết tự tải mô tả, lịch sử, bình luận, ảnh và video (xem trước ngay, không cần tải về) bằng cùng cookie này.
 
