@@ -8,6 +8,7 @@ import http from 'node:http';
 import https from 'node:https';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { db } from '../../database/db.js';
@@ -20,6 +21,7 @@ import { SecretVault, VAULT_ENV_TYPES } from '../../packages/secret-vault/vault.
 import { authenticate, hasUsers, setUserAccess, createUser, resetToken, revokeUser } from '../../packages/team-auth/auth.js';
 import { normalizeTask, normalizeParams, mergeParams, chooseAccount, isRunnable, validateScript, FILE_ID } from '../../packages/automation-tasks/tasks.js';
 import { BugStore, similarRules, guessModule, moduleMembers } from '../../packages/bug-search/search.js';
+import { STATUS_LABELS } from '../../packages/bug-search/codes.js';
 import { buildBundle } from '../../packages/kb-sync/bundle.js';
 import { analyzeLocal, analyzeAI } from '../../packages/bug-search/analysis.js';
 import { BusinessRuleStore } from '../ai-service/business-rule-store.js';
@@ -97,6 +99,20 @@ const HOST = process.env.HOST || '127.0.0.1';
 
 // ---- File người dùng tải lên để tác vụ đính kèm (ảnh, PDF): lưu ở database/automation-files, tối đa 10 MB, xóa sau 14 ngày
 const FILES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../database/automation-files');
+const LABEL_COLORS_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../database/label-colors.json');
+const DEFAULT_LABEL_COLORS = {
+  module: {},
+  status: { 0: '#6b7280', 1: '#2563eb', 2: '#d97706', 3: '#7c3aed', 4: '#dc2626', 5: '#16a34a', 6: '#d97706', 10: '#6b7280', 11: '#6b7280' }
+};
+function readLabelColors() {
+  if (!fs.existsSync(LABEL_COLORS_FILE)) return DEFAULT_LABEL_COLORS;
+  const saved = JSON.parse(fs.readFileSync(LABEL_COLORS_FILE, 'utf8'));
+  return { module: saved.module || {}, status: { ...DEFAULT_LABEL_COLORS.status, ...(saved.status || {}) } };
+}
+function writeLabelColors(colors) {
+  fs.writeFileSync(LABEL_COLORS_FILE + '.tmp', JSON.stringify(colors, null, 2));
+  fs.renameSync(LABEL_COLORS_FILE + '.tmp', LABEL_COLORS_FILE);
+}
 const MAX_FILE = 10 * 1024 * 1024;
 // Loại file được phép đính kèm: nhận dạng theo nội dung (không tin đuôi file), đuôi chỉ để phân biệt các loại cùng khuôn (zip, OLE, văn bản)
 const ZIP_TYPES = { docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', zip: 'application/zip' };
@@ -165,6 +181,31 @@ function normalizeAnalysisAttachments(value) {
     }
     return { name, mime: kind[0], size: buf.length, ...(ANALYSIS_IMAGE_TYPES.has(kind[0]) ? { data_base64: raw } : {}) };
   });
+}
+// Nạp các tác vụ nháp trong database/automation-drafts (nơi Explore ghi) vào platform; chạy lại chỉ cập nhật, không tạo trùng
+const DRAFTS_DIR = path.join(path.dirname(FILES_DIR), 'automation-drafts');
+async function importDraftTasks() {
+  const out = { found: 0, added: 0, updated: 0, errors: [] };
+  if (!fs.existsSync(DRAFTS_DIR)) return out;
+  const stg = await db.findById('environment_profiles', 'env_staging');
+  if (!stg) { out.errors.push('Chưa có môi trường Staging'); return out; }
+  for (const f of fs.readdirSync(DRAFTS_DIR).filter(n => n.endsWith('.json') && !n.startsWith('_'))) {
+    let raw;
+    try { raw = JSON.parse(fs.readFileSync(path.join(DRAFTS_DIR, f), 'utf8')); } catch { out.errors.push(`${f}: không phải JSON hợp lệ`); continue; }
+    for (const item of Array.isArray(raw) ? raw : [raw]) {
+      out.found++;
+      item.id ||= 'at_' + crypto.createHash('sha1').update(`${item.module}|${item.name}`).digest('hex').slice(0, 16);
+      const { task, errors } = normalizeTask(item, stg);
+      if (errors) { out.errors.push(`${f}: ${errors.join('; ')}`); continue; }
+      const existing = await db.findById('automation_tasks', task.id);
+      const approval = { status: 'approved', approved_sha: task.script_sha, approved_by: 'auto', approved_at: new Date().toISOString() };
+      if (existing) {
+        if (existing.script_sha === task.script_sha && existing.name === task.name && existing.status !== 'retired') continue; // không đổi
+        await db.update('automation_tasks', existing.id, { ...task, ...approval }); out.updated++;
+      } else { await db.insert('automation_tasks', { ...task, ...approval }); out.added++; }
+    }
+  }
+  return out;
 }
 const uploadTimes = new Map();
 function allowUpload(userId) {
@@ -267,6 +308,35 @@ const handler = async (req, res) => {
     if (pathname === '/api/v1/me' && method === 'GET') {
       return sendJson(res, 200, { success: true, data: { ...DEFAULT_QC_USER, auth_required: authRequired } });
     }
+    if (pathname === '/api/v1/label-colors' && method === 'GET') {
+      const modules = (BusinessRuleStore.load().modules || []).map(m => ({ code: m.code, name: m.name }));
+      return sendJson(res, 200, { success: true, data: {
+        colors: readLabelColors(),
+        modules,
+        statuses: Object.entries(STATUS_LABELS).map(([code, name]) => ({ code, name }))
+      } });
+    }
+    if (pathname === '/api/v1/label-colors' && method === 'PUT') {
+      if (!requireAdmin()) return;
+      const body = await parseJsonBody(req);
+      const incoming = body.colors || {};
+      const moduleCodes = new Set((BusinessRuleStore.load().modules || []).map(m => String(m.code)));
+      const statusCodes = new Set(Object.keys(STATUS_LABELS));
+      const colors = { module: {}, status: { ...DEFAULT_LABEL_COLORS.status } };
+      for (const [group, allowed] of [['module', moduleCodes], ['status', statusCodes]]) {
+        const values = incoming[group] || {};
+        if (!values || typeof values !== 'object' || Array.isArray(values)) return sendJson(res, 400, { success: false, error: { message: `Cấu hình màu ${group} không hợp lệ.` } });
+        for (const [code, color] of Object.entries(values)) {
+          if (!allowed.has(code) || !/^#[0-9a-f]{6}$/i.test(String(color))) {
+            return sendJson(res, 400, { success: false, error: { message: `Mã màu ${group} không hợp lệ.` } });
+          }
+          colors[group][code] = String(color).toLowerCase();
+        }
+      }
+      writeLabelColors(colors);
+      await PolicyEngine.logAudit({ actor: DEFAULT_QC_USER, action: 'LABEL_COLORS_UPDATE', decision: 'ALLOW', reason: 'Cập nhật màu nhãn module và trạng thái', correlationId: `corr_label_colors_${Date.now()}` });
+      return sendJson(res, 200, { success: true, data: { colors } });
+    }
 
     // ==========================================
     // 1. Environments API
@@ -329,11 +399,14 @@ const handler = async (req, res) => {
 
     if (pathname === '/api/v1/accounts' && method === 'POST') {
       const body = await parseJsonBody(req);
+      const username = String(body.username || '').trim();
+      const role = String(body.role || '').trim();
+      if (!username || !role || !body.environment_profile_id) return sendJson(res, 400, { success: false, error: { message: 'Cần nhập Role, Username và môi trường.' } });
       const record = await db.insert('account_profiles', {
-        name: body.name || body.role,
-        role: body.role,
+        name: String(body.name || '').trim() || username,
+        role,
         environment_profile_id: body.environment_profile_id,
-        username_ref: body.username,
+        username_ref: username,
         secret_ref: 'NONE',
         expected_org_ref: body.expected_org || '',
         default_route: body.default_route || '/maintenance/tickets',
@@ -347,6 +420,28 @@ const handler = async (req, res) => {
         }
       }
       return sendJson(res, 201, { success: true, data: { ...record, has_secret: SecretVault.has(record.id) } });
+    }
+
+    let accountMatch;
+    if ((accountMatch = /^\/api\/v1\/accounts\/([^/]+)$/.exec(pathname)) && method === 'PUT') {
+      const id = accountMatch[1];
+      const account = await db.findById('account_profiles', id);
+      if (!account) return sendJson(res, 404, { success: false, error: { message: 'Không tìm thấy tài khoản' } });
+      const body = await parseJsonBody(req);
+      const username = String(body.username || '').trim();
+      const role = String(body.role || '').trim();
+      const name = String(body.name || '').trim() || username;
+      if (!username || !role || !name) return sendJson(res, 400, { success: false, error: { message: 'Cần nhập Tên người dùng, vai trò và Username.' } });
+      const accountEnv = await db.findById('environment_profiles', account.environment_profile_id);
+      if (!accountEnv) return sendJson(res, 404, { success: false, error: { message: 'Không tìm thấy môi trường của tài khoản' } });
+      const { routes, errors } = parseRouteLines(String(body.routes_text || ''), accountEnv);
+      if (errors.length) return sendJson(res, 400, { success: false, error: { message: errors.join('; ') } });
+      if (!routes.length) return sendJson(res, 400, { success: false, error: { message: 'Cần ít nhất một link' } });
+      const updated = await db.update('account_profiles', id, {
+        name, role, username_ref: username, routes, default_route: routes[0].url
+      });
+      await PolicyEngine.logAudit({ actor: DEFAULT_QC_USER, action: 'ACCOUNT_UPDATE', decision: 'ALLOW', reason: `Cập nhật tài khoản ${id}`, correlationId: `corr_account_${id}` });
+      return sendJson(res, 200, { success: true, data: { ...updated, has_secret: SecretVault.has(id) } });
     }
 
     // Sửa danh sách link của tài khoản: body { text: "Tên | URL" mỗi dòng } hoặc { routes: [{name,url}] }
@@ -780,16 +875,15 @@ const handler = async (req, res) => {
       } catch (e) { return sendJson(res, 400, { success: false, error: { message: e.message } }); }
     }
     let rm;
-    if ((rm = /^\/api\/v1\/business-rules\/([A-Za-z0-9_-]+)(\/restore)?$/.exec(pathname)) && !['meta', 'sync'].includes(rm[1])
-        && ((method === 'PUT' || method === 'DELETE') && !rm[2] || method === 'POST' && rm[2])) {
+    if ((rm = /^\/api\/v1\/business-rules\/([A-Za-z0-9_-]+)$/.exec(pathname)) && !['meta', 'sync'].includes(rm[1])
+        && (method === 'PUT' || method === 'DELETE')) {
       if (!requireAdmin('rules_edit')) return;
       const rid = rm[1];
       try {
         let data = { rule_id: rid };
         if (method === 'PUT') data = BusinessRuleStore.editLocal(DEFAULT_QC_USER, rid, await parseJsonBody(req));
         else if (method === 'DELETE') BusinessRuleStore.deleteLocal(DEFAULT_QC_USER, rid);
-        else BusinessRuleStore.restoreLocal(rid);
-        const action = method === 'PUT' ? 'RULE_EDIT' : method === 'DELETE' ? 'RULE_DELETE' : 'RULE_RESTORE';
+        const action = method === 'PUT' ? 'RULE_EDIT' : 'RULE_DELETE';
         await PolicyEngine.logAudit({ actor: DEFAULT_QC_USER, action, decision: 'ALLOW', reason: rid, correlationId: `corr_rule_${rid}` });
         return sendJson(res, 200, { success: true, data });
       } catch (e) { return sendJson(res, 400, { success: false, error: { message: e.message } }); }
@@ -806,7 +900,12 @@ const handler = async (req, res) => {
       try { meta = BusinessRuleStore.replace(buildBundle(path.join(path.dirname(FILES_DIR), 'kb-snapshot'))); }
       catch (e) { return sendJson(res, 400, { success: false, error: { message: e.message } }); }
       await PolicyEngine.logAudit({ actor: DEFAULT_QC_USER, action: 'RULES_REFRESH', decision: 'ALLOW', reason: `Nạp lại từ kb-snapshot: ${meta.count} rule, bản ${meta.revision}`, correlationId: `corr_rules_${meta.revision}` });
-      return sendJson(res, 200, { success: true, data: meta });
+      let tasks = null;
+      try { tasks = await importDraftTasks(); } catch (e) { tasks = { found: 0, added: 0, updated: 0, errors: [e.message] }; }
+      const snapRules = path.join(path.dirname(FILES_DIR), 'kb-snapshot', 'rules');
+      let snapshot_at = null;
+      try { snapshot_at = new Date(Math.max(...fs.readdirSync(snapRules).map(n => fs.statSync(path.join(snapRules, n)).mtimeMs))).toISOString(); } catch {}
+      return sendJson(res, 200, { success: true, data: { ...meta, snapshot_at, tasks } });
     }
     if (pathname === '/api/v1/business-rules/sync' && method === 'POST') {
       if (!requireAdmin('rules')) return;
@@ -822,7 +921,7 @@ const handler = async (req, res) => {
     if (pathname === '/api/v1/business-rules' && method === 'GET') {
       return sendJson(res, 200, {
         success: true,
-        data: BusinessRuleStore.list({ module: urlObj.searchParams.get('module') || '', q: urlObj.searchParams.get('q') || '', confirmed: urlObj.searchParams.get('confirmed') === '1' })
+        data: BusinessRuleStore.list({ module: urlObj.searchParams.get('module') || '', q: urlObj.searchParams.get('q') || '' })
       });
     }
 

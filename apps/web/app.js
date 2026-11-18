@@ -1,24 +1,3 @@
-// Giao diện sáng / tối / tự động (icon trên thanh trên cùng). Lưu theo trình duyệt từng người.
-(function setupTheme() {
-  const ORDER = ['auto', 'light', 'dark'];
-  const ICON = { auto: '🖥️', light: '☀️', dark: '🌙' };
-  const LABEL = { auto: 'Tự động (theo máy)', light: 'Sáng', dark: 'Tối' };
-  let mode = 'auto';
-  try { mode = localStorage.getItem('qa_theme') || 'auto'; } catch {}
-  if (!ORDER.includes(mode)) mode = 'auto';
-  const apply = m => { if (m === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', m); };
-  const paint = () => { const b = document.getElementById('btn-theme'); if (!b) return; b.textContent = ICON[mode]; b.title = 'Giao diện: ' + LABEL[mode] + ' (bấm để đổi)'; };
-  apply(mode);
-  document.addEventListener('DOMContentLoaded', () => {
-    paint();
-    document.getElementById('btn-theme')?.addEventListener('click', () => {
-      mode = ORDER[(ORDER.indexOf(mode) + 1) % ORDER.length];
-      try { localStorage.setItem('qa_theme', mode); } catch {}
-      apply(mode); paint();
-    });
-  });
-})();
-
 /**
  * Internal AI QA Platform - Frontend Dashboard Controller
  * Connects directly to Backend RESTful API (/api/v1)
@@ -26,6 +5,22 @@
 
 const API_BASE = '/api/v1';
 const LAUNCHER_URL = 'http://127.0.0.1:3002';
+let platformLabelColors = { module: {}, status: {} };
+let labelColorsLoadedAt = 0;
+async function refreshLabelColors(force = false) {
+  if (!force && Date.now() - labelColorsLoadedAt < 60000) return;
+  const res = await fetch(`${API_BASE}/label-colors`);
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error?.message || 'Không tải được màu nhãn.');
+  platformLabelColors = json.data.colors || { module: {}, status: {} };
+  labelColorsLoadedAt = Date.now();
+  return json.data;
+}
+const labelColorStyle = (group, code) => {
+  const color = platformLabelColors[group]?.[String(code)];
+  return /^#[0-9a-f]{6}$/i.test(color || '') ? ` style="--label-color:${color};--label-bg:${color}33"` : '';
+};
+const htmlEscape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Token cá nhân của người dùng nhóm (lưu theo phiên trình duyệt)
 const getToken = () => { try { return sessionStorage.getItem('qa_token') || ''; } catch { return ''; } };
@@ -195,43 +190,23 @@ function renderAccountsForCurrentEnv() {
     return;
   }
 
-  const canStoreSecret = ['STAGING', 'PRODUCTION_TEST'].includes(currentEnvironment.environment_type);
   filtered.forEach(acc => {
     const card = document.createElement('div');
-    card.className = 'card';
-    card.style.padding = '10px 14px';
-    card.style.marginBottom = '8px';
+    card.className = 'account-row';
+    const env = environments.find(e => e.id === acc.environment_profile_id);
+    const canStoreSecret = env && ['STAGING', 'PRODUCTION_TEST'].includes(env.environment_type);
+    card.innerHTML = `<div class="account-identity"><strong>${htmlEscape(acc.name)}</strong><small>Username: ${htmlEscape(acc.username_ref)}</small></div>
+      <label class="account-route"><span>Link mở</span><select class="form-control route-select" aria-label="Link mở">${(acc.routes || []).map(r => `<option value="${htmlEscape(r.url)}" title="${htmlEscape(r.url)}"${r.url === acc.default_route ? ' selected' : ''}>${htmlEscape(r.name || r.url)}</option>`).join('')}</select></label>
+      <div class="account-actions">
+        <button class="btn btn-browser btn-launch-acc" data-id="${htmlEscape(acc.id)}">Mở browser &amp; đăng nhập</button>
+        <button class="btn btn-outline btn-edit-acc" data-id="${htmlEscape(acc.id)}">Sửa</button>
+        <button class="btn btn-outline btn-del-acc" data-id="${htmlEscape(acc.id)}" style="color:var(--danger);">Xóa</button>
+      </div>${canStoreSecret ? '' : '<small class="account-note">Môi trường này không hỗ trợ lưu mật khẩu.</small>'}`;
 
-    card.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div>
-          <strong style="font-size:13px;">${acc.name}</strong>
-          <span class="badge badge-blue" style="margin-left:6px;">${acc.role}</span>
-        </div>
-        <div style="display:flex;gap:6px;">
-          <button class="btn btn-primary btn-launch-acc" data-id="${acc.id}" style="padding:4px 10px;">
-            🪟 Mở Browser & Đăng Nhập
-          </button>
-          <button class="btn btn-outline btn-del-acc" data-id="${acc.id}" style="padding:4px 8px;color:var(--danger);">
-            🗑 Xóa
-          </button>
-        </div>
-      </div>
-      <div style="font-size:11.5px;color:var(--text-subtle);margin-top:4px;">
-        Username: <strong>${acc.username_ref}</strong> |
-        Mở link: <select class="form-control route-select" style="display:inline-block;width:auto;max-width:340px;padding:2px 6px;font-size:11.5px;">${(acc.routes || []).map(r => `<option value="${r.url}" title="${r.url}">${r.name}</option>`).join('')}</select>
-        <button class="linkbtn btn-routes" style="background:none;border:0;color:var(--primary);cursor:pointer;font-size:11.5px;text-decoration:underline;">Sửa link</button> |
-        ${acc.has_secret ? '<span class="badge badge-green">🔑 Đã lưu mật khẩu (mã hóa)</span>' : '<span class="badge badge-amber">Chưa có mật khẩu</span>'}
-        ${canStoreSecret ? `<button class="linkbtn btn-secret" style="background:none;border:0;color:var(--primary);cursor:pointer;font-size:11.5px;text-decoration:underline;">${acc.has_secret ? 'Đổi / xóa mật khẩu' : 'Đặt mật khẩu'}</button>` : '<span class="badge badge-blue">Production chỉ đọc: không lưu mật khẩu</span>'}
-      </div>
-    `;
-
-    card.querySelector('.btn-routes').addEventListener('click', () => openRoutesModal(acc));
+    card.querySelector('.btn-edit-acc').addEventListener('click', () => openAccountEditModal(acc));
     card.querySelector('.btn-launch-acc').addEventListener('click', async () => {
       await launchBrowserSession(acc.id, card.querySelector('.route-select')?.value || '');
     });
-
-    card.querySelector('.btn-secret')?.addEventListener('click', () => openSecretModal(acc));
 
     card.querySelector('.btn-del-acc').addEventListener('click', async () => {
       if (confirm(`Bạn có chắc muốn xóa tài khoản [${acc.name}]?`)) {
@@ -387,6 +362,10 @@ function setupEventListeners() {
 
   // Add Account modal
   document.getElementById('btn-add-account').addEventListener('click', () => {
+    document.getElementById('acc-name-input').value = '';
+    document.getElementById('acc-role-input').value = '';
+    document.getElementById('acc-username-input').value = '';
+    document.getElementById('acc-password-input').value = '';
     const select = document.getElementById('acc-env-select');
     select.innerHTML = '';
     environments.forEach(e => {
@@ -412,11 +391,11 @@ function setupEventListeners() {
       return;
     }
 
-    await fetch(`${API_BASE}/accounts`, {
+    const res = await fetch(`${API_BASE}/accounts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name,
+        name: name || username,
         role,
         environment_profile_id: envId,
         username,
@@ -424,61 +403,79 @@ function setupEventListeners() {
         default_route: route
       })
     });
+    const json = await res.json();
+    if (!res.ok) { alert(json.error?.message || 'Không lưu được tài khoản.'); return; }
 
     document.getElementById('acc-password-input').value = '';
     closeModals();
     await loadAccounts();
   });
 
-  document.getElementById('btn-save-routes').addEventListener('click', saveRoutes);
-  document.getElementById('btn-save-secret').addEventListener('click', () => saveSecret('PUT'));
-  document.getElementById('btn-delete-secret').addEventListener('click', () => saveSecret('DELETE'));
+  document.getElementById('btn-save-account-edit').addEventListener('click', saveAccountEdit);
 }
 
-function openRoutesModal(acc) {
-  document.getElementById('routes-account-id').value = acc.id;
-  document.getElementById('routes-title').textContent = `Link của ${acc.name}`;
-  document.getElementById('routes-text').value = (acc.routes || []).map(r => `${r.name} | ${r.url}`).join('\n');
-  document.getElementById('routes-msg').textContent = '';
-  document.getElementById('modal-routes').classList.add('open');
+function openAccountEditModal(acc) {
+  const $ = id => document.getElementById(id);
+  const env = environments.find(e => e.id === acc.environment_profile_id);
+  const canStoreSecret = env && ['STAGING', 'PRODUCTION_TEST'].includes(env.environment_type);
+  $('account-edit-id').value = acc.id;
+  $('account-edit-name').value = acc.name || '';
+  $('account-edit-role').value = acc.role || '';
+  $('account-edit-username').value = acc.username_ref || '';
+  $('account-edit-routes').value = (acc.routes || []).map(r => `${r.name || ''} | ${r.url}`).join('\n');
+  $('account-edit-password').value = '';
+  $('account-edit-clear-secret').checked = false;
+  $('account-edit-clear-secret').parentElement.style.display = acc.has_secret && canStoreSecret ? '' : 'none';
+  $('account-edit-secret-group').style.display = canStoreSecret ? '' : 'none';
+  $('account-edit-secret-status').textContent = acc.has_secret ? 'Mật khẩu hiện đang được lưu; để trống nếu không muốn đổi.' : 'Chưa có mật khẩu được lưu.';
+  $('account-edit-message').style.color = '';
+  $('account-edit-message').textContent = '';
+  $('modal-account-edit').classList.add('open');
 }
 
-async function saveRoutes() {
-  const id = document.getElementById('routes-account-id').value;
-  const res = await fetch(`${API_BASE}/accounts/${id}/routes`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: document.getElementById('routes-text').value })
-  });
-  const json = await res.json();
-  if (!res.ok) { document.getElementById('routes-msg').textContent = json.error?.message || 'Không lưu được.'; return; }
-  closeModals();
-  await loadAccounts();
-}
-
-function openSecretModal(acc) {
-  document.getElementById('secret-account-id').value = acc.id;
-  document.getElementById('secret-title').textContent = `Mật khẩu: ${acc.name}`;
-  document.getElementById('secret-input').value = '';
-  document.getElementById('secret-msg').textContent = acc.has_secret ? 'Đã có mật khẩu lưu. Nhập mới để ghi đè.' : '';
-  document.getElementById('btn-delete-secret').style.display = acc.has_secret ? '' : 'none';
-  document.getElementById('modal-secret').classList.add('open');
-}
-
-async function saveSecret(method) {
-  const id = document.getElementById('secret-account-id').value;
-  const input = document.getElementById('secret-input');
-  const msg = document.getElementById('secret-msg');
-  if (method === 'PUT' && !input.value) { msg.textContent = 'Vui lòng nhập mật khẩu.'; return; }
-  const res = await fetch(`${API_BASE}/accounts/${id}/secret`, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: method === 'PUT' ? JSON.stringify({ password: input.value }) : undefined
-  });
-  const json = await res.json();
-  input.value = '';
-  if (!res.ok) { msg.textContent = json.error?.message || 'Không lưu được.'; return; }
-  closeModals();
-  await loadAccounts();
+async function saveAccountEdit() {
+  const $ = id => document.getElementById(id);
+  const id = $('account-edit-id').value;
+  const password = $('account-edit-password').value;
+  const clearSecret = $('account-edit-clear-secret').checked;
+  const message = $('account-edit-message');
+  let profileSaved = false;
+  if (password && clearSecret) { message.textContent = 'Chọn đổi mật khẩu hoặc xóa mật khẩu, không thể thực hiện cả hai cùng lúc.'; return; }
+  try {
+    const res = await fetch(`${API_BASE}/accounts/${encodeURIComponent(id)}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: $('account-edit-name').value,
+        role: $('account-edit-role').value,
+        username: $('account-edit-username').value,
+        routes_text: $('account-edit-routes').value
+      })
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error?.message || 'Không lưu được tài khoản.');
+    profileSaved = true;
+    if (password || clearSecret) {
+      const secretRes = await fetch(`${API_BASE}/accounts/${encodeURIComponent(id)}/secret`, {
+        method: clearSecret ? 'DELETE' : 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: clearSecret ? undefined : JSON.stringify({ password })
+      });
+      const secretJson = await secretRes.json();
+      if (!secretRes.ok) {
+        $('account-edit-password').value = '';
+        message.style.color = 'var(--danger)';
+        message.textContent = `Thông tin tài khoản đã lưu, nhưng không cập nhật được mật khẩu: ${secretJson.error?.message || 'Lỗi server.'}`;
+        await loadAccounts();
+        return;
+      }
+    }
+    $('account-edit-password').value = '';
+    closeModals();
+    await loadAccounts();
+  } catch (e) {
+    message.style.color = 'var(--danger)';
+    message.textContent = profileSaved ? `Thông tin tài khoản đã lưu, nhưng không cập nhật được mật khẩu: ${e.message}` : e.message;
+  }
 }
 
 window.closeModals = function() {
@@ -578,8 +575,8 @@ window.closeModals = function() {
     }).join('');
   }
   function editorHtml(p) {
-    return `<div class="ed"><div class="ed-bar"><select class="ed-fmt" title="Định dạng để kiểm tra cú pháp"><option value="text">Văn bản</option><option value="json">JSON</option><option value="yaml">YAML</option><option value="xml">XML</option></select><span class="ed-keep">Giữ nguyên định dạng</span><span class="ed-spacer"></span><button type="button" class="ed-grow">Mở rộng</button><button type="button" class="ed-clear">Xóa</button></div>
-      <div class="ed-wrap"><pre class="ed-gutter">1</pre><textarea class="step-param ed-area" data-key="${esc(p.key)}" rows="8" spellcheck="false" wrap="off" placeholder="Nhập nội dung. Xuống dòng và khoảng trắng được giữ nguyên khi chạy.">${esc(p.value)}</textarea></div>
+    return `<div class="ed"><div class="ed-bar"><select class="ed-fmt" title="Định dạng để kiểm tra cú pháp"><option value="text">Văn bản</option><option value="json">JSON</option><option value="yaml">YAML</option><option value="xml">XML</option></select><span class="ed-keep">Giữ nguyên định dạng</span><span class="ed-spacer"></span><button type="button" class="ed-grow" aria-expanded="false">Mở rộng</button><button type="button" class="ed-clear">Xóa</button></div>
+      <div class="ed-wrap"><pre class="ed-gutter">1</pre><textarea class="step-param ed-area" data-key="${esc(p.key)}" rows="6" spellcheck="false" wrap="off" placeholder="Nhập nội dung. Xuống dòng và khoảng trắng được giữ nguyên khi chạy.">${esc(p.value)}</textarea></div>
       <div class="ed-status"><span class="ed-valid"></span><span class="ed-meta"></span><span class="ed-limit" data-limit="${limitOf(p)}"></span></div></div>`;
   }
   function fieldHtml(p) {
@@ -592,7 +589,7 @@ window.closeModals = function() {
         <button type="button" class="linkbtn step-fclear" style="background:none;border:0;color:var(--danger);cursor:pointer;font-size:11px;${p.value ? '' : 'display:none;'}">xóa</button></span>`;
     } else if (isMl(p)) ctl = editorHtml(p);
     else ctl = `<div class="fld-row"><input class="step-param fld-input form-control" data-key="${esc(p.key)}" value="${esc(p.value)}" placeholder="${p.type === 'list' ? 'mã1, mã2, ...' : '(trống)'}">${p.type === 'list' ? '' : '<button type="button" class="btn btn-outline fld-ed" title="Soạn bằng editor nhiều dòng">✎ Editor</button>'}</div>`;
-    return `<div class="fld" data-key="${esc(p.key)}"><label class="fld-label">${esc(p.label)}</label>${ctl}<div class="fld-hint">${hintOf(p)}</div></div>`;
+    return `<div class="fld" data-key="${esc(p.key)}"><label class="fld-label" title="${hintOf(p)}">${esc(p.label)}<span class="sr-only">${hintOf(p)}</span></label>${ctl}</div>`;
   }
   function wireEditor(ed) {
     const ta = ed.querySelector('.ed-area'), gut = ed.querySelector('.ed-gutter'), fmt = ed.querySelector('.ed-fmt');
@@ -612,7 +609,13 @@ window.closeModals = function() {
     ta.addEventListener('input', upd);
     ta.addEventListener('scroll', () => { gut.scrollTop = ta.scrollTop; });
     fmt.addEventListener('change', upd);
-    ed.querySelector('.ed-grow').onclick = e => { const big = ta.rows < 20; ta.rows = big ? 26 : 8; e.target.textContent = big ? 'Thu gọn' : 'Mở rộng'; };
+    ed.querySelector('.ed-grow').onclick = e => {
+      const big = !ed.classList.contains('expanded');
+      ed.classList.toggle('expanded', big);
+      ta.rows = big ? 24 : 6;
+      e.target.textContent = big ? 'Thu gọn' : 'Mở rộng';
+      e.target.setAttribute('aria-expanded', String(big));
+    };
     ed.querySelector('.ed-clear').onclick = () => { ta.value = ''; ta.dispatchEvent(new Event('input', { bubbles: true })); ta.focus(); };
     // Phím Tab chèn 2 khoảng trắng (giữ cấu trúc JSON, YAML) thay vì chuyển ô
     ta.addEventListener('keydown', e => { if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); ta.setRangeText('  ', ta.selectionStart, ta.selectionEnd, 'end'); ta.dispatchEvent(new Event('input', { bubbles: true })); } });
@@ -700,7 +703,6 @@ window.closeModals = function() {
             <button class="btn btn-primary at-open">Mở chi tiết</button>
             <select class="form-control at-acc" style="width:auto;font-size:11.5px;"><option value="">Tự chọn tài khoản</option>${stagingAccounts.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}</select>
             ${t.runnable ? '<span style="display:inline-flex;gap:4px;align-items:center;font-size:11.5px;">Số lần <input type="number" class="form-control at-times" min="1" max="50" value="1" style="width:58px;padding:2px 6px;"> <label title="Dừng ngay khi một lần không đạt"><input type="checkbox" class="at-stop" checked> dừng khi lỗi</label></span><button class="btn btn-primary at-run">▶ Chạy tác vụ</button><button class="btn btn-outline at-halt" style="display:none;color:var(--danger);">Dừng</button>' : (canApprove() ? '<button class="btn btn-warning at-approve">Xem code & Duyệt</button>' : '<span class="badge badge-amber">Chờ người có quyền duyệt</span>')}
-            <button class="btn btn-outline at-code">Xem code</button>
             ${canEdit() ? '<button class="btn btn-outline at-edit">Sửa</button>' : ''}
             ${canApprove() ? '<button class="btn btn-outline at-retire" style="color:var(--danger);">Gỡ</button>' : ''}
           </div>
@@ -713,9 +715,7 @@ window.closeModals = function() {
         <ol style="margin:6px 0 0 18px;font-size:12px;line-height:1.9;">${t.steps.map(s => `<li>${stepHtml(s, t.params || [])}</li>`).join('')}</ol>
         ${(t.params || []).length ? `<h3 class="at-sec"><i>02</i> Trường thông tin</h3>
           <div class="fld-grid">${(t.params || []).map(fieldHtml).join('')}</div>
-          <div class="fld-note">Sửa giá trị để chạy với giá trị khác (chỉ lần chạy này).
-            ${canEdit() ? '<button class="linkbtn at-save-params" style="background:none;border:0;color:var(--primary);cursor:pointer;text-decoration:underline;font-size:11px;">Lưu làm mặc định</button>' : ''}
-            Không có trong danh mục của tài khoản thì chọn mục đầu tiên (xem ghi chú sau khi chạy).</div>` : ''}
+          ${canEdit() ? '<div class="at-param-footer"><button class="btn btn-outline at-save-params">Đặt làm mặc định</button></div>' : ''}` : ''}
         <pre class="at-codebox" style="display:none;background:var(--surface-alt);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:11px;white-space:pre;tab-size:2;overflow:auto;max-height:70vh;margin-top:8px;">${esc(t.script)}</pre>
         <div class="at-result" style="font-size:11.5px;margin-top:6px;"></div>
         </div>
@@ -726,7 +726,6 @@ window.closeModals = function() {
       card.querySelector('.at-open').onclick = () => openTask(card);
       card.addEventListener('click', e => { if (!card.classList.contains('open') && !e.target.closest('button,select,input,a,label')) openTask(card); });
       wireFields(card, t);
-      card.querySelector('.at-code').onclick = () => { box.style.display = box.style.display === 'none' ? 'block' : 'none'; };
       const rt = card.querySelector('.at-retire');
       if (rt) rt.onclick = async () => {
         if (!confirm(`Gỡ tác vụ "${t.name}"?`)) return;
@@ -964,7 +963,6 @@ window.closeModals = function() {
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const safeUrl = u => (/^https?:\/\//i.test(u || '') ? u : '#');
-  const SAMPLE = 'Cửa hàng không hoàn tất được đánh giá phiếu Bảo trì trên mobile, bấm Gửi đánh giá thì màn hình đơ';
   const fold = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase();
 
   async function loadModules() {
@@ -1015,10 +1013,10 @@ window.closeModals = function() {
     $('ba-rules').innerHTML = d.rules.length ? d.rules.map(r => `
       <div style="margin-bottom:8px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;">
         <a href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener"><b>${esc(r.rule_id)}</b> · ${esc(r.title)}</a>
-        <span class="badge badge-blue">${esc(r.flow || r.module)}</span>${r.state === 'pending' ? ' <span class="badge badge-amber">Chưa xác nhận</span>' : ''}
+        <span class="badge badge-blue">${esc(r.flow || r.module)}</span>
         <div style="font-size:11.5px;color:var(--text-subtle);margin-top:3px;">${esc((r.description || '').slice(0, 220))}${(r.description || '').length > 220 ? '...' : ''}</div>
         ${r.roles.length ? `<div style="font-size:11px;">Vai trò: ${esc(r.roles.join(', '))}</div>` : ''}
-      </div>`).join('') : '<em style="font-size:12px;">Không có rule đã xác nhận nào giống mô tả. Có thể rule chưa được ghi hoặc đang chờ xác nhận.</em>';
+      </div>`).join('') : '<em style="font-size:12px;">Không tìm thấy rule phù hợp với mô tả.</em>';
     $('ba-bugs').innerHTML = d.bugs.length ? d.bugs.map(b => bugCard(b)).join('') : '<em style="font-size:12px;">Không có bug cũ nào giống mô tả.</em>';
   }
 
@@ -1079,11 +1077,7 @@ window.closeModals = function() {
           <section class="ba-insight"><h3>3. Tác vụ tự động đã có liên quan</h3>${d.tasks.length ? `<ul>${d.tasks.map(t => `<li><a href="#" class="ba-task" data-id="${esc(t.id)}">${esc(t.name)}</a> <span class="badge badge-blue">${esc(t.module)}</span><div class="ba-detail">${esc(t.why)}</div></li>`).join('')}</ul>` : '<p class="ba-empty">Chưa có tác vụ phù hợp với mô tả này.</p>'}</section>
           <section class="ba-insight"><h3>4. Đề xuất tác vụ tự động</h3>${d.new_task ? `<p>${esc(d.new_task)}</p>` : '<p class="ba-empty">Có thể dùng lại tác vụ liên quan ở mục trên.</p>'}</section>
         </div>
-        <details class="ba-more"><summary>Thông tin kiểm tra bổ sung</summary>
-          <b>Cần kiểm tra</b>${list(d.checks || [])}
-          <b>Test case nên tạo</b>${list(d.testcases || [])}
-          <b>Người phù hợp để tạo test case</b>${(d.testcase_owner || []).length ? `<ul>${d.testcase_owner.map(o => `<li><b>${esc(o.name)}</b> <span class="ba-detail">${esc(o.why)}</span></li>`).join('')}</ul>` : `<p class="ba-empty">${esc(d.owner_note || 'Chưa có dữ liệu người xử lý.')}</p>`}
-        </details>`;
+        `;
       $('ba-ai-body').querySelectorAll('.ba-task').forEach(a => a.onclick = e => { e.preventDefault(); document.querySelector("[data-tab='pane-automation']").click(); });
     } catch (e) { if (my === aiSeq) $('ba-ai-body').innerHTML = `<span style="color:var(--danger);">Không phân tích được: ${esc(e.message)}</span>`; }
   }
@@ -1138,7 +1132,8 @@ window.closeModals = function() {
   }
 
   // ---------- Tab 3: Bug Cũ ----------
-  let offset = 0, total = 0, facetsLoaded = false, bhTimer, bhItems = [];
+  let page = 1, total = 0, facetsLoaded = false, bhTimer, bhItems = [];
+  const PAGE_SIZE = 50;
   const bhStatusLabel = st => BUG_STATUS[st] || ('Trạng thái ' + st);
   const CLOSED_HINT = 'Đóng = Hoàn thành hoặc Không thực hiện (suy ra từ tên trạng thái, cần QC xác nhận).';
 
@@ -1173,38 +1168,50 @@ window.closeModals = function() {
   }
 
   const shortDate = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ''); return m ? m[3] + '/' + m[2] + '/' + m[1] : ''; };
-  // Một hàng: [trạng thái] [ưu tiên] [Today] tên bug | module · ngày tạo · người thực hiện · người duyệt
   function bhCard(b, idx) {
-    const live = b.live && b.status != null;
-    const st = live ? `<span class="bh-st bh-st-${statusClass(b.status)}">${esc(b.status_label || bhStatusLabel(b.status))}</span>` : '<span class="bh-st bh-st-old" title="Bản lưu cũ, chưa có trạng thái">Bản lưu</span>';
-    const pr = b.priority ? `<span class="bh-pr bh-pr-${prioClass(b.priority)}" title="${esc(BUG_PRIORITY[b.priority] || '')}">${b.priority <= 2 ? '⚑ ' : ''}${esc(b.priority_label || BUG_PRIORITY[b.priority] || '')}</span>` : '';
-    const today = b.is_today ? '<span class="bh-today" title="Tạo trong hôm nay">Today</span>' : '';
-    const bits = [
-      `<span class="bh-mod">${b.module_name ? esc(b.module_name) : (b.module ? esc(b.module) : 'Chưa rõ module')}</span>`,
-      shortDate(b.date) ? `<span title="Ngày tạo">${shortDate(b.date)}</span>` : '',
-      b.assignee ? `<span title="Người thực hiện">👤 ${esc(b.assignee)}</span>` : '',
-      b.approver ? `<span title="Người duyệt">✔ ${esc(b.approver)}</span>` : ''
-    ].filter(Boolean).join('');
+    const priority = Number(b.priority);
+    const priorityLabel = b.priority_label || BUG_PRIORITY[priority] || 'Chưa xác định';
+    const flagClass = priority >= 1 && priority <= 2 ? 'bh-pr-high' : priority === 3 ? 'bh-pr-mid' : 'bh-pr-low';
+    const status = b.status == null ? null : Number(b.status);
+    const statusText = status == null ? 'Bản lưu' : (b.status_label || bhStatusLabel(status));
+    const statusClassName = status == null ? 'bh-st-old' : `bh-st-${statusClass(status)}`;
     return `<article class="bh-card${b.closed ? ' is-closed' : ''}" data-idx="${idx}" tabindex="0">
-      <div class="bh-tags">${st}${pr}${today}</div>
-      <div class="bh-card-title" title="${esc(b.title)}">${esc(b.title)}</div>
-      <div class="bh-card-meta">${bits}</div>
+      <span class="bh-mod" title="${esc(b.module_name || b.module || 'Chưa rõ module')}"${labelColorStyle('module', b.module || '')}>${esc(b.module_name || b.module || 'Chưa rõ module')}</span>
+      <span class="bh-priority ${flagClass}" title="Độ ưu tiên: ${esc(priorityLabel)}" aria-label="Độ ưu tiên: ${esc(priorityLabel)}"><svg viewBox="0 0 16 20" aria-hidden="true"><path d="M3 1v18M4 2h9l-2.5 4L13 10H4"></path></svg></span>
+      <span class="bh-card-title" title="${esc(b.title)}">${esc(b.title)}</span>
+      <span class="bh-st ${statusClassName}" title="Trạng thái"${labelColorStyle('status', status == null ? '' : status)}>${esc(statusText)}</span>
+      <span class="bh-cell" title="Người duyệt">${esc(b.approver || '—')}</span>
+      <span class="bh-cell" title="Người thực hiện">${esc(b.assignee || '—')}</span>
+      <span class="bh-cell bh-date" title="Ngày tạo">${esc(shortDate(b.date) || '—')}</span>
     </article>`;
   }
 
   async function loadBugs(reset, keepPaging) {
-    // keepPaging: làm mới do có bug mới, giữ nguyên số bug đang xem
-    const limit = reset && keepPaging ? Math.min(200, Math.max(50, offset)) : 50;
-    if (reset) { offset = 0; bhItems = []; $('bh-list').innerHTML = ''; }
-    const qs = bhQuery(); qs.set('offset', offset); qs.set('limit', limit);
-    const { data } = await (await fetch(`${API_BASE}/bugs?${qs}`)).json();
-    total = data.total;
-    const start = bhItems.length;
-    bhItems = bhItems.concat(data.items);
-    $('bh-list').insertAdjacentHTML('beforeend', data.items.map((b, k) => bhCard(b, start + k)).join(''));
-    offset += data.items.length;
-    $('bh-count').textContent = total ? `Hiển thị ${offset} trên ${total} bug` : 'Không có bug nào khớp bộ lọc.';
-    $('bh-more').style.display = offset < total ? '' : 'none';
+    if (reset) { if (!keepPaging) page = 1; bhItems = []; $('bh-list').innerHTML = ''; }
+    let labelWarning = '';
+    try {
+      try { await refreshLabelColors(); } catch (e) { labelWarning = ` · Không tải được màu nhãn: ${e.message}`; }
+      const offset = (page - 1) * PAGE_SIZE;
+      const qs = bhQuery(); qs.set('offset', offset); qs.set('limit', PAGE_SIZE);
+      const res = await fetch(`${API_BASE}/bugs?${qs}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error?.message || `Lỗi ${res.status}`);
+      const data = json.data;
+      total = data.total;
+      const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+      if (page > pages) { page = pages; return loadBugs(true, true); }
+      bhItems = data.items;
+      $('bh-list').innerHTML = data.items.map((b, k) => bhCard(b, k)).join('');
+      const first = total ? offset + 1 : 0;
+      $('bh-count').textContent = (total ? `Hiển thị ${first}–${offset + data.items.length} trên ${total} bug` : 'Không có bug nào khớp bộ lọc.') + labelWarning;
+      $('bh-page-info').textContent = `Trang ${page} / ${pages}`;
+      $('bh-prev').disabled = page <= 1;
+      $('bh-next').disabled = page >= pages;
+    } catch (e) {
+      $('bh-count').textContent = 'Không tải được danh sách bug: ' + e.message;
+      $('bh-page-info').textContent = '';
+      $('bh-prev').disabled = $('bh-next').disabled = true;
+    }
   }
   const reload = () => { clearTimeout(bhTimer); bhTimer = setTimeout(() => loadBugs(true), 300); };
 
@@ -1340,7 +1347,6 @@ window.closeModals = function() {
       hints($('bug-input-desc').value, $('bug-platform-select').value);
       schedule();
     });
-    $('btn-load-sample-bug').addEventListener('click', () => { loadedBug = null; renderLoaded(); $('bug-input-desc').value = SAMPLE; liveSearch(); runAnalysis(); });
     $('ba-ai-run').addEventListener('click', runAnalysis);
     $('btn-pick-live-bug').addEventListener('click', () => { const p = $('ba-picker'); p.hidden = !p.hidden; if (!p.hidden) { $('ba-picker-q').focus(); loadPicker(); } });
     $('ba-picker-q').addEventListener('input', () => { clearTimeout(pickerTimer); pickerTimer = setTimeout(loadPicker, 300); });
@@ -1360,7 +1366,11 @@ window.closeModals = function() {
     document.addEventListener('click', e => { const a = e.target.closest('[data-light]'); if (a) { e.preventDefault(); const lb = $('bh-lightbox'); lb.querySelector('img').src = a.dataset.light; lb.hidden = false; } else if (e.target.closest('#bh-lightbox')) { $('bh-lightbox').hidden = true; } });
     document.addEventListener('toggle', e => { const d = e.target; if (d.classList?.contains('bh-pdfd') && d.open) { const f = d.querySelector('iframe'); if (f && !f.src) f.src = f.dataset.src; } }, true);
     $('bh-q').addEventListener('input', reload);
-    $('bh-more').addEventListener('click', () => loadBugs(false));
+    $('bh-prev').addEventListener('click', () => { if (page > 1) { page--; loadBugs(true, true); } });
+    $('bh-next').addEventListener('click', () => { page++; loadBugs(true, true); });
+    document.addEventListener('qa-label-colors-updated', () => {
+      if ($('pane-bug-history').classList.contains('active')) loadBugs(true, true);
+    });
     $('bh-list').addEventListener('click', e => { const c = e.target.closest('.bh-card'); if (c) openBh(+c.dataset.idx); });
     $('bh-list').addEventListener('keydown', e => { const c = e.target.closest && e.target.closest('.bh-card'); if (c && e.key === 'Enter') openBh(+c.dataset.idx); });
     $('bh-drawer-close').addEventListener('click', closeBh);
@@ -1390,7 +1400,10 @@ window.closeModals = function() {
       const res = await fetch(`${API_BASE}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
       let j = null; try { j = await res.json(); } catch {}
       if (!res.ok) throw new Error(j?.error?.message || (res.status === 404 ? 'Server chưa chạy bản mới, hãy khởi động lại server' : 'Lỗi ' + res.status));
-      msg.style.color = 'green'; msg.textContent = `Đã cập nhật ${j.data.count} rule, bản ${j.data.revision}. Mọi người nhận bản mới trong vòng 1 phút.`;
+      msg.style.color = 'green';
+      const t = j.data.tasks, snap = j.data.snapshot_at ? new Date(j.data.snapshot_at).toLocaleString('vi-VN') : '';
+      msg.textContent = `Đã nạp ${j.data.count} rule, bản ${j.data.revision}` + (t ? `; tác vụ tự động: ${t.found} file, thêm ${t.added}, cập nhật ${t.updated}${t.errors.length ? ', lỗi ' + t.errors.length + ' (' + t.errors[0] + ')' : ''}` : '') + '. '
+        + (snap ? `Dữ liệu kho trên server mới nhất lúc ${snap}. ` : '') + 'Nút này chỉ đọc thư mục kho trên máy chạy server; rule mới từ Kho cần được xuất về đó trước (Claude xuất sau khi Explore/Run, hoặc chạy qa-sync).';
       load();
     } catch (e) { msg.style.color = 'var(--danger)'; msg.textContent = e.message; }
   }
@@ -1404,18 +1417,37 @@ window.closeModals = function() {
   }
 
   async function load() {
-    const qs = new URLSearchParams({ module: $('br-module').value, q: $('br-q').value.trim(), confirmed: $('br-confirmed') && $('br-confirmed').checked ? '1' : '0' });
+    const qs = new URLSearchParams({ module: $('br-module').value, q: $('br-q').value.trim() });
     try {
       const { data } = await (await fetch(`${API_BASE}/business-rules?${qs}`)).json();
-      fillModules(data.modules || []);
+      const moduleList = data.modules || [];
+      let labelWarning = '';
+      fillModules(moduleList);
+      try { await refreshLabelColors(); } catch (e) { labelWarning = ` · Không tải được màu nhãn: ${e.message}`; }
       current = data.rules;
       $('br-add').style.display = canEdit() ? '' : 'none';
       $('br-refresh').style.display = $('br-import-l').style.display = canSync() ? '' : 'none';
       if (data.artifact_url) $('br-open-kb').href = data.artifact_url;
       $('br-synced').textContent = data.synced_at ? `Bản ${data.revision}, đồng bộ từ Kho lúc ${new Date(data.synced_at).toLocaleString('vi-VN')}.` : 'Chưa đồng bộ: chạy node scripts/qa-sync.mjs';
-      const pend = data.rules.filter(r => r.state === 'pending').length;
-      $('br-count').textContent = `${data.rules.length} rule${pend ? ` (${pend} chưa xác nhận)` : ''}`;
-      $('br-list').innerHTML = data.rules.map(r => card(r, data.artifact_url)).join('') + deletedBox(data.deleted || []);
+      $('br-count').textContent = `${data.rules.length} rule${labelWarning}`;
+      const byModule = new Map();
+      data.rules.forEach(rule => {
+        const code = rule.module || '';
+        if (!byModule.has(code)) byModule.set(code, []);
+        byModule.get(code).push(rule);
+      });
+      $('br-list').innerHTML = [...byModule.entries()].sort((a, b) => {
+        const nameA = moduleList.find(m => m.code === a[0])?.name || a[0];
+        const nameB = moduleList.find(m => m.code === b[0])?.name || b[0];
+        return nameA.localeCompare(nameB, 'vi');
+      }).map(([code, rules]) => {
+        const module = moduleList.find(m => m.code === code);
+        const name = module?.name || code || 'Module chưa phân loại';
+        return `<section class="br-module-group">
+          <h3 class="br-module-heading"${labelColorStyle('module', code)}><span>${esc(name)}</span><small>${esc(code)}</small><span class="badge">${rules.length}</span></h3>
+          ${rules.map(r => card(r, data.artifact_url)).join('')}
+        </section>`;
+      }).join('');
     } catch (e) { $('br-count').textContent = 'Không tải được rule: ' + e.message; }
   }
 
@@ -1427,9 +1459,7 @@ window.closeModals = function() {
     return `
       <details class="br-rule">
         <summary><span class="br-rule-title"><strong>${esc(r.rule_id)}</strong>${r.version > 1 ? ' v' + r.version : ''} · ${esc(r.title)}</span><span class="badge badge-blue">${esc(r.flow_name)}</span>
-          ${r.state === 'pending' ? ' <span class="badge badge-amber" title="Claude vừa khám phá, chưa có người xác nhận">Chưa xác nhận</span>' : ''}
           ${r.local === 'created' ? ' <span class="badge badge-green">Tạo trên platform</span>' : r.local === 'edited' ? ' <span class="badge badge-green">Sửa trên platform</span>' : ''}</summary>
-        ${r.state === 'pending' ? '<p style="font-size:11.5px;margin:6px 0;color:var(--text-subtle);">Rule do AI khám phá, <b>chưa có người xác nhận</b>: dùng để tham khảo, đối chiếu lại trước khi dựa vào.' + (r.analysis ? ' ' + esc(r.analysis.explanation || '') : '') + '</p>' : ''}
         <p style="font-size:12px;margin:6px 0;white-space:pre-line;">${esc(r.description)}</p>
         <div style="font-size:11px;color:var(--text-subtle);">Vai trò: ${esc((r.user_roles || []).join(', ') || 'Chưa ghi')} · ${esc(r.setting_label || r.setting_type || '')}${r.config_path ? ' · ' + esc(r.config_path) : ''}
           ${addedDate ? ` · Ngày thêm: ${esc(addedDate)}` : sourceDate ? ` · Ngày trong tài liệu: ${esc(sourceDate)}` : ''}
@@ -1437,15 +1467,8 @@ window.closeModals = function() {
           ${r.edited_by ? ` · sửa bởi ${esc(r.edited_by)}` : ''}</div>
         ${ed ? `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
           <button class="btn btn-outline" data-act="edit" data-id="${esc(r.rule_id)}">Sửa</button>
-          <button class="btn btn-outline" style="color:var(--danger);" data-act="del" data-id="${esc(r.rule_id)}" data-local="${esc(r.local || '')}">Xóa</button>
-          ${r.local === 'edited' ? `<button class="btn btn-outline" data-act="restore" data-id="${esc(r.rule_id)}">Hoàn tác thay đổi trên platform</button>` : ''}</div>` : ''}
+          <button class="btn btn-outline" style="color:var(--danger);" data-act="del" data-id="${esc(r.rule_id)}">Xóa</button></div>` : ''}
       </details>`;
-  }
-
-  function deletedBox(del) {
-    if (!del.length || !canEdit()) return '';
-    return `<details style="margin-top:10px;"><summary style="font-size:12px;">Rule đã ẩn trên platform (${del.length})</summary>
-      ${del.map(d => `<div style="font-size:12px;padding:4px 0;">${esc(d.rule_id)} · ${esc(d.title)} <button class="btn btn-outline" data-act="restore" data-id="${esc(d.rule_id)}">Khôi phục</button></div>`).join('')}</details>`;
   }
 
   async function call(method, path, body) {
@@ -1496,11 +1519,9 @@ window.closeModals = function() {
     try {
       if (b.dataset.act === 'edit') openForm(current.filter(r => r.rule_id === id).sort((a, c) => (c.version || 0) - (a.version || 0))[0]);
       if (b.dataset.act === 'del') {
-        const created = b.dataset.local === 'created';
-        if (!confirm(created ? `Xóa hẳn rule ${id}? Không khôi phục được.` : `Ẩn rule ${id} trên platform?\nRule vẫn còn trong Kho và có thể khôi phục ở mục "Rule đã ẩn".`)) return;
+        if (!confirm(`Xóa hẳn rule ${id} khỏi platform? Rule từ Kho sẽ không xuất hiện lại sau khi đồng bộ.`)) return;
         await call('DELETE', `/business-rules/${encodeURIComponent(id)}`); await load();
       }
-      if (b.dataset.act === 'restore') { await call('POST', `/business-rules/${encodeURIComponent(id)}/restore`); await load(); }
     } catch (err) { alert(err.message); }
   }
 
@@ -1515,7 +1536,6 @@ window.closeModals = function() {
   document.addEventListener('DOMContentLoaded', () => {
     checkRevision(); setInterval(checkRevision, 60000); // mọi người tự nhận bản rule mới trong vòng 1 phút
     $('br-module').addEventListener('change', load);
-    $('br-confirmed').addEventListener('change', load);
     $('br-q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
     $('br-list').addEventListener('click', onAction);
     $('br-add').addEventListener('click', () => openForm(null));
@@ -1527,6 +1547,9 @@ window.closeModals = function() {
       syncCall('/business-rules/sync', { rules: b.rules, modules: b.modules, artifact_url: b.artifact_url });
     });
     $('rf-save').addEventListener('click', save);
+    document.addEventListener('qa-label-colors-updated', () => {
+      if ($('pane-business-rules').classList.contains('active')) load();
+    });
     { let opened = false; document.querySelector("[data-tab='pane-business-rules']").addEventListener('click', () => { if (!opened) { opened = true; load(); } }); } // đổi tab không nạp lại: giữ nguyên kết quả, chỉ nạp lại khi tải lại trang
   });
 })();
@@ -1575,6 +1598,46 @@ window.closeModals = function() {
     } catch (e) { msg('Không tải được danh sách: ' + e.message, true); }
   }
 
+  async function loadLabelSettings() {
+    const status = $('label-colors-msg');
+    $('label-colors-save').disabled = true;
+    try {
+      const data = await refreshLabelColors(true);
+      const colorInput = (group, code, name, color) => `<label class="label-color-item"><span>${esc(name)} <small>${esc(code)}</small></span><input type="color" class="label-color-input" data-group="${group}" data-code="${esc(code)}" value="${/^#[0-9a-f]{6}$/i.test(color || '') ? color : '#315c8c'}" /></label>`;
+      $('label-module-colors').innerHTML = data.modules.slice().sort((a, b) => a.code.localeCompare(b.code))
+        .map(m => colorInput('module', m.code, m.name, data.colors.module[m.code] || '#315c8c')).join('');
+      $('label-status-colors').innerHTML = data.statuses.map(s => colorInput('status', s.code, s.name, data.colors.status[s.code])).join('');
+      $('label-colors-save').disabled = false;
+      status.textContent = '';
+    } catch (e) {
+      status.style.color = 'var(--danger)';
+      status.textContent = e.message;
+    }
+  }
+
+  async function saveLabelSettings() {
+    const status = $('label-colors-msg'), colors = { module: {}, status: {} };
+    document.querySelectorAll('.label-color-input').forEach(input => { colors[input.dataset.group][input.dataset.code] = input.value; });
+    if (!Object.keys(colors.status).length) {
+      status.style.color = 'var(--danger)';
+      status.textContent = 'Chưa tải được danh sách nhãn; hãy tải lại trang trước khi lưu.';
+      return;
+    }
+    $('label-colors-save').disabled = true;
+    try {
+      await call('PUT', '/label-colors', { colors });
+      await refreshLabelColors(true);
+      status.style.color = 'var(--pastel-green-text)';
+      status.textContent = 'Đã lưu màu nhãn.';
+      document.dispatchEvent(new Event('qa-label-colors-updated'));
+    } catch (e) {
+      status.style.color = 'var(--danger)';
+      status.textContent = e.message;
+    } finally {
+      $('label-colors-save').disabled = false;
+    }
+  }
+
   async function onClick(e) {
     const tr = e.target.closest('tr[data-id]');
     if (!tr) return;
@@ -1621,12 +1684,13 @@ window.closeModals = function() {
     const show = me && me.auth_required && me.role === 'admin';
     $('tab-users-btn').style.display = show ? '' : 'none';
     const adm = document.getElementById('sb-admin-label'); if (adm) adm.style.display = show ? '' : 'none';
-    if (show) load();
+    if (show) { load(); loadLabelSettings(); }
   }
 
   document.addEventListener('qa-me-ready', applyVisibility);
   document.addEventListener('DOMContentLoaded', () => {
     $('u-body').addEventListener('click', onClick);
+    $('label-colors-save').addEventListener('click', saveLabelSettings);
     $('u-add').addEventListener('click', openNew);
     $('nu-save').addEventListener('click', createUser);
     $('tk-copy').addEventListener('click', async () => {
