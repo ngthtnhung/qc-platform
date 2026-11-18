@@ -64,8 +64,16 @@ export function moduleMembers(code) {
   return set;
 }
 
-/** Trạng thái đóng của bug realtime: 5 Hoàn thành, 11 Không thực hiện (suy ra từ tên trạng thái, cần QC xác nhận) */
-export const CLOSED_STATUS = new Set([5, 11]);
+import { CLOSED_STATUS, statusLabel, priorityLabel, priorityRank, todayVN } from './codes.js';
+export { CLOSED_STATUS };
+
+// Tên module (mã -> tên) cho cột module, nhớ tạm 60 giây
+let modNames = { at: 0, map: new Map() };
+function moduleName(code) {
+  if (!code) return '';
+  if (Date.now() - modNames.at > 60000) { modNames = { at: Date.now(), map: new Map((BusinessRuleStore.load().modules || []).map(m => [m.code, m.name])) }; }
+  return modNames.map.get(code) || '';
+}
 
 /** Mốc "bug mới": tạo trong vòng N ngày gần đây (so chuỗi ngày dạng YYYY-MM-DD) */
 export const NEW_DAYS = 30;
@@ -102,7 +110,7 @@ export const BugStore = {
   },
 
   /** Danh sách có lọc. q để trống: mới nhất trước; có q: xếp theo độ giống. */
-  list({ module, q = '', category = '', year = '', unknown = false, status = '', assignee = '', approver = '', closed = '', age = '', offset = 0, limit = 50 } = {}) {
+  list({ module, q = '', category = '', year = '', unknown = false, status = '', assignee = '', approver = '', closed = '', age = '', sort = 'created', live = false, offset = 0, limit = 50 } = {}) {
     const c = load();
     const members = moduleMembers(module), cut = newCutoff();
     const qg = grams(tokens(q));
@@ -114,6 +122,7 @@ export const BugStore = {
       if (category && (b.c || '(chưa phân loại)') !== category) continue;
       if (year && !String(b.d || '').startsWith(year)) continue;
       if (!ageOk(b, age, cut)) continue;
+      if (live && !b.live) continue;
       if (status !== '' && String(b.status) !== String(status)) continue;
       if (assignee && (b.assignee || '') !== assignee) continue;
       if (approver === '__none__' ? (!b.live || b.approver) : (approver && (b.approver || '') !== approver)) continue;
@@ -127,6 +136,8 @@ export const BugStore = {
       items.push({ b, score });
     }
     if (qg.size) items.sort((x, y) => y.score - x.score || String(y.b.d).localeCompare(String(x.b.d)));
+    else if (sort === 'updated') items.sort((x, y) => String(y.b.updated || y.b.d).localeCompare(String(x.b.updated || x.b.d)));
+    else if (sort === 'priority') items.sort((x, y) => priorityRank(x.b.priority) - priorityRank(y.b.priority) || String(y.b.d).localeCompare(String(x.b.d)));
     else items.sort((x, y) => String(y.b.d).localeCompare(String(x.b.d)));
     const total = items.length;
     const page = items.slice(offset, offset + limit).map(({ b, score }) => present(b, c, score));
@@ -166,8 +177,8 @@ export const BugStore = {
 
 function present(b, c, score) {
   const n = c.notes.get(String(b.id));
-  return { id: b.id, title: b.t, category: b.c || '', date: b.d, is_new: String(b.d || '') >= newCutoff(), module: b.m || '', url: b.u, score: Math.round(score * 10) / 10,
-    ...(b.live ? { live: true, status: b.status, closed: CLOSED_STATUS.has(b.status), assignee: b.assignee || '', approver: b.approver || '', project: b.project || '', customer: b.customer || '', updated: b.updated || '' } : {}),
+  return { id: b.id, title: b.t, category: b.c || '', date: b.d, is_new: String(b.d || '') >= newCutoff(), is_today: String(b.d || '').startsWith(todayVN()), module_name: moduleName(b.m), module: b.m || '', url: b.u, score: Math.round(score * 10) / 10,
+    ...(b.live ? { live: true, status: b.status, status_label: statusLabel(b.status), priority: b.priority ?? null, priority_label: priorityLabel(b.priority), closed: CLOSED_STATUS.has(b.status), assignee: b.assignee || '', approver: b.approver || '', project: b.project || '', customer: b.customer || '', updated: b.updated || '' } : {}),
     note: n ? { root_cause: n.root_cause || '', fix: n.fix || '', rule_ids: n.rule_ids || [], comments: n.comments || '' } : null };
 }
 

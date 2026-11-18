@@ -981,6 +981,7 @@ window.closeModals = function() {
   let timer, seq = 0;
   const MAX_ANALYSIS_FILES = 5, MAX_ANALYSIS_BYTES = 10 * 1024 * 1024;
   let analysisFiles = [];
+  let loadedBug = null; // bug realtime đang được nạp vào trang phân tích
 
   function hints(text, platform, files = analysisFiles) {
     const t = fold(text), miss = [];
@@ -1022,7 +1023,11 @@ window.closeModals = function() {
   }
 
   // Mã trạng thái task Haraworks -> nhãn
-  const BUG_STATUS = { 0: 'Chưa bắt đầu', 1: 'Đang thực hiện', 2: 'Tạm ngưng', 3: 'Chờ duyệt', 5: 'Hoàn thành', 11: 'Không thực hiện' };
+  const BUG_STATUS = { 0: 'Mới', 1: 'Đang thực hiện', 2: 'Tạm ngưng', 3: 'Chờ duyệt', 4: 'Từ chối', 5: 'Hoàn thành', 6: 'Cần duyệt', 10: 'Không xử lý', 11: 'Không thực hiện' };
+  // Độ ưu tiên: 1 và 2 hiện "Ưu tiên cao", 3 "Ưu tiên", 4 "Không ưu tiên" (khớp giao diện Haraworks)
+  const BUG_PRIORITY = { 1: 'Ưu tiên cao', 2: 'Ưu tiên cao', 3: 'Ưu tiên', 4: 'Không ưu tiên' };
+  const prioClass = p => (p === 1 || p === 2 ? 'high' : p === 3 ? 'mid' : 'low');
+  const statusClass = st => ({ 0: 'new', 1: 'doing', 2: 'hold', 3: 'wait', 4: 'rej', 5: 'done', 6: 'wait', 11: 'done' })[st] || 'new';
 
   function bugCard(b) {
     const note = b.note ? `<div style="font-size:11.5px;margin-top:3px;background:var(--surface-alt);padding:4px 6px;border-radius:4px;">
@@ -1061,7 +1066,7 @@ window.closeModals = function() {
     $('ba-ai-body').innerHTML = '<span style="color:var(--text-subtle);">Đang phân tích...</span>';
     try {
       const attachments = await Promise.all(analysisFiles.map(async file => ({ name: file.name, mime: file.type, data_base64: await readAnalysisFile(file) })));
-      const res = await fetch(`${API_BASE}/bug-analysis`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, module: $('bug-module-select').value, platform: $('bug-platform-select').value, attachments }) });
+      const res = await fetch(`${API_BASE}/bug-analysis`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, module: $('bug-module-select').value, platform: $('bug-platform-select').value, attachments, ...(loadedBug ? { bug_id: loadedBug.id } : {}) }) });
       let j = null; try { j = await res.json(); } catch {}
       if (my !== aiSeq) return;
       if (!res.ok) throw new Error(j?.error?.message || (res.status === 404 ? 'Server chưa chạy bản mới, hãy khởi động lại server' : 'Lỗi ' + res.status));
@@ -1083,6 +1088,54 @@ window.closeModals = function() {
     } catch (e) { if (my === aiSeq) $('ba-ai-body').innerHTML = `<span style="color:var(--danger);">Không phân tích được: ${esc(e.message)}</span>`; }
   }
   const schedule = () => { clearTimeout(timer); timer = setTimeout(liveSearch, 600); clearTimeout(aiTimer); aiTimer = setTimeout(runAnalysis, 2000); };
+
+  // ---------- Nạp mô tả và ảnh từ bug realtime ----------
+  const pickerMeta = b => [b.module_name || b.module, shortDate(b.date), b.assignee].filter(Boolean).map(esc).join(' · ');
+  let pickerTimer;
+  async function loadPicker() {
+    const box = $('ba-picker-list');
+    box.innerHTML = '<div class="ba-empty">Đang tải...</div>';
+    try {
+      const qs = new URLSearchParams({ live: '1', sort: 'created', limit: '30', offset: '0', q: $('ba-picker-q').value.trim() });
+      const { data } = await (await fetch(`${API_BASE}/bugs?${qs}`)).json();
+      box.innerHTML = data.items.length ? data.items.map((b, k) => `<button type="button" class="ba-pick" role="option" data-k="${k}">
+          <span class="bh-st bh-st-${statusClass(b.status)}">${esc(b.status_label || bhStatusLabel(b.status))}</span>${b.is_today ? '<span class="bh-today">Today</span>' : ''}
+          <span class="ba-pick-title">${esc(b.title)}</span><span class="ba-pick-meta">${pickerMeta(b)}</span></button>`).join('')
+        : '<div class="ba-empty">Không có bug realtime nào khớp. Kiểm tra cookie Haraworks trên server (nhãn Realtime ở Tra cứu bug).</div>';
+      box._items = data.items;
+    } catch (e) { box.innerHTML = `<div class="ba-empty">Không tải được danh sách: ${esc(e.message)}</div>`; }
+  }
+  function renderLoaded() {
+    const box = $('ba-loaded');
+    if (!loadedBug) { box.hidden = true; box.innerHTML = ''; return; }
+    box.hidden = false;
+    box.innerHTML = `<div class="ba-loaded-head"><span>Đang phân tích bug: <b>${esc(loadedBug.title)}</b></span>
+      <span><a href="${esc(safeUrl(loadedBug.url))}" target="_blank" rel="noopener">Mở trên Haraworks ↗</a> <button type="button" class="linkbtn" id="ba-loaded-clear">Bỏ bug này</button></span></div>
+      <div id="ba-loaded-media" class="ba-loaded-media">Đang tải mô tả và ảnh...</div>`;
+  }
+  async function loadBugIntoAnalysis(b) {
+    loadedBug = b;
+    $('ba-picker').hidden = true;
+    renderLoaded();
+    $('bug-input-desc').value = b.title;
+    const mod = [...$('bug-module-select').options].find(o => o.value === b.module);
+    if (mod) $('bug-module-select').value = mod.value;
+    liveSearch();
+    try {
+      const res = await fetch(`${API_BASE}/bugs/${encodeURIComponent(b.id)}/detail`);
+      let j = null; try { j = await res.json(); } catch {}
+      if (loadedBug !== b) return;
+      const media = $('ba-loaded-media');
+      if (!res.ok) { media.innerHTML = `<span style="color:var(--danger);">${esc(j?.error?.message || 'Không lấy được chi tiết bug')}. Đang dùng tên bug làm mô tả.</span>`; runAnalysis(); return; }
+      const d = j.data;
+      $('bug-input-desc').value = [b.title, d.description].filter(Boolean).join('\n\n').slice(0, 4000);
+      const all = [...(d.description_media || []), ...(d.attachments || [])];
+      const hasImg = all.concat((d.comments?.items || []).flatMap(c => [...(c.media || []), ...(c.attachments || [])])).some(m => m.kind === 'image');
+      media.innerHTML = all.length ? mediaHtml(all) + (hasImg ? `<div class="ba-detail">Tối đa ${MAX_ANALYSIS_FILES} ảnh đầu tiên (kể cả ảnh trong bình luận) được gửi cho AI cùng mô tả.</div>` : '') : '<span class="ba-empty">Bug này không có ảnh hoặc video đính kèm.</span>';
+      hints($('bug-input-desc').value, $('bug-platform-select').value);
+      liveSearch(); runAnalysis();
+    } catch (e) { if (loadedBug === b) $('ba-loaded-media').textContent = 'Không lấy được chi tiết: ' + e.message; }
+  }
 
   // ---------- Tab 3: Bug Cũ ----------
   let offset = 0, total = 0, facetsLoaded = false, bhTimer, bhItems = [];
@@ -1115,18 +1168,27 @@ window.closeModals = function() {
     return new URLSearchParams({
       module: unknown ? '' : mod, unknown: unknown ? '1' : '0', q: $('bh-q').value.trim(),
       category: $('bh-cat').value, year: $('bh-year').value, status: $('bh-st').value,
-      assignee: $('bh-as').value, closed: $('bh-cl').value, approver: $('bh-ap').value, age: $('bh-age').value
+      assignee: $('bh-as').value, closed: $('bh-cl').value, approver: $('bh-ap').value, age: $('bh-age').value, sort: $('bh-sort').value
     });
   }
 
+  const shortDate = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ''); return m ? m[3] + '/' + m[2] + '/' + m[1] : ''; };
+  // Một hàng: [trạng thái] [ưu tiên] [Today] tên bug | module · ngày tạo · người thực hiện · người duyệt
   function bhCard(b, idx) {
-    const st = b.live && b.status != null ? `<span class="badge ${b.closed ? 'badge-closed' : 'badge-green'}">${esc(bhStatusLabel(b.status))}</span>` : '';
-    const meta = [b.category, (b.date || '').slice(0, 16), b.assignee, b.approver ? 'Duyệt: ' + b.approver : ''].filter(Boolean).map(esc).join(' · ');
+    const live = b.live && b.status != null;
+    const st = live ? `<span class="bh-st bh-st-${statusClass(b.status)}">${esc(b.status_label || bhStatusLabel(b.status))}</span>` : '<span class="bh-st bh-st-old" title="Bản lưu cũ, chưa có trạng thái">Bản lưu</span>';
+    const pr = b.priority ? `<span class="bh-pr bh-pr-${prioClass(b.priority)}" title="${esc(BUG_PRIORITY[b.priority] || '')}">${b.priority <= 2 ? '⚑ ' : ''}${esc(b.priority_label || BUG_PRIORITY[b.priority] || '')}</span>` : '';
+    const today = b.is_today ? '<span class="bh-today" title="Tạo trong hôm nay">Today</span>' : '';
+    const bits = [
+      `<span class="bh-mod">${b.module_name ? esc(b.module_name) : (b.module ? esc(b.module) : 'Chưa rõ module')}</span>`,
+      shortDate(b.date) ? `<span title="Ngày tạo">${shortDate(b.date)}</span>` : '',
+      b.assignee ? `<span title="Người thực hiện">👤 ${esc(b.assignee)}</span>` : '',
+      b.approver ? `<span title="Người duyệt">✔ ${esc(b.approver)}</span>` : ''
+    ].filter(Boolean).join('');
     return `<article class="bh-card${b.closed ? ' is-closed' : ''}" data-idx="${idx}" tabindex="0">
-      <div class="bh-card-top"><span class="badge badge-blue">${b.module ? esc(b.module) : 'Chưa rõ module'}</span>${st}${b.is_new ? '<span class="badge badge-amber" title="Tạo trong 30 ngày gần đây">Mới</span>' : ''}</div>
-      <div class="bh-card-title">${esc(b.title)}</div>
-      <div class="bh-card-meta">${meta}</div>
-      ${b.closed ? '<span class="bh-ribbon">Đã đóng</span>' : ''}
+      <div class="bh-tags">${st}${pr}${today}</div>
+      <div class="bh-card-title" title="${esc(b.title)}">${esc(b.title)}</div>
+      <div class="bh-card-meta">${bits}</div>
     </article>`;
   }
 
@@ -1158,13 +1220,15 @@ window.closeModals = function() {
       ${row('Module', esc(b.module || 'Chưa rõ'))}
       ${row('Phân loại', esc(b.category || '-'))}
       ${row('Ngày tạo', esc((b.date || '').slice(0, 16) || '-'))}
-      ${live ? row('Trạng thái', esc(bhStatusLabel(b.status))) : row('Trạng thái', '<i>bản lưu cũ, không có trạng thái</i>')}
+      ${live ? row('Trạng thái', esc(b.status_label || bhStatusLabel(b.status))) : row('Trạng thái', '<i>bản lưu cũ, không có trạng thái</i>')}
+      ${live ? row('Độ ưu tiên', esc(b.priority_label || BUG_PRIORITY[b.priority] || '-')) : ''}
       ${live ? row('Người thực hiện', esc(b.assignee || '-')) : ''}
       ${live ? row('Người duyệt', esc(b.approver || 'Chưa có')) : ''}
       ${live ? row('Dự án', esc(b.project || '-')) : ''}
       ${live ? row('Cập nhật lần cuối', esc((b.updated || '').slice(0, 16) || '-')) : ''}
       ${note}
-      <p style="margin-top:12px;"><a href="${esc(safeUrl(b.url))}" target="_blank" rel="noopener">Mở bug trên Haraworks ↗</a></p>
+      <p style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><a href="${esc(safeUrl(b.url))}" target="_blank" rel="noopener">Mở bug trên Haraworks ↗</a>
+        ${live ? `<button type="button" class="btn btn-outline" data-analyze-bug="${i}">Phân tích bug này</button>` : ''}</p>
       <div id="bh-detail" style="margin-top:10px;color:var(--text-subtle);">Đang tải chi tiết từ Haraworks...</div>`;
     $('bh-drawer').classList.add('open');
     loadBhDetail(b.id);
@@ -1205,7 +1269,7 @@ window.closeModals = function() {
         ${d.status != null ? row('Trạng thái (Haraworks)', esc(bhStatusLabel(d.status))) : ''}
         ${d.code ? row('Mã', esc(d.code)) : ''}${row('Người tạo', esc(d.created_by?.name || '-'))}${row('Người thực hiện', d.assignee ? esc(d.assignee.name) + (d.assignee.dept ? ' · ' + esc(d.assignee.dept) : '') : '-')}
         ${row('Chủ sở hữu', esc(d.owner?.name || '-'))}${d.supporters.length ? row('Người hỗ trợ', names(d.supporters)) : ''}${row('Người theo dõi (' + d.followers.length + ')', names(d.followers))}
-        ${row('Hạn thực hiện', vnTime(d.plan_end_at))}${row('Ưu tiên (mã)', d.priority ?? '-')}${row('Cập nhật gần nhất', vnTime(d.updated_at) + (d.updated_by?.name ? ' · ' + esc(d.updated_by.name) : ''))}
+        ${row('Hạn thực hiện', vnTime(d.plan_end_at))}${row('Độ ưu tiên', esc(BUG_PRIORITY[d.priority] || (d.priority ?? '-')))}${row('Cập nhật gần nhất', vnTime(d.updated_at) + (d.updated_by?.name ? ' · ' + esc(d.updated_by.name) : ''))}
         ${d.project ? row('Dự án', esc(d.project)) : ''}
         ${d.description || (d.description_media || []).length ? `<h4 style="margin:10px 0 4px;">Mô tả</h4><div style="white-space:pre-wrap;font-size:12px;">${esc(d.description)}</div>${mediaHtml(d.description_media)}` : ''}
         ${d.attachments.length ? `<h4 style="margin:10px 0 4px;">File đính kèm (${d.attachments.length})</h4>${mediaHtml(d.attachments)}` : ''}
@@ -1276,13 +1340,22 @@ window.closeModals = function() {
       hints($('bug-input-desc').value, $('bug-platform-select').value);
       schedule();
     });
-    $('btn-load-sample-bug').addEventListener('click', () => { $('bug-input-desc').value = SAMPLE; liveSearch(); runAnalysis(); });
+    $('btn-load-sample-bug').addEventListener('click', () => { loadedBug = null; renderLoaded(); $('bug-input-desc').value = SAMPLE; liveSearch(); runAnalysis(); });
     $('ba-ai-run').addEventListener('click', runAnalysis);
+    $('btn-pick-live-bug').addEventListener('click', () => { const p = $('ba-picker'); p.hidden = !p.hidden; if (!p.hidden) { $('ba-picker-q').focus(); loadPicker(); } });
+    $('ba-picker-q').addEventListener('input', () => { clearTimeout(pickerTimer); pickerTimer = setTimeout(loadPicker, 300); });
+    $('ba-picker-list').addEventListener('click', e => { const t = e.target.closest('.ba-pick'); if (t) loadBugIntoAnalysis($('ba-picker-list')._items[+t.dataset.k]); });
+    $('ba-loaded').addEventListener('click', e => { if (e.target.closest('#ba-loaded-clear')) { loadedBug = null; renderLoaded(); schedule(); } });
+    document.addEventListener('click', e => { const t = e.target.closest('[data-analyze-bug]'); if (!t) return; const b = bhItems[+t.dataset.analyzeBug]; if (!b) return; closeBh(); document.querySelector("[data-tab='pane-bug-analysis']").click(); loadBugIntoAnalysis(b); });
 
     document.querySelector("[data-tab='pane-bug-history']").addEventListener('click', async () => { if (!$('bh-list').children.length) { await loadFacets(); loadBugs(true); } });
     const FILTERS = ['bh-module', 'bh-cat', 'bh-year', 'bh-st', 'bh-as', 'bh-ap', 'bh-age', 'bh-cl'];
     FILTERS.forEach(id => $(id).addEventListener('change', reload));
-    $('bh-filter-clear').addEventListener('click', () => { FILTERS.forEach(id => { $(id).value = ''; }); reload(); });
+    $('bh-sort').addEventListener('change', reload);
+    const countFilters = () => { const n = FILTERS.filter(id => $(id).value).length; const b = $('bh-filter-n'); b.textContent = n; b.hidden = !n; };
+    FILTERS.forEach(id => $(id).addEventListener('change', countFilters));
+    $('bh-filter-btn').addEventListener('click', () => { const p = $('bh-filters'); p.hidden = !p.hidden; $('bh-filter-btn').setAttribute('aria-expanded', String(!p.hidden)); });
+    $('bh-filter-clear').addEventListener('click', () => { FILTERS.forEach(id => { $(id).value = ''; }); countFilters(); reload(); });
     // ảnh lớn khi bấm vào ảnh trong chi tiết; PDF chỉ nạp khi mở
     document.addEventListener('click', e => { const a = e.target.closest('[data-light]'); if (a) { e.preventDefault(); const lb = $('bh-lightbox'); lb.querySelector('img').src = a.dataset.light; lb.hidden = false; } else if (e.target.closest('#bh-lightbox')) { $('bh-lightbox').hidden = true; } });
     document.addEventListener('toggle', e => { const d = e.target; if (d.classList?.contains('bh-pdfd') && d.open) { const f = d.querySelector('iframe'); if (f && !f.src) f.src = f.dataset.src; } }, true);

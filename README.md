@@ -8,8 +8,8 @@ Nền tảng nội bộ cho QC của Haraworks: tra cứu bug và business rule,
 |---|---|
 | Tổng quan | Số bug, rule, tác vụ, tài khoản; lối tắt; trạng thái hệ thống |
 | Tài Khoản & Môi Trường | Bấm tài khoản để mở và tự đăng nhập (Staging, Production OrgID DEMO); lưu mật khẩu mã hóa trên server |
-| Phân Tích Bug | Mô tả bug, tìm rule và bug cũ liên quan (lọc bug mới hoặc cũ), AI gợi ý nguyên nhân, test case cần tạo, người nên tạo, tác vụ tự động nên chạy hoặc tạo thêm |
-| Tra Cứu Bug | Thẻ bug có trạng thái, người thực hiện, người duyệt; lọc nhiều tiêu chí; mở chi tiết (mô tả, lịch sử, bình luận, xem trước ảnh và video) |
+| Phân Tích Bug | Gõ mô tả hoặc **nạp từ bug realtime** (tự lấy mô tả và ảnh), tìm rule và bug cũ liên quan (lọc bug mới hoặc cũ), AI gợi ý nguyên nhân, cách tái hiện, tác vụ tự động nên chạy hoặc tạo thêm |
+| Tra Cứu Bug | Danh sách gọn mỗi bug một hàng: trạng thái, độ ưu tiên, nhãn Today (bug tạo hôm nay), module, ngày tạo, người thực hiện, người duyệt; sắp xếp theo ngày tạo, cập nhật hoặc độ ưu tiên; lọc nhiều tiêu chí; mở chi tiết (mô tả, lịch sử, bình luận, xem trước ảnh và video) |
 | Kho Business Rule | Rule đã trích xuất kèm trạng thái xác nhận; thêm, sửa, xóa; cập nhật từ Kho |
 | Tác Vụ Tự Động | Chọn tác vụ, chỉnh trường thông tin (có editor cho nội dung nhiều dòng), chọn file đính kèm từ kho file, chạy nhiều lần |
 | Phân Quyền | Admin cấp token và quyền cho từng người |

@@ -25,7 +25,7 @@ import { analyzeLocal, analyzeAI } from '../../packages/bug-search/analysis.js';
 import { BusinessRuleStore } from '../ai-service/business-rule-store.js';
 import { suggestAutomationFix } from '../ai-service/automation-code-assistant.js';
 import { startBugLive } from '../../packages/haraworks-live/index.js';
-import { getBugDetail } from '../../packages/haraworks-live/detail.js';
+import { getBugDetail, fetchBugImages } from '../../packages/haraworks-live/detail.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -680,7 +680,7 @@ const handler = async (req, res) => {
       const q = urlObj.searchParams;
       return sendJson(res, 200, { success: true, data: BugStore.list({
         module: q.get('module') || '', q: q.get('q') || '', category: q.get('category') || '', year: q.get('year') || '',
-        status: q.get('status') || '', assignee: q.get('assignee') || '', approver: q.get('approver') || '', closed: q.get('closed') || '', age: q.get('age') || '',
+        status: q.get('status') || '', assignee: q.get('assignee') || '', approver: q.get('approver') || '', closed: q.get('closed') || '', age: q.get('age') || '', sort: q.get('sort') || 'created', live: q.get('live') === '1',
         unknown: q.get('unknown') === '1', offset: Math.max(0, +q.get('offset') || 0), limit: Math.min(200, +q.get('limit') || 50)
       }) });
     }
@@ -736,7 +736,20 @@ const handler = async (req, res) => {
       const body = await parseJsonBody(req, 15 * 1024 * 1024);
       const text = String(body.text || '').slice(0, 4000);
       if (text.trim().length < 8) return sendJson(res, 400, { success: false, error: { message: 'Mô tả quá ngắn' } });
-      const attachments = normalizeAnalysisAttachments(body.attachments);
+      let attachments = normalizeAnalysisAttachments(body.attachments);
+      // Nạp ảnh từ bug realtime: server tự lấy ảnh theo mã bug (không nhận địa chỉ ảnh từ trình duyệt)
+      let liveNote = '';
+      if (body.bug_id && /^[0-9a-f]{24}$/.test(String(body.bug_id))) {
+        const room = MAX_ANALYSIS_FILES - attachments.length;
+        const used = attachments.reduce((n, a) => n + (a.size || 0), 0);
+        if (room > 0) {
+          try {
+            const got = await fetchBugImages(body.bug_id, { max: room, maxBytes: Math.max(0, Math.min(4 * 1024 * 1024, MAX_ANALYSIS_BYTES - used)) });
+            if (got.images.length) attachments = attachments.concat(normalizeAnalysisAttachments(got.images.map(i => ({ ...i }))).slice(0, room));
+            liveNote = got.found ? ` Đã nạp ${got.images.length}/${got.found} ảnh từ bug realtime.` : ' Bug realtime này không có ảnh.';
+          } catch (e) { liveNote = ` Không nạp được ảnh từ bug realtime (${e.message}).`; }
+        }
+      }
       const used = body.module || '';
       const guess = used ? '' : guessModule(text);
       const rules = similarRules(text, used, 8).rules;
@@ -753,6 +766,7 @@ const handler = async (req, res) => {
         out = analyzeLocal(input);
         if (attachments.some(a => a.data_base64)) out.engine_note += ' Chưa có khóa AI nên ảnh đính kèm chưa được phân tích.';
       }
+      if (liveNote) out.engine_note = (out.engine_note || '') + liveNote;
       return sendJson(res, 200, { success: true, data: out });
     }
 

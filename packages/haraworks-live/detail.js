@@ -108,3 +108,33 @@ export async function getBugDetail(id, { baseUrl = process.env.HARAWORKS_BASE_UR
   cache.set(id, { at: Date.now(), data });
   return data;
 }
+
+/**
+ * Tải ảnh của một bug (mô tả, đính kèm, bình luận) về dạng base64 để gửi cho AI phân tích.
+ * Địa chỉ ảnh lấy từ chính dữ liệu Haraworks của bug, không nhận địa chỉ từ người dùng.
+ * Chỉ nhận https, gửi cookie chỉ khi ảnh nằm trên haraworks.vn.
+ */
+export async function fetchBugImages(id, { max = 5, maxBytes = 4 * 1024 * 1024, timeoutMs = 12000, fetchImpl = fetch } = {}) {
+  const d = await getBugDetail(id);
+  const urls = [];
+  const add = m => { if (m && m.kind === 'image' && /^https:\/\//i.test(m.url || '') && !urls.some(u => u.url === m.url)) urls.push({ url: m.url, name: m.name || '' }); };
+  (d.description_media || []).forEach(add);
+  (d.attachments || []).forEach(add);
+  (d.comments?.items || []).forEach(c => { (c.media || []).forEach(add); (c.attachments || []).forEach(add); });
+  const cookie = readCookie();
+  const out = [];
+  for (const item of urls) {
+    if (out.length >= max) break;
+    try {
+      const host = new URL(item.url).hostname;
+      const headers = cookie && /(^|\.)haraworks\.vn$/i.test(host) ? { cookie } : {};
+      const res = await fetchImpl(item.url, { headers, signal: AbortSignal.timeout(timeoutMs), redirect: 'follow' });
+      if (!res.ok) continue;
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (!buf.length || buf.length > maxBytes) continue;
+      const base = decodeURIComponent((item.name || new URL(item.url).pathname.split('/').pop() || 'anh').slice(0, 80));
+      out.push({ name: base || 'anh', data_base64: buf.toString('base64') });
+    } catch { /* ảnh lỗi thì bỏ qua */ }
+  }
+  return { images: out, found: urls.length, detail: d };
+}

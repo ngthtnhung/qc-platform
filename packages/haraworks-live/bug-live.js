@@ -184,6 +184,7 @@ export class BugLive extends EventEmitter {
         status: t.status,
         assignee: t.assignTo?.name || '',
         approver: t.approverEntity?.user_Name || '',
+        priority: t.priority ?? null,
         projectId: t.project_Id,
         projectName: t.project_Name,
         customerName: info.customer || '',

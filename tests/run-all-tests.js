@@ -6,6 +6,7 @@ import { runPolicyEngineTests } from './policy-engine.test.js';
 import { runStateMachineTests } from './state-machine.test.js';
 import { runTestCaseSchemaTests } from './test-case-schema.test.js';
 import { runAutomationTaskTests } from './automation-tasks.test.js';
+import { runBugLabelTests } from './bug-labels.test.js';
 
 async function main() {
   console.log('====================================================');
@@ -26,6 +27,9 @@ async function main() {
     passedSuites++;
 
     await runAutomationTaskTests();
+    passedSuites++;
+
+    await runBugLabelTests();
     passedSuites++;
 
     console.log('\n====================================================');

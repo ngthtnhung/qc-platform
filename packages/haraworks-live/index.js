@@ -58,6 +58,7 @@ export function toStoreBugs(rows, modules = []) {
       status: r.status,
       assignee: r.assignee || '',
       approver: r.approver || '',
+      priority: r.priority ?? null,
       project: r.projectName || '',
       customer: r.customerName || '',
       platform: r.platform || '',

@@ -166,13 +166,21 @@
       <div class="card">
         <div class="card-header">
           <span class="card-title">Phân Tích Bug: tự tìm rule và bug cũ liên quan</span>
-          <button class="btn btn-outline" id="btn-load-sample-bug">📥 Nạp ví dụ</button>
+          <span class="ba-head-actions">
+            <button class="btn btn-primary" id="btn-pick-live-bug">Nạp từ bug realtime</button>
+            <button class="btn btn-outline" id="btn-load-sample-bug">📥 Nạp ví dụ</button>
+          </span>
         </div>
+        <div class="ba-picker" id="ba-picker" hidden>
+          <input class="form-control" id="ba-picker-q" type="search" placeholder="Tìm bug trong danh sách realtime (tên bug, người thực hiện)..." />
+          <div id="ba-picker-list" role="listbox" aria-label="Bug realtime"></div>
+        </div>
+        <div class="ba-loaded" id="ba-loaded" hidden></div>
         <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:8px;">
           Mô tả càng cụ thể càng tốt (module, màn hình, thao tác, kết quả sai). Khi bạn gõ, hệ thống tự tìm <b>rule đã xác nhận</b> và <b>bug cũ giống nhất</b>.
           Đây là tìm theo từ khóa và độ hiếm của từ, không phải mô hình ngôn ngữ; gõ không dấu cũng được.
         </p>
-        <textarea class="form-control" id="bug-input-desc" rows="5" placeholder="Ví dụ: Cửa hàng không hoàn tất được đánh giá phiếu Bảo trì trên mobile..."></textarea>
+        <textarea class="form-control" id="bug-input-desc" rows="6" placeholder="Ví dụ: Cửa hàng không hoàn tất được đánh giá phiếu Bảo trì trên mobile..."></textarea>
         <div class="ba-attachments">
           <label class="btn btn-outline ba-attach-button">Đính kèm ảnh / video / tài liệu
             <input id="ba-file-input" type="file" multiple accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/quicktime,video/webm,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.rtf,.zip" hidden>
@@ -224,8 +232,14 @@
         </div>
         <div class="bh-top">
           <input class="form-control" id="bh-q" type="search" placeholder="Tìm trong tiêu đề bug..." />
+          <button type="button" class="btn btn-outline" id="bh-filter-btn" aria-expanded="false" aria-controls="bh-filters">Bộ lọc <span class="badge badge-blue" id="bh-filter-n" hidden></span></button>
+          <select class="form-control" id="bh-sort" aria-label="Sắp xếp" title="Sắp xếp">
+            <option value="created">Mới tạo nhất</option>
+            <option value="updated">Cập nhật gần nhất</option>
+            <option value="priority">Ưu tiên cao trước</option>
+          </select>
         </div>
-        <div class="bh-filters-panel" id="bh-filters" aria-label="Bộ lọc bug">
+        <div class="bh-filters-panel" id="bh-filters" aria-label="Bộ lọc bug" hidden>
           <div class="bhf-head"><b>Bộ lọc</b><button type="button" class="linkbtn" id="bh-filter-clear">Xóa bộ lọc</button></div>
           <label class="filter-field"><span class="form-label">Module</span><select class="form-control" id="bh-module"><option value="">Tất cả module</option></select></label>
           <label class="filter-field"><span class="form-label">Trạng thái</span><select class="form-control" id="bh-st"><option value="">Mọi trạng thái</option></select></label>
