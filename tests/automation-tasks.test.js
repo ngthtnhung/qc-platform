@@ -157,9 +157,23 @@ assert(loc.engine === 'local' && loc.causes.length && loc.new_task && loc.reprod
 const fakeFetch = async () => ({ ok: true, json: async () => ({ content: [{ text: 'Kết quả: {"causes":["a"],"checks":["b"],"task_ids":["at_2","at_bia"],"new_task":"","reproduction_steps":["Bước 1"]}' }] }) });
 const ai = await analyzeAI({ text: 'mô tả bug dài đủ', rules: [], bugs: [], tasks: tasksX }, { apiKey: 'k', fetchImpl: fakeFetch });
 assert(ai.engine === 'ai' && ai.tasks.length === 1 && ai.tasks[0].id === 'at_2' && ai.reproduction_steps[0] === 'Bước 1', 'mã tác vụ bịa bị loại và cách tái hiện được trả về');
-const gemFetch = async (url, o) => { assert(url.includes('gemini-3.5-flash:generateContent') && o.headers['x-goog-api-key'] === 'g' && !url.includes('key='), 'Gemini: đúng địa chỉ, khóa nằm trong header'); return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: '{"causes":["c"],"checks":[],"task_ids":["at_1"],"new_task":""}' }] } }] }) }; };
-const gm = await analyzeAI({ text: 'mô tả bug dài đủ', rules: [], bugs: [], tasks: tasksX }, { provider: 'gemini', apiKey: 'g', fetchImpl: gemFetch });
+const gemFetch = async (url, o) => {
+  const payload = JSON.parse(o.body);
+  assert(url.includes('gemini-3.5-flash:generateContent') && o.headers['x-goog-api-key'] === 'g' && !url.includes('key='), 'Gemini: đúng địa chỉ, khóa nằm trong header');
+  assert(payload.contents[0].parts[1].inlineData.mimeType === 'image/png' && payload.contents[0].parts[1].inlineData.data === 'aGVsbG8=', 'Gemini nhận ảnh đính kèm dạng inlineData');
+  return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: '{"causes":["c"],"checks":[],"task_ids":["at_1"],"new_task":""}' }] } }] }) };
+};
+const gm = await analyzeAI({ text: 'mô tả bug dài đủ', rules: [], bugs: [], tasks: tasksX, attachments: [{ name: 'anh.png', mime: 'image/png', data_base64: 'aGVsbG8=' }] }, { provider: 'gemini', apiKey: 'g', fetchImpl: gemFetch });
 assert(gm.engine === 'ai' && gm.tasks[0].id === 'at_1' && /gemini/.test(gm.engine_note), 'Gemini trả kết quả đúng');
+let claudePayload;
+await analyzeAI(
+  { text: 'mô tả bug dài đủ', rules: [], bugs: [], tasks: tasksX, attachments: [{ name: 'anh.png', mime: 'image/png', data_base64: 'aGVsbG8=' }] },
+  { apiKey: 'k', fetchImpl: async (url, options) => {
+    claudePayload = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ content: [{ text: '{"causes":[],"checks":[],"task_ids":[],"new_task":""}' }] }) };
+  } }
+);
+assert(claudePayload.messages[0].content[1].type === 'image' && claudePayload.messages[0].content[1].source.media_type === 'image/png', 'Claude nhận ảnh đính kèm dạng image block');
 console.log('✓ Test 7 Passed: phân tích bug (khớp tác vụ, AI lọc mã bịa)');
 
 let repairPrompt = '';

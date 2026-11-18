@@ -979,15 +979,30 @@ window.closeModals = function() {
 
   // ---------- Tab 2: Phân Tích Bug ----------
   let timer, seq = 0;
+  const MAX_ANALYSIS_FILES = 5, MAX_ANALYSIS_BYTES = 10 * 1024 * 1024;
+  let analysisFiles = [];
 
-  function hints(text, platform) {
+  function hints(text, platform, files = analysisFiles) {
     const t = fold(text), miss = [];
     if (!/tai khoan|user|role|vai tro|khach hang/.test(t)) miss.push('tài khoản hoặc vai trò thực hiện');
     if (!/buoc|khi |nhan|bam|tao |chon/.test(t)) miss.push('các bước thao tác dẫn đến lỗi');
-    if (!/anh|video|screenshot|dinh kem/.test(t)) miss.push('ảnh hoặc video bằng chứng');
+    if (!files.length && !/anh|video|screenshot|dinh kem/.test(t)) miss.push('ảnh hoặc video bằng chứng');
     if (platform === 'Mobile' && !/ios|android|phien ban|version/.test(t)) miss.push('thiết bị và phiên bản ứng dụng (Mobile)');
     $('ba-hints').innerHTML = miss.length ? `<span class="badge badge-amber">Nên bổ sung</span> ${esc(miss.join(', '))}` : '';
   }
+
+  function renderAnalysisFiles() {
+    $('ba-file-list').innerHTML = analysisFiles.map((file, i) => `
+      <div class="ba-file-item"><span>${esc(file.name)} (${Math.max(1, Math.round(file.size / 1024))} KB)</span>
+        <button type="button" class="ba-file-remove" data-ba-remove="${i}" aria-label="Bỏ ${esc(file.name)}">Bỏ</button></div>`).join('');
+  }
+
+  const readAnalysisFile = file => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = () => reject(new Error(`Không đọc được file "${file.name}"`));
+    reader.readAsDataURL(file);
+  });
 
   function renderResults(d) {
     $('ba-results').style.display = 'block';
@@ -1029,7 +1044,7 @@ window.closeModals = function() {
     const my = ++seq;
     $('ba-summary') && ($('ba-results').style.display === 'none' || ($('ba-summary').style.opacity = '.5'));
     try {
-      const res = await fetch(`${API_BASE}/bug-search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, module: $('bug-module-select').value, age: $('ba-age').value }) });
+      const res = await fetch(`${API_BASE}/bug-search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, module: $('bug-module-select').value }) });
       const j = await res.json();
       if (my !== seq) return; // có lần gõ mới hơn
       if (!res.ok) throw new Error(j.error?.message || 'Lỗi tìm kiếm');
@@ -1045,7 +1060,8 @@ window.closeModals = function() {
     const my = ++aiSeq;
     $('ba-ai-body').innerHTML = '<span style="color:var(--text-subtle);">Đang phân tích...</span>';
     try {
-      const res = await fetch(`${API_BASE}/bug-analysis`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, module: $('bug-module-select').value, age: $('ba-age').value, platform: $('bug-platform-select').value }) });
+      const attachments = await Promise.all(analysisFiles.map(async file => ({ name: file.name, mime: file.type, data_base64: await readAnalysisFile(file) })));
+      const res = await fetch(`${API_BASE}/bug-analysis`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, module: $('bug-module-select').value, platform: $('bug-platform-select').value, attachments }) });
       let j = null; try { j = await res.json(); } catch {}
       if (my !== aiSeq) return;
       if (!res.ok) throw new Error(j?.error?.message || (res.status === 404 ? 'Server chưa chạy bản mới, hãy khởi động lại server' : 'Lỗi ' + res.status));
@@ -1235,8 +1251,31 @@ window.closeModals = function() {
     loadModules();
     $('bug-input-desc').addEventListener('input', schedule);
     $('bug-module-select').addEventListener('change', liveSearch);
-    $('ba-age').addEventListener('change', () => { liveSearch(); runAnalysis(); });
     $('bug-platform-select').addEventListener('change', () => hints($('bug-input-desc').value, $('bug-platform-select').value));
+    $('ba-file-input').addEventListener('change', e => {
+      const incoming = [...e.target.files];
+      e.target.value = '';
+      const msg = $('ba-file-msg');
+      if (analysisFiles.length + incoming.length > MAX_ANALYSIS_FILES) {
+        msg.style.color = 'var(--danger)'; msg.textContent = `Chỉ đính kèm tối đa ${MAX_ANALYSIS_FILES} file.`; return;
+      }
+      if (analysisFiles.concat(incoming).reduce((sum, file) => sum + file.size, 0) > MAX_ANALYSIS_BYTES) {
+        msg.style.color = 'var(--danger)'; msg.textContent = 'Tổng dung lượng file đính kèm không được vượt quá 10 MB.'; return;
+      }
+      analysisFiles.push(...incoming);
+      msg.style.color = ''; msg.textContent = '';
+      renderAnalysisFiles();
+      hints($('bug-input-desc').value, $('bug-platform-select').value);
+      if (incoming.length) schedule();
+    });
+    $('ba-file-list').addEventListener('click', e => {
+      const button = e.target.closest('[data-ba-remove]');
+      if (!button) return;
+      analysisFiles.splice(Number(button.dataset.baRemove), 1);
+      renderAnalysisFiles();
+      hints($('bug-input-desc').value, $('bug-platform-select').value);
+      schedule();
+    });
     $('btn-load-sample-bug').addEventListener('click', () => { $('bug-input-desc').value = SAMPLE; liveSearch(); runAnalysis(); });
     $('ba-ai-run').addEventListener('click', runAnalysis);
 

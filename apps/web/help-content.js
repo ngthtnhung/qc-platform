@@ -19,7 +19,7 @@ window.HELP_PAGES = {
     <h3>Các tab</h3>
     <ul>
       <li><b>Tài Khoản và Môi Trường</b>: bấm tài khoản để mở và đăng nhập; chọn link muốn vào; đặt mật khẩu (cần quyền).</li>
-      <li><b>Phân Tích Bug</b>: gõ mô tả, hệ thống tự tìm rule và bug cũ liên quan (tìm theo từ khóa, không phải mô hình ngôn ngữ).</li>
+      <li><b>Phân Tích Bug</b>: gõ mô tả, hệ thống tự tìm rule và bug cũ liên quan; có thể đính kèm tối đa 5 ảnh/video/tài liệu (tổng 10 MB). Ảnh được gửi cho AI nếu server đã cấu hình khóa AI; video và tài liệu chưa được AI đọc.</li>
       <li><b>Tra Cứu Bug</b>: tra cứu hơn 6.000 bug cũ và bug mới lấy realtime từ Haraworks (kèm trạng thái, người xử lý), lọc theo module, trạng thái, người thực hiện, người duyệt, thời gian; mở chi tiết để xem bình luận, ảnh, video ngay trên trang.</li>
       <li><b>Kho Business Rule</b>: xem, tìm, thêm, sửa, xóa rule (cần quyền để sửa). Rule có nhãn "Chưa xác nhận" là rule AI vừa khám phá, chưa có người kiểm.</li>
       <li><b>Tác Vụ Tự Động</b>: chạy tác vụ Playwright (dùng được ngay, không cần duyệt), chỉ trên Staging.</li>

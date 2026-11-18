@@ -51,8 +51,38 @@ Chi tiết: `docs/operations/them-rule-va-bug.md` (cũng có trong nút ?, tab "
 - Không đẩy được tự động: nút **Cập nhật rule từ kho** hoặc **Nhập file kho** (file tạo bằng `node scripts/sync-business-rules.mjs --export kho-rule.json`).
 
 **Bug**
-- Realtime từ Haraworks: admin lưu cookie vào `secrets\haraworks.json` rồi khởi động lại server.
+- **Bug realtime từ Haraworks:** admin cấu hình cookie phiên Haraworks trên máy chạy server theo hướng dẫn bên dưới. Server dùng cookie để đọc danh sách bug và cập nhật khoảng 30 giây một lần.
 - Bug cũ: `node scripts/sync-bugs.mjs` (đọc `database/kb-snapshot/data/bugs.json`).
+
+### Cấu hình cookie Haraworks để đồng bộ bug realtime
+
+Thực hiện **một lần trên máy chạy server**, bằng tài khoản Haraworks có quyền xem các bug cần đồng bộ. Cookie là thông tin đăng nhập nhạy cảm:
+
+> **Cookie Haraworks khác token QA.** Token QA (`qa_...`) dùng để đăng nhập QC Platform và đẩy dữ liệu; không thể dùng thay cookie phiên Haraworks.
+
+1. Trên máy server, đăng nhập vào `https://tasks.haraworks.vn`.
+2. Nhấn **F12** để mở DevTools, chọn tab **Network**, rồi tải lại trang hoặc mở danh sách bug để tạo request.
+3. Trong danh sách request, chọn một request tới `tasks.haraworks.vn`. Mở **Headers** → **Request Headers** và sao chép toàn bộ giá trị của header **Cookie**. Chỉ sao chép giá trị, không lấy chữ `Cookie:`. Giữ nguyên dấu chấm phẩy và khoảng trắng.
+4. Trong thư mục gốc project trên máy server, tạo thư mục `secrets` nếu chưa có; tạo hoặc cập nhật file `secrets\haraworks.json` với nội dung:
+
+   ```json
+   {
+     "cookie": "dán toàn bộ giá trị Cookie vừa sao chép vào đây"
+   }
+   ```
+
+5. Lưu file, dừng server bằng **Ctrl+C**, rồi khởi động lại bằng `.\start-team.ps1`.
+6. Mở QC Platform, vào tab **Tra Cứu Bug**. Trạng thái cần chuyển thành **● Realtime**; server tiếp tục cập nhật dữ liệu khoảng mỗi 30 giây. Mở một bug sẽ tải thêm mô tả, lịch sử, bình luận và ảnh/video nếu có.
+
+Nếu chưa có thư mục `secrets`, có thể tạo trong PowerShell từ thư mục gốc project:
+
+```powershell
+New-Item -ItemType Directory -Force secrets
+```
+
+Cookie có thể hết hạn. Nếu trạng thái là **Chưa realtime** hoặc báo cookie hết hạn, di chuột lên nhãn để xem lý do; đăng nhập Haraworks lại, lấy cookie mới, thay giá trị trong `secrets\haraworks.json` và khởi động lại server. Khi chưa có cookie hợp lệ, QC Platform vẫn dùng bản bug đã lưu gần nhất nhưng không cập nhật realtime.
+
+Thay cho file, admin có thể cấu hình biến môi trường `HARAWORKS_COOKIE` trong môi trường chạy server. Không ghi cookie trực tiếp vào lệnh, script, chat, issue hoặc mã nguồn; không đưa file chứa cookie lên Git. Thư mục `secrets/` đã được `.gitignore` chặn.
 
 ## AI phân tích bug (tùy chọn)
 

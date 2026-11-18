@@ -51,14 +51,27 @@ function sendJson(res, statusCode, data) {
   res.end(JSON.stringify(data));
 }
 
-function parseJsonBody(req) {
+function parseJsonBody(req, maxBytes = Infinity) {
   return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
+    const chunks = [];
+    let size = 0, tooLarge = false;
+    req.on('data', chunk => {
+      if (tooLarge) return;
+      size += chunk.length;
+      if (size > maxBytes) {
+        tooLarge = true;
+        const error = new Error('Dữ liệu gửi lên quá lớn');
+        error.statusCode = 413;
+        reject(error);
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on('end', () => {
-      if (!body) return resolve({});
+      if (tooLarge) return;
+      if (!size) return resolve({});
       try {
-        resolve(JSON.parse(body));
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
       } catch (err) {
         reject(new Error('Invalid JSON payload'));
       }
@@ -104,6 +117,55 @@ const sniff = (b, name = '') => {
   if (TEXT_TYPES[ext] && !b.subarray(0, 8192).includes(0)) return [TEXT_TYPES[ext], ext];
   return null; // không phải loại được phép (ví dụ chương trình, script, file có macro)
 };
+const ANALYSIS_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+const MAX_ANALYSIS_FILES = 5, MAX_ANALYSIS_BYTES = 10 * 1024 * 1024;
+function sniffAnalysisAttachment(buf, name) {
+  const known = sniff(buf, name);
+  if (known) return known;
+  const ext = (String(name).toLowerCase().match(/\.([a-z0-9]{1,5})$/) || [])[1] || '';
+  if (buf.length >= 12 && buf.toString('ascii', 4, 8) === 'ftyp' && ['mp4', 'm4v', 'mov'].includes(ext)) {
+    return [ext === 'mov' ? 'video/quicktime' : 'video/mp4', ext];
+  }
+  if (ext === 'webm' && buf.subarray(0, 4).toString('hex') === '1a45dfa3') return ['video/webm', ext];
+  return null;
+}
+function normalizeAnalysisAttachments(value) {
+  if (value == null) return [];
+  if (!Array.isArray(value) || value.length > MAX_ANALYSIS_FILES) {
+    const error = new Error(`Chỉ nhận tối đa ${MAX_ANALYSIS_FILES} file đính kèm.`);
+    error.statusCode = 400;
+    throw error;
+  }
+  let total = 0;
+  return value.map(file => {
+    const raw = String(file?.data_base64 || '');
+    if (!raw || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(raw)) {
+      const error = new Error('Dữ liệu file đính kèm không hợp lệ.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const buf = Buffer.from(raw, 'base64');
+    if (!buf.length || buf.toString('base64') !== raw) {
+      const error = new Error('File đính kèm trống hoặc không hợp lệ.');
+      error.statusCode = 400;
+      throw error;
+    }
+    total += buf.length;
+    if (total > MAX_ANALYSIS_BYTES) {
+      const error = new Error('Tổng dung lượng file đính kèm không được vượt quá 10 MB.');
+      error.statusCode = 413;
+      throw error;
+    }
+    const name = path.basename(String(file?.name || 'tep')).replace(/[^\w.\- ]/g, '_').slice(0, 100) || 'tep';
+    const kind = sniffAnalysisAttachment(buf, name);
+    if (!kind || (kind[0].startsWith('image/') && !ANALYSIS_IMAGE_TYPES.has(kind[0]))) {
+      const error = new Error('Định dạng không được hỗ trợ. Nhận ảnh PNG/JPG/GIF/WebP, video MP4/MOV/WebM, PDF, Office, văn bản và ZIP.');
+      error.statusCode = 415;
+      throw error;
+    }
+    return { name, mime: kind[0], size: buf.length, ...(ANALYSIS_IMAGE_TYPES.has(kind[0]) ? { data_base64: raw } : {}) };
+  });
+}
 const uploadTimes = new Map();
 function allowUpload(userId) {
   const now = Date.now(), list = (uploadTimes.get(userId) || []).filter(t => now - t < 600000);
@@ -671,22 +733,26 @@ const handler = async (req, res) => {
 
     // AI phân tích bug: nguyên nhân có thể, nơi cần kiểm tra, tác vụ tự động gợi ý
     if (pathname === '/api/v1/bug-analysis' && method === 'POST') {
-      const body = await parseJsonBody(req);
+      const body = await parseJsonBody(req, 15 * 1024 * 1024);
       const text = String(body.text || '').slice(0, 4000);
       if (text.trim().length < 8) return sendJson(res, 400, { success: false, error: { message: 'Mô tả quá ngắn' } });
+      const attachments = normalizeAnalysisAttachments(body.attachments);
       const used = body.module || '';
       const guess = used ? '' : guessModule(text);
       const rules = similarRules(text, used, 8).rules;
-      const bugs = BugStore.similar(text, used, 10, ['new', 'old'].includes(body.age) ? body.age : '');
+      const bugs = BugStore.similar(text, used, 10);
       const tasks = await db.find('automation_tasks', t => t.status !== 'retired');
-      const input = { text, moduleUsed: used, moduleGuess: guess, platform: body.platform === 'Mobile' ? 'Mobile' : 'Web', rules, bugs, tasks };
+      const input = { text, moduleUsed: used, moduleGuess: guess, platform: body.platform === 'Mobile' ? 'Mobile' : 'Web', rules, bugs, tasks, attachments };
       let out;
       const ai = process.env.GEMINI_API_KEY ? { provider: 'gemini', apiKey: process.env.GEMINI_API_KEY, baseUrl: process.env.GEMINI_BASE_URL || undefined }
         : process.env.ANTHROPIC_API_KEY ? { provider: 'anthropic', apiKey: process.env.ANTHROPIC_API_KEY, baseUrl: process.env.ANTHROPIC_BASE_URL || undefined } : null;
       if (ai) {
         try { out = await analyzeAI(input, { ...ai, model: process.env.QA_AI_MODEL || undefined }); }
-        catch (e) { out = { ...analyzeLocal(input), engine_note: `Gọi AI không được (${e.message}), đang hiển thị phân tích theo dữ liệu.` }; }
-      } else out = analyzeLocal(input);
+        catch (e) { out = { ...analyzeLocal(input), engine_note: `Gọi AI không được (${e.message}), đang hiển thị phân tích theo dữ liệu.${attachments.some(a => a.data_base64) ? ' Ảnh đính kèm không được AI phân tích trong lần này.' : ''}` }; }
+      } else {
+        out = analyzeLocal(input);
+        if (attachments.some(a => a.data_base64)) out.engine_note += ' Chưa có khóa AI nên ảnh đính kèm chưa được phân tích.';
+      }
       return sendJson(res, 200, { success: true, data: out });
     }
 
@@ -811,7 +877,7 @@ const handler = async (req, res) => {
     return sendJson(res, 404, { error: 'Endpoint not found' });
   } catch (err) {
     console.error('[API Error]:', err);
-    return sendJson(res, 500, {
+    return sendJson(res, err.statusCode || 500, {
       error: {
         code: err.code || 'INTERNAL_ERROR',
         message: err.message

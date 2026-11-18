@@ -173,10 +173,17 @@
           Đây là tìm theo từ khóa và độ hiếm của từ, không phải mô hình ngôn ngữ; gõ không dấu cũng được.
         </p>
         <textarea class="form-control" id="bug-input-desc" rows="5" placeholder="Ví dụ: Cửa hàng không hoàn tất được đánh giá phiếu Bảo trì trên mobile..."></textarea>
+        <div class="ba-attachments">
+          <label class="btn btn-outline ba-attach-button">Đính kèm ảnh / video / tài liệu
+            <input id="ba-file-input" type="file" multiple accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/quicktime,video/webm,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.rtf,.zip" hidden>
+          </label>
+          <span class="ba-attach-help">Tối đa 5 file, tổng cộng 10 MB. Ảnh PNG/JPG/GIF/WebP được gửi cho AI; video và tài liệu chỉ đính kèm trong lượt phân tích này.</span>
+          <div id="ba-file-list" aria-live="polite"></div>
+          <div id="ba-file-msg" role="status"></div>
+        </div>
         <div class="filter-bar filter-toolbar ba-toolbar">
           <label class="filter-field"><span class="form-label">Module</span><select class="form-control" id="bug-module-select"><option value="">Tự nhận diện, tìm trên mọi module</option></select></label>
           <label class="filter-field"><span class="form-label">Nền tảng</span><select class="form-control" id="bug-platform-select"><option value="Web">Web Desktop</option><option value="Mobile">Mobile</option></select></label>
-          <label class="filter-field"><span class="form-label">Thời gian bug liên quan</span><select class="form-control" id="ba-age"><option value="">Mọi lúc</option><option value="new">Bug mới (30 ngày gần đây)</option><option value="old">Bug cũ (trước đó)</option></select></label>
         </div>
         <div id="ba-hints" style="font-size:11.5px;margin-top:6px;"></div>
       </div>
