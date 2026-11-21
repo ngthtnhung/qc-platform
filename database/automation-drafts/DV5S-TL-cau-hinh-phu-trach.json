@@ -1,0 +1,36 @@
+{
+  "name": "Thiết lập Cấu hình phụ trách: Theo điều kiện, Vị trí công việc & Mặc định (MAINT/SCM/IOT)",
+  "module": "DV5S",
+  "flow": "TL",
+  "description": "Mở Thiết Lập -> Cấu hình phụ trách, kiểm tra cả 3 tab: (1) Theo điều kiện (Thứ tự ưu tiên gán người phụ trách, bảng điều kiện và dialog Thêm thiết lập), (2) Theo vị trí công việc tại cửa hàng, (3) Phụ trách mặc định.",
+  "start_url": "https://tasks.zuizui.io/maintenance/dashboard",
+  "required_roles": [
+    "quản trị"
+  ],
+  "writes": false,
+  "rule_ids": [
+    "DV5S-033",
+    "DV5S-034"
+  ],
+  "source": {
+    "explore_date": "2026-11-21",
+    "note": "Sinh từ Playwright codegen thao tác thực tế trên module MAINT (dùng chung cho SCM/IOT/DV5S)."
+  },
+  "steps": [
+    "Mở phân hệ {{phan_he}}, bấm menu Thiết Lập -> Cấu hình phụ trách",
+    "Tab 'Theo điều kiện': kiểm tra nút 'Thứ tự ưu tiên gán người phụ trách' (3 quy tắc) và mở thử dialog Thêm mới -> Đóng",
+    "Tab 'Theo vị trí công việc tại cửa hàng': kiểm tra hiển thị cấu hình vị trí công việc phụ trách phiếu",
+    "Tab 'Phụ trách mặc định': kiểm tra hiển thị ô chọn Người phụ trách mặc định"
+  ],
+  "params": [
+    {
+      "key": "phan_he",
+      "label": "Phân hệ (maintenance, scm, iot)",
+      "value": "maintenance",
+      "type": "text",
+      "auto": true,
+      "fallback": "first"
+    }
+  ],
+  "script": "const phanHe = ctx.val('phan_he', 'maintenance').trim().toLowerCase() || 'maintenance';\nconst dlg = page.getByRole('dialog');\n\nawait step('Điều hướng vào Thiết Lập -> Cấu hình phụ trách', async () => {\n  if (!page.url().includes(`/${phanHe}/`)) {\n    await page.goto(`https://tasks.zuizui.io/${phanHe}/dashboard`, { waitUntil: 'domcontentloaded' });\n  }\n  await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});\n  const setupBtn = page.getByRole('button', { name: 'Thiết Lập' });\n  if (await setupBtn.isVisible().catch(() => false)) await setupBtn.click();\n  const link = page.getByRole('link', { name: 'Cấu hình phụ trách' });\n  await link.waitFor({ timeout: 10000 });\n  await link.click();\n  await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});\n});\n\nawait step('Kiểm tra tab Theo điều kiện và dialog Thêm thiết lập', async () => {\n  await page.getByText('Theo điều kiện', { exact: true }).first().click();\n  const priorityBtn = page.getByRole('button', { name: /Thứ tự ưu tiên gán người phụ/ });\n  if (await priorityBtn.isVisible().catch(() => false)) {\n    await priorityBtn.click();\n    await page.getByText(/1\\. Hệ thống tìm và gán người/).waitFor({ timeout: 5000 }).catch(() => {});\n  }\n  const addBtn = page.getByRole('button', { name: 'Thêm mới' });\n  await addBtn.waitFor({ timeout: 10000 });\n  await addBtn.click();\n  await dlg.waitFor({ timeout: 8000 });\n  await page.getByRole('heading', { name: 'Thêm thiết lập' }).waitFor({ timeout: 8000 });\n  assert(await page.getByRole('radio', { name: 'Theo Vùng miền *' }).isVisible().catch(() => false), 'Thiếu radio Theo Vùng miền');\n  await page.getByRole('button', { name: 'Đóng' }).click();\n  await dlg.waitFor({ state: 'hidden', timeout: 8000 }).catch(() => {});\n});\n\nawait step('Kiểm tra tab Theo vị trí công việc tại cửa hàng', async () => {\n  await page.getByText(/Theo vị trí công việc tại cửa/).first().click();\n  await page.getByText('Vị trí công việc phụ trách phiếu').first().waitFor({ timeout: 10000 });\n});\n\nawait step('Kiểm tra tab Phụ trách mặc định', async () => {\n  await page.getByText('Phụ trách mặc định', { exact: true }).first().click();\n  await page.getByText('Người phụ trách mặc định', { exact: true }).first().waitFor({ timeout: 10000 });\n  ctx.log('Đã kiểm tra đầy đủ 3 tab của Cấu hình phụ trách.');\n});"
+}

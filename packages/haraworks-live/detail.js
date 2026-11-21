@@ -49,7 +49,7 @@ const files = a => (Array.isArray(a) ? a : []).map(f => ({ name: f.name || '', u
 const people = a => (Array.isArray(a) ? a : []).map(p => ({ name: p.name || '', dept: p.departmentName || '', title: p.jobtitleName || '' }));
 const one = p => (p ? { name: p.name || '' } : null);
 
-export function shapeDetail(task, logs, comments) {
+export function shapeDetail(task, logs, comments, childs = []) {
   const info = Object.fromEntries((task.additionalInfo || []).map(i => [i.key, i.value]));
   return {
     id: task.id, code: task.code || '', name: task.name || '',
@@ -62,7 +62,16 @@ export function shapeDetail(task, logs, comments) {
     assignee: task.assignTo ? { name: task.assignTo.name || '', dept: task.assignTo.departmentName || '', title: task.assignTo.jobtitleName || '' } : null,
     followers: people(task.followers), supporters: people(task.supporters),
     attachments: files(task.attachments), description_media: extractMedia(task.content),
+    project_id: task.project_Id || '',
     project: task.project_Name || '', info,
+    childs: (Array.isArray(childs) ? childs : []).map(ch => ({
+      id: ch.id || '',
+      name: ch.name || '',
+      status: ch.status ?? null,
+      priority: ch.priority ?? null,
+      assignee: ch.assignTo?.name || '',
+      url: ch.id ? `https://tasks.haraworks.vn/task/project/${task.project_Id || ''}/${ch.id}` : ''
+    })),
     logs: (logs || []).map(l => ({
       type: l.log_Type, value: l.value || '', reason: l.reason || '', at: l.created_At || '', by: l.created_By?.name || '',
       info: Object.fromEntries((l.additional_Info || []).map(i => [i.key, i.value]))
@@ -95,16 +104,19 @@ export async function getBugDetail(id, { baseUrl = process.env.HARAWORKS_BASE_UR
     task = (await client.gql(`query{getTaskById(id:${q}){${MINIMAL}}}`)).getTaskById; // lỗi trường: thử bản tối thiểu
   }
   if (!task) { const e = new Error('Không tìm thấy bug này trên Haraworks (có thể đã bị xóa).'); e.code = 'NOT_FOUND'; throw e; }
-  let logs = [], comments = null;
+  let logs = [], comments = null, childs = [];
   try {
     logs = (await client.gql(`query{getTaskById(id:${q}){logs{log_Type value reason additional_Info{key value} created_At created_By{id name}}}}`)).getTaskById?.logs || [];
   } catch { /* lịch sử không bắt buộc */ }
+  try {
+    childs = (await client.gql(`query{getTaskById(id:${q}){childs{totalCount data{id name status priority assignTo{id name}}}}}`)).getTaskById?.childs?.data || [];
+  } catch { /* task con không bắt buộc */ }
   if (task.comment_Token) {
     try {
       comments = (await client.gql(`query{comments(token:${JSON.stringify(task.comment_Token)},preview:false,page_index:1,page_size:100){totalCount data{id content created_At created_By{id name} attachments{id name url} like_count replies(preview:false,page_index:1,page_size:100){totalCount data{id content created_At created_By{id name}}}}}}`)).comments;
     } catch { /* bình luận không bắt buộc */ }
   }
-  const data = shapeDetail(task, logs, comments);
+  const data = shapeDetail(task, logs, comments, childs);
   cache.set(id, { at: Date.now(), data });
   return data;
 }

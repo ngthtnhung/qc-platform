@@ -1,0 +1,30 @@
+{
+    "id":  "at_68e1fcb5ba00373d",
+    "name":  "Kiểm tra Dashboard Tổng quan IoT (/iot/dashboard) và Báo cáo IoT",
+    "module":  "DV5S",
+    "flow":  "BC",
+    "description":  "Truy cập Dashboard Tổng quan IoT (/iot/dashboard), kiểm tra các chỉ số (Phiếu chưa hoàn tất, Không đạt SLAs, Biểu đồ trạng thái) và kiểm tra trang Báo cáo Số liệu vận hành (/iot/report/operating).",
+    "start_url":  "https://tasks.zuizui.io/iot/dashboard",
+    "required_roles":  [
+
+                       ],
+    "writes":  false,
+    "rule_ids":  [
+                     "DV5S-112",
+                     "DV5S-062",
+                     "DV5S-098"
+                 ],
+    "source":  {
+                   "explore_date":  "2026-11-18",
+                   "note":  "Sinh tự động từ kho Business Rule Haraworks Wiki (https://wiki.hrws.cloud/) cho module IOT."
+               },
+    "steps":  [
+                  "Mở trang Tổng quan IoT (/iot/dashboard) và đợi dữ liệu tải xong",
+                  "Kiểm tra hiển thị các thẻ thống kê và biểu đồ trên Dashboard IoT",
+                  "Chuyển sang trang Báo cáo Số liệu vận hành IoT (/iot/report/operating) và Báo cáo theo khu vực, đơn vị (/iot/report/store)"
+              ],
+    "params":  [
+
+               ],
+    "script":  "await step(\u0027Mở Dashboard Tổng quan IoT (/iot/dashboard)\u0027, async () =\u003e {\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 25000 }).catch(() =\u003e {});\n  assert(/\\/iot\\/dashboard/.test(page.url()), \u0027Không vào được Dashboard IoT\u0027);\n  const txt = await page.locator(\u0027body\u0027).innerText();\n  assert(txt.length \u003e 50, \u0027Nội dung Dashboard IoT trống\u0027);\n});\n\nawait step(\u0027Kiểm tra trang Báo cáo Số liệu vận hành IoT (/iot/report/operating)\u0027, async () =\u003e {\n  await page.goto(\u0027https://tasks.zuizui.io/iot/report/operating\u0027, { waitUntil: \u0027domcontentloaded\u0027 });\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 25000 }).catch(() =\u003e {});\n  assert(/\\/iot\\/report\\/operating/.test(page.url()), \u0027Không mở được Báo cáo Số liệu vận hành IoT\u0027);\n});\n\nawait step(\u0027Kiểm tra trang Báo cáo theo khu vực, đơn vị IoT (/iot/report/store)\u0027, async () =\u003e {\n  await page.goto(\u0027https://tasks.zuizui.io/iot/report/store\u0027, { waitUntil: \u0027domcontentloaded\u0027 });\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 25000 }).catch(() =\u003e {});\n  assert(/\\/iot\\/report\\/store/.test(page.url()), \u0027Không mở được Báo cáo theo đơn vị IoT\u0027);\n  ctx.log(\u0027Đã kiểm tra đầy đủ Dashboard và Báo cáo IoT.\u0027);\n});"
+}

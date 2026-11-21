@@ -1,0 +1,37 @@
+{
+    "id":  "at_a3f523cc9a019e5e",
+    "name":  "Kiểm tra màn hình Đơn vị tạo phiếu Bảo trì (/maintenance/config/unit)",
+    "module":  "DV5S",
+    "flow":  "CHUNG",
+    "description":  "Mở màn hình cấu hình Đơn vị tạo phiếu Bảo trì (/maintenance/config/unit), kiểm tra danh sách vị trí công việc được tạo phiếu, cấu hình đánh giá tại cửa hàng và danh sách đơn vị ngoài cửa hàng.",
+    "start_url":  "https://tasks.zuizui.io/maintenance/config/unit",
+    "required_roles":  [
+                           "quản trị"
+                       ],
+    "writes":  false,
+    "rule_ids":  [
+                     "DV5S-110",
+                     "DV5S-049",
+                     "DV5S-096"
+                 ],
+    "source":  {
+                   "explore_date":  "2026-11-18",
+                   "note":  "Sinh tự động từ kho Business Rule Haraworks Wiki (https://wiki.hrws.cloud/) cho module MAINT."
+               },
+    "steps":  [
+                  "Đăng nhập bằng tài khoản quản trị, mở trang /maintenance/config/unit",
+                  "Kiểm tra hiển thị cấu hình vị trí công việc tạo phiếu, đối tượng đánh giá tại cửa hàng và bảng danh sách đơn vị tạo phiếu",
+                  "Tìm kiếm hoặc kiểm tra đơn vị {{ten_don_vi}} trên màn hình"
+              ],
+    "params":  [
+                   {
+                       "value":  "",
+                       "label":  "Tên đơn vị cần kiểm tra (để trống: kiểm tra bảng danh sách)",
+                       "fallback":  "first",
+                       "auto":  true,
+                       "type":  "text",
+                       "key":  "ten_don_vi"
+                   }
+               ],
+    "script":  "await step(\u0027Mở màn hình Cấu hình Đơn vị tạo phiếu Bảo trì\u0027, async () =\u003e {\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 25000 }).catch(() =\u003e {});\n  assert(/\\/maintenance\\/config/.test(page.url()), \u0027Tài khoản không có quyền vào cấu hình Bảo trì\u0027);\n});\n\nawait step(\u0027Kiểm tra các phần cấu hình Vị trí tạo phiếu, Đánh giá và Danh sách đơn vị\u0027, async () =\u003e {\n  const txt = await page.locator(\u0027body\u0027).innerText();\n  assert(txt.length \u003e 50, \u0027Màn hình cấu hình đơn vị tạo phiếu trống\u0027);\n  if (ctx.has(\u0027ten_don_vi\u0027)) {\n    const keyword = ctx.val(\u0027ten_don_vi\u0027);\n    ctx.log(\u0027Kiểm tra đơn vị: \u0027 + keyword + \u0027 -\u003e \u0027 + (txt.includes(keyword) ? \u0027Có trên trang\u0027 : \u0027Chưa thấy trên trang đầu\u0027));\n  }\n});"
+}

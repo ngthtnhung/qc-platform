@@ -1,0 +1,76 @@
+{
+  "name": "Bộ lọc nâng cao danh sách phiếu & Lưu bộ lọc (MAINT/SCM/IOT)",
+  "module": "DV5S",
+  "flow": "LOC",
+  "description": "Mở bảng Bộ lọc nâng cao trên danh sách phiếu, kiểm tra chọn các tiêu chí lọc (Phân loại phiếu, Mức độ xử lý, Vùng miền, Khu vực, Đơn vị, Trạng thái, Người phụ trách/hỗ trợ/tạo, Thời gian, Điểm đánh giá, SLA tiếp nhận/hoàn tất, Tổng thời gian thực hiện, Loại phiếu, Độ ưu tiên), bấm Áp dụng và kiểm tra hộp thoại Lưu bộ lọc.",
+  "start_url": "https://tasks.zuizui.io/maintenance/create/list",
+  "required_roles": [],
+  "writes": false,
+  "rule_ids": [
+    "DV5S-056",
+    "DV5S-027",
+    "DV5S-030",
+    "DV5S-024"
+  ],
+  "source": {
+    "explore_date": "2026-11-21",
+    "note": "Sinh từ Playwright codegen thao tác thực tế trên module MAINT (dùng chung cho SCM/IOT/DV5S)."
+  },
+  "steps": [
+    "Mở trang danh sách phiếu phân hệ {{phan_he}}, bấm icon Bộ lọc để mở panel lọc nâng cao",
+    "Chọn Phân loại phiếu {{phan_loai}}, SLA hoàn tất {{sla_hoan_tat}}, Độ ưu tiên {{do_uu_tien}}, Loại phiếu {{loai_phieu}}",
+    "Kiểm tra hiển thị các trường Vùng miền, Khu vực, Đơn vị, Trạng thái, Người phụ trách, Người hỗ trợ, Người tạo, Điểm đánh giá, SLA tiếp nhận, Tổng thời gian thực hiện",
+    "Bấm Áp dụng để lọc danh sách, sau đó mở thử dialog Lưu bộ lọc (nhập tên {{ten_bo_loc}} rồi đóng để không tạo rác)"
+  ],
+  "params": [
+    {
+      "key": "phan_he",
+      "label": "Phân hệ (maintenance, scm, iot)",
+      "value": "maintenance",
+      "type": "text",
+      "auto": true,
+      "fallback": "first"
+    },
+    {
+      "key": "phan_loai",
+      "label": "Phân loại phiếu",
+      "value": "Máy lạnh",
+      "type": "text",
+      "auto": true,
+      "fallback": "first"
+    },
+    {
+      "key": "sla_hoan_tat",
+      "label": "SLA hoàn tất (VD: Đạt, Không đạt)",
+      "value": "Không đạt",
+      "type": "text",
+      "auto": true,
+      "fallback": "first"
+    },
+    {
+      "key": "do_uu_tien",
+      "label": "Độ ưu tiên (VD: Khẩn cấp, Cao, Trung bình, Thấp)",
+      "value": "Thấp",
+      "type": "text",
+      "auto": true,
+      "fallback": "first"
+    },
+    {
+      "key": "loai_phieu",
+      "label": "Loại phiếu (VD: Phiếu thường, Phiếu định kỳ)",
+      "value": "Phiếu định kỳ",
+      "type": "text",
+      "auto": true,
+      "fallback": "first"
+    },
+    {
+      "key": "ten_bo_loc",
+      "label": "Tên bộ lọc thử nghiệm",
+      "value": "Lưu bộ lọc",
+      "type": "text",
+      "auto": true,
+      "fallback": "first"
+    }
+  ],
+  "script": "const phanHe = ctx.val('phan_he', 'maintenance').trim().toLowerCase() || 'maintenance';\nconst targetUrl = `https://tasks.zuizui.io/${phanHe}/create/list`;\n\nawait step('Mở panel Bộ lọc nâng cao', async () => {\n  if (!page.url().includes(`/${phanHe}/`)) {\n    await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });\n  }\n  await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});\n  const filterBtn = page.locator('.ltv-filter-bar__pagination__btn.ltv-filter-bar__filter-btn, .ltv-filter-bar__filter-btn').first();\n  await filterBtn.waitFor({ timeout: 15000 });\n  await filterBtn.click();\n  await page.getByText('Bộ lọc', { exact: true }).first().waitFor({ timeout: 10000 });\n});\n\nawait step('Chọn tiêu chí lọc (Phân loại, Vùng miền, SLA, Độ ưu tiên, Loại phiếu)', async () => {\n  // Phân loại phiếu\n  const firstInput = page.locator('.MuiInputBase-root').first();\n  await firstInput.click();\n  await pickOption(page.getByRole('option'), 'phan_loai');\n\n  // Vùng miền -> Chọn tất cả nếu có\n  const regionInput = page.getByRole('textbox', { name: 'Vùng miền' });\n  if (await regionInput.isVisible().catch(() => false)) {\n    await regionInput.click();\n    const selectAll = page.getByRole('option', { name: 'Chọn tất cả' }).first();\n    if (await selectAll.isVisible().catch(() => false)) await selectAll.click();\n    await page.keyboard.press('Escape').catch(() => {});\n  }\n\n  // SLA hoàn tất\n  const slaDoneInput = page.getByRole('textbox', { name: 'SLA hoàn tất' });\n  if (await slaDoneInput.isVisible().catch(() => false)) {\n    await slaDoneInput.click();\n    await pickOption(page.getByRole('option'), 'sla_hoan_tat');\n  }\n\n  // Loại phiếu\n  const typeInput = page.getByRole('textbox', { name: 'Loại phiếu', exact: true });\n  if (await typeInput.isVisible().catch(() => false)) {\n    await typeInput.click();\n    await pickOption(page.getByRole('option'), 'loai_phieu');\n  }\n\n  // Độ ưu tiên\n  const prioInput = page.getByRole('textbox', { name: 'Độ ưu tiên' });\n  if (await prioInput.isVisible().catch(() => false)) {\n    await prioInput.click();\n    await pickOption(page.getByRole('option'), 'do_uu_tien');\n  }\n});\n\nawait step('Kiểm tra các trường lọc còn lại hiện diện', async () => {\n  for (const label of ['Người phụ trách', 'Người hỗ trợ', 'Người tạo', 'Điểm đánh giá', 'SLA tiếp nhận', 'Tổng thời gian thực hiện']) {\n    const visible = await page.getByRole('textbox', { name: label }).isVisible().catch(() => false);\n    if (!visible) ctx.log('Lưu ý: không thấy ô ' + label);\n  }\n});\n\nawait step('Bấm Áp dụng và kiểm tra dialog Lưu bộ lọc', async () => {\n  await page.locator('div').filter({ hasText: /^Áp dụng$/ }).first().click();\n  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});\n\n  const saveFilterBtn = page.getByText('Lưu bộ lọc').first();\n  if (await saveFilterBtn.isVisible().catch(() => false)) {\n    await saveFilterBtn.click();\n    const nameInput = page.getByRole('textbox', { name: 'Tên bộ lọc *' });\n    await nameInput.waitFor({ timeout: 8000 });\n    await nameInput.fill(ctx.val('ten_bo_loc', 'Lưu bộ lọc'));\n    await page.keyboard.press('Escape').catch(() => {});\n  }\n  ctx.log('Đã kiểm tra bộ lọc nâng cao và dialog Lưu bộ lọc thành công.');\n});"
+}

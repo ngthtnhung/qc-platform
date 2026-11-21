@@ -1,0 +1,34 @@
+{
+  "name": "Báo cáo Số liệu vận hành: kiểm tra 5 nhóm chỉ số A-E & bộ lọc (MAINT/SCM/IOT)",
+  "module": "DV5S",
+  "flow": "BC",
+  "description": "Mở Báo cáo -> Số liệu vận hành (/report/operating), kiểm tra bộ lọc Thời gian, Phân loại phiếu, Vùng miền và xác nhận hiển thị đầy đủ 5 nhóm báo cáo (A. Theo số lượng phiếu, B. Theo thời gian tiếp nhận, C. Theo thời gian xử lý phiếu, D. Theo mức độ hài lòng, E. Theo phân loại phiếu).",
+  "start_url": "https://tasks.zuizui.io/maintenance/report/operating",
+  "required_roles": [],
+  "writes": false,
+  "rule_ids": [
+    "DV5S-062",
+    "DV5S-112"
+  ],
+  "source": {
+    "explore_date": "2026-11-21",
+    "note": "Sinh từ Playwright codegen thao tác thực tế trên module MAINT (dùng chung cho SCM/IOT/DV5S)."
+  },
+  "steps": [
+    "Mở trang Báo cáo Số liệu vận hành phân hệ {{phan_he}}",
+    "Kiểm tra bộ lọc Thời gian (.hrv-date-time-picker), Phân loại phiếu, Vùng miền",
+    "Xác nhận hiển thị đủ 5 nhóm chỉ số: A. Theo số lượng phiếu, B. Theo thời gian tiếp nhận, C. Theo thời gian xử lý phiếu, D. Theo mức độ hài lòng, E. Theo phân loại phiếu",
+    "Kiểm tra các chỉ số chính (Số phiếu tiếp nhận, Số phiếu hoàn tất xử lý, Tỉ lệ phiếu đạt SLAs, Thời gian xử lý phiếu trung bình)"
+  ],
+  "params": [
+    {
+      "key": "phan_he",
+      "label": "Phân hệ (maintenance, scm, iot)",
+      "value": "maintenance",
+      "type": "text",
+      "auto": true,
+      "fallback": "first"
+    }
+  ],
+  "script": "const phanHe = ctx.val('phan_he', 'maintenance').trim().toLowerCase() || 'maintenance';\nconst targetUrl = `https://tasks.zuizui.io/${phanHe}/report/operating`;\n\nawait step('Mở màn hình Số liệu vận hành', async () => {\n  if (!page.url().includes(`/${phanHe}/report/operating`)) {\n    await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });\n  }\n  await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});\n  await page.getByText('A. Theo số lượng phiếu').first().waitFor({ timeout: 20000 });\n});\n\nawait step('Kiểm tra bộ lọc Thời gian, Phân loại phiếu, Vùng miền', async () => {\n  assert(await page.locator('.hrv-date-time-picker').first().isVisible().catch(() => false), 'Không thấy bộ chọn Thời gian');\n  assert(await page.getByText('Chọn Phân loại phiếu').first().isVisible().catch(() => false), 'Không thấy bộ lọc Phân loại phiếu');\n  assert(await page.getByText('Vùng miền', { exact: true }).first().isVisible().catch(() => false), 'Không thấy bộ lọc Vùng miền');\n});\n\nawait step('Kiểm tra 5 nhóm báo cáo A, B, C, D, E', async () => {\n  const txt = await page.locator('body').innerText();\n  for (const section of [\n    'A. Theo số lượng phiếu',\n    'B. Theo thời gian tiếp nhận',\n    'C. Theo thời gian xử lý phiếu',\n    'D. Theo mức độ hài lòng',\n    'E. Theo phân loại phiếu'\n  ]) {\n    assert(txt.includes(section), 'Thiếu nhóm báo cáo: ' + section);\n  }\n  for (const metric of [\n    'Số phiếu tiếp nhận',\n    'Số phiếu hoàn tất xử lý',\n    'Tỉ lệ phiếu đạt SLAs',\n    'Thời gian xử lý phiếu trung bình'\n  ]) {\n    assert(txt.includes(metric), 'Thiếu chỉ số: ' + metric);\n  }\n  ctx.log('Báo cáo Số liệu vận hành hiển thị đầy đủ 5 nhóm A-E.');\n});"
+}

@@ -1,0 +1,30 @@
+{
+    "id":  "at_ec3ce432f6a6c276",
+    "name":  "Kiểm tra Dashboard Tổng quan SCM (/scm/dashboard) và Báo cáo SCM",
+    "module":  "DV5S",
+    "flow":  "BC",
+    "description":  "Mở Dashboard Tổng quan SCM (/scm/dashboard), kiểm tra các thẻ thống kê (Phiếu chưa hoàn tất, Không đạt SLAs) và kiểm tra các màn hình Báo cáo Số liệu vận hành (/scm/report/operating), Báo cáo theo đơn vị (/scm/report/store).",
+    "start_url":  "https://tasks.zuizui.io/scm/dashboard",
+    "required_roles":  [
+
+                       ],
+    "writes":  false,
+    "rule_ids":  [
+                     "DV5S-112",
+                     "DV5S-062",
+                     "DV5S-098"
+                 ],
+    "source":  {
+                   "explore_date":  "2026-11-18",
+                   "note":  "Sinh tự động từ kho Business Rule Haraworks Wiki (https://wiki.hrws.cloud/) cho module SCM."
+               },
+    "steps":  [
+                  "Mở trang Tổng quan SCM (/scm/dashboard) và kiểm tra hiển thị các chỉ số thống kê",
+                  "Mở trang Báo cáo Số liệu vận hành SCM (/scm/report/operating)",
+                  "Mở trang Báo cáo Theo khu vực, đơn vị SCM (/scm/report/store)"
+              ],
+    "params":  [
+
+               ],
+    "script":  "await step(\u0027Mở Dashboard Tổng quan SCM (/scm/dashboard)\u0027, async () =\u003e {\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 25000 }).catch(() =\u003e {});\n  assert(/\\/scm\\/dashboard/.test(page.url()), \u0027Không vào được Dashboard SCM\u0027);\n  const txt = await page.locator(\u0027body\u0027).innerText();\n  assert(txt.length \u003e 50, \u0027Nội dung Dashboard SCM trống\u0027);\n});\n\nawait step(\u0027Kiểm tra Báo cáo Số liệu vận hành SCM (/scm/report/operating)\u0027, async () =\u003e {\n  await page.goto(\u0027https://tasks.zuizui.io/scm/report/operating\u0027, { waitUntil: \u0027domcontentloaded\u0027 });\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 25000 }).catch(() =\u003e {});\n  assert(/\\/scm\\/report\\/operating/.test(page.url()), \u0027Không mở được Báo cáo Số liệu vận hành SCM\u0027);\n});\n\nawait step(\u0027Kiểm tra Báo cáo Theo khu vực, đơn vị SCM (/scm/report/store)\u0027, async () =\u003e {\n  await page.goto(\u0027https://tasks.zuizui.io/scm/report/store\u0027, { waitUntil: \u0027domcontentloaded\u0027 });\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 25000 }).catch(() =\u003e {});\n  assert(/\\/scm\\/report\\/store/.test(page.url()), \u0027Không mở được Báo cáo theo đơn vị SCM\u0027);\n  ctx.log(\u0027Đã kiểm tra đầy đủ Dashboard và Báo cáo SCM.\u0027);\n});"
+}

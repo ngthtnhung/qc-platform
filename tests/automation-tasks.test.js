@@ -7,6 +7,7 @@ import { fetchTaskFiles } from '../apps/launcher/task-files.js';
 import { analyzeLocal, analyzeAI, matchTasks } from '../packages/bug-search/analysis.js';
 import { suggestAutomationFix } from '../services/ai-service/automation-code-assistant.js';
 import { shapeDetail, htmlToText, extractMedia, mediaKind } from '../packages/haraworks-live/detail.js';
+import { BugLive } from '../packages/haraworks-live/bug-live.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,6 +16,17 @@ export async function runAutomationTaskTests() {
 const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); };
 const stg = { base_url: 'https://zuizui.io/' };
 const base = { name: 'T', module: 'DV5S', start_url: 'https://tasks.zuizui.io/x', steps: ['a'], script: "await step('s', async () => {});" };
+
+let finishSync;
+const live = new BugLive({ getListTask: () => new Promise(resolve => { finishSync = () => resolve(null); }) }, {
+  pattern: 'x', pollMs: 0, cacheFile: path.join(os.tmpdir(), `qa-live-status-${Date.now()}.json`)
+});
+live.projects = [{ id: 'p', version: '1', allTasks: false }];
+const liveSync = live.sync('test');
+assert(live.status().syncing, 'trạng thái realtime nhận biết lần đồng bộ đang chạy');
+finishSync();
+await liveSync;
+assert(!live.status().syncing, 'trạng thái realtime nhận biết lần đồng bộ đã hoàn tất');
 
 // 1. chuẩn hóa
 assert(normalizeTask(base, stg).task, 'tác vụ hợp lệ được nhận');
@@ -153,17 +165,26 @@ console.log('✓ Test 6 Passed: danh sách, file, ngẫu nhiên khi trống, ch�
 const tasksX = [{ id: 'at_1', name: 'Tạo phiếu bảo trì', module: 'DV5S', steps: ['Chọn phân loại'], flow: 'TAO' }, { id: 'at_2', name: 'Soạn thư', module: 'MAIL', steps: [] }];
 assert(matchTasks('không tạo được phiếu bảo trì', tasksX)[0].id === 'at_1', 'khớp tác vụ theo từ khóa');
 const loc = analyzeLocal({ text: 'xyz', moduleUsed: '', moduleGuess: '', rules: [], bugs: [], tasks: tasksX });
-assert(loc.engine === 'local' && loc.causes.length && loc.new_task && loc.reproduction_steps.length, 'không có dữ liệu thì nói rõ nguyên nhân, cách tái hiện và gợi ý tạo tác vụ');
-const fakeFetch = async () => ({ ok: true, json: async () => ({ content: [{ text: 'Kết quả: {"causes":["a"],"checks":["b"],"task_ids":["at_2","at_bia"],"new_task":"","reproduction_steps":["Bước 1"]}' }] }) });
-const ai = await analyzeAI({ text: 'mô tả bug dài đủ', rules: [], bugs: [], tasks: tasksX }, { apiKey: 'k', fetchImpl: fakeFetch });
+assert(loc.engine === 'local' && loc.causes.length && /chọn module/.test(loc.new_task) && loc.reproduction_steps.length, 'chưa có module thì không đề xuất tác vụ cụ thể');
+const scopedLoc = analyzeLocal({ text: 'soạn thư', moduleUsed: 'DV5S', moduleGuess: '', rules: [], bugs: [], tasks: tasksX });
+assert(scopedLoc.tasks.length === 0 && scopedLoc.new_task.includes('DV5S'), 'phân tích local không đề xuất tác vụ thuộc module khác');
+let aiPrompt = '';
+const fakeFetch = async (url, options) => {
+  aiPrompt = JSON.parse(options.body).messages[0].content[0].text;
+  return { ok: true, json: async () => ({ content: [{ text: 'Kết quả: {"causes":["a"],"checks":["b"],"task_ids":["at_2","at_1","at_bia"],"new_task":"","reproduction_steps":["Bước 1"]}' }] }) };
+};
+const ai = await analyzeAI({ text: 'mô tả bug dài đủ', moduleUsed: 'MAIL', rules: [], bugs: [], tasks: tasksX }, { apiKey: 'k', fetchImpl: fakeFetch });
 assert(ai.engine === 'ai' && ai.tasks.length === 1 && ai.tasks[0].id === 'at_2' && ai.reproduction_steps[0] === 'Bước 1', 'mã tác vụ bịa bị loại và cách tái hiện được trả về');
+assert(aiPrompt.includes('"automation_tasks":[{"id":"at_2"') && !aiPrompt.includes('"id":"at_1"'), 'AI chỉ nhận danh sách tác vụ thuộc module bug');
+const aiUnknown = await analyzeAI({ text: 'mô tả bug dài đủ', rules: [], bugs: [], tasks: tasksX }, { apiKey: 'k', fetchImpl: fakeFetch });
+assert(aiUnknown.tasks.length === 0 && /chọn module/.test(aiUnknown.new_task) && aiPrompt.includes('"automation_tasks":[]'), 'AI không đề xuất tác vụ khi module bug chưa xác định');
 const gemFetch = async (url, o) => {
   const payload = JSON.parse(o.body);
   assert(url.includes('gemini-3.5-flash:generateContent') && o.headers['x-goog-api-key'] === 'g' && !url.includes('key='), 'Gemini: đúng địa chỉ, khóa nằm trong header');
   assert(payload.contents[0].parts[1].inlineData.mimeType === 'image/png' && payload.contents[0].parts[1].inlineData.data === 'aGVsbG8=', 'Gemini nhận ảnh đính kèm dạng inlineData');
   return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: '{"causes":["c"],"checks":[],"task_ids":["at_1"],"new_task":""}' }] } }] }) };
 };
-const gm = await analyzeAI({ text: 'mô tả bug dài đủ', rules: [], bugs: [], tasks: tasksX, attachments: [{ name: 'anh.png', mime: 'image/png', data_base64: 'aGVsbG8=' }] }, { provider: 'gemini', apiKey: 'g', fetchImpl: gemFetch });
+const gm = await analyzeAI({ text: 'mô tả bug dài đủ', moduleUsed: 'DV5S', rules: [], bugs: [], tasks: tasksX, attachments: [{ name: 'anh.png', mime: 'image/png', data_base64: 'aGVsbG8=' }] }, { provider: 'gemini', apiKey: 'g', fetchImpl: gemFetch });
 assert(gm.engine === 'ai' && gm.tasks[0].id === 'at_1' && /gemini/.test(gm.engine_note), 'Gemini trả kết quả đúng');
 let claudePayload;
 await analyzeAI(

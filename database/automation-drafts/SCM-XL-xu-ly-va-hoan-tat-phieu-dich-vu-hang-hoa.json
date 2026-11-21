@@ -1,0 +1,46 @@
+{
+    "id":  "at_7700226cb9d3aa91",
+    "name":  "Tiếp nhận và Hoàn tất phiếu Dịch vụ hàng hóa (SCM) [AI TEST]",
+    "module":  "DV5S",
+    "flow":  "XL",
+    "description":  "Mở chi tiết phiếu SCM [AI TEST] trong danh sách đang xử lý (/scm/doing/list), thực hiện Tiếp nhận và Hoàn tất phiếu kèm ghi chú, kiểm tra ghi nhận thời gian thực hiện Actual_Work.",
+    "start_url":  "https://tasks.zuizui.io/scm/doing/list",
+    "required_roles":  [
+                           "quản trị"
+                       ],
+    "writes":  true,
+    "rule_ids":  [
+                     "DV5S-106",
+                     "DV5S-087",
+                     "DV5S-011"
+                 ],
+    "source":  {
+                   "explore_date":  "2026-11-18",
+                   "note":  "Sinh tự động từ kho Business Rule Haraworks Wiki (https://wiki.hrws.cloud/) cho module SCM."
+               },
+    "steps":  [
+                  "Mở Danh sách xử lý phiếu SCM (/scm/doing/list), chọn tab Tất cả",
+                  "Mở chi tiết phiếu {{phieu}} (để trống: chọn phiếu [AI TEST] mới nhất)",
+                  "Tiếp nhận phiếu và chuyển sang Hoàn tất xử lý kèm ghi chú [AI TEST] {{ghi_chu}}",
+                  "Kiểm tra phiếu chuyển sang trạng thái Hoàn tất xử lý"
+              ],
+    "params":  [
+                   {
+                       "value":  "",
+                       "label":  "Tên hoặc mã phiếu SCM cần xử lý (trống: phiếu [AI TEST] mới nhất)",
+                       "fallback":  "first",
+                       "auto":  false,
+                       "type":  "text",
+                       "key":  "phieu"
+                   },
+                   {
+                       "value":  "Hoàn tất xử lý phiếu SCM",
+                       "label":  "Ghi chú khi hoàn tất (tự thêm tiền tố [AI TEST])",
+                       "fallback":  "first",
+                       "auto":  true,
+                       "type":  "text",
+                       "key":  "ghi_chu"
+                   }
+               ],
+    "script":  "const note = ctx.testPrefix + \u0027 \u0027 + ctx.val(\u0027ghi_chu\u0027, \u0027Hoàn tất xử lý phiếu SCM\u0027);\nconst dlg = page.locator(\u0027[role=dialog]\u0027);\n\nawait step(\u0027Mở chi tiết phiếu SCM cần xử lý\u0027, async () =\u003e {\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 20000 }).catch(() =\u003e {});\n  const allTab = page.getByText(\u0027Tất cả\u0027, { exact: true }).first();\n  if (await allTab.waitFor({ timeout: 10000 }).then(() =\u003e true).catch(() =\u003e false)) await allTab.click();\n  const target = ctx.val(\u0027phieu\u0027, \u0027\u0027) || ctx.testPrefix;\n  const row = page.getByText(target).first();\n  await row.waitFor({ timeout: 25000 });\n  await row.click();\n  await page.waitForURL(/\\/scm\\/(doing|create)\\/detail\\//, { timeout: 20000 });\n});\n\nawait step(\u0027Tiếp nhận và Hoàn tất phiếu SCM\u0027, async () =\u003e {\n  const btnReceive = page.getByText(\u0027Tiếp nhận phiếu\u0027, { exact: true }).first();\n  if (await btnReceive.isVisible().catch(() =\u003e false)) {\n    await btnReceive.click();\n    await dlg.waitFor({ timeout: 10000 });\n    await dlg.getByText(\u0027Xác nhận\u0027, { exact: true }).click();\n    await dlg.waitFor({ state: \u0027hidden\u0027, timeout: 15000 });\n  }\n  const btnDone = page.getByText(\u0027Hoàn tất phiếu\u0027, { exact: true }).first();\n  if (await btnDone.waitFor({ timeout: 15000 }).then(() =\u003e true).catch(() =\u003e false)) {\n    await btnDone.click();\n    await dlg.waitFor({ timeout: 10000 });\n    const box = dlg.locator(\u0027textarea\u0027).first();\n    if (await box.count()) { await box.click(); await box.pressSequentially(note); }\n    await dlg.getByText(\u0027Hoàn tất\u0027, { exact: true }).click();\n    await dlg.waitFor({ state: \u0027hidden\u0027, timeout: 15000 });\n  }\n});\nctx.log(\u0027Đã hoàn tất xử lý phiếu SCM.\u0027);"
+}

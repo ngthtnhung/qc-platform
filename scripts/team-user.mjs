@@ -8,17 +8,20 @@
  *   node scripts/team-user.mjs access <id> admin                  -> nâng lên admin (có mọi quyền)
  */
 import { db } from '../database/db.js';
-import { createUser, resetToken, revokeUser, setUserAccess, PERMS } from '../packages/team-auth/auth.js';
+import { createUser, resetToken, revokeUser, setUserAccess, setPassword, PERMS } from '../packages/team-auth/auth.js';
 
-const [cmd, a, b] = process.argv.slice(2);
+const [cmd, a, b, c, d] = process.argv.slice(2);
 await db.init();
 
 if (cmd === 'add' && a) {
-  const { user, token } = await createUser(a, b || 'member');
-  console.log(`Đã tạo ${user.display_name} (${user.role}), id ${user.id}.`);
-  console.log(`Token (chỉ hiện một lần, gửi riêng cho người đó): ${token}`);
+  const { user, token } = await createUser(a, b || 'member', c || a, d || '123456');
+  console.log(`Đã tạo ${user.display_name} (${user.role}), id ${user.id}, tài khoản: ${user.username}, mật khẩu: ${d || '123456'}.`);
+  console.log(`Token dự phòng (CLI): ${token}`);
 } else if (cmd === 'list') {
-  (await db.find('team_users')).forEach(u => console.log(`${u.id}  ${u.display_name}  ${u.role}  ${u.is_active ? 'đang dùng' : 'đã thu hồi'}`));
+  (await db.find('team_users')).forEach(u => console.log(`${u.id}  ${u.username || '-'}  ${u.display_name}  ${u.role}  ${u.is_active ? 'đang dùng' : 'đã thu hồi'}`));
+} else if (cmd === 'password' && a && b) {
+  const u = await setPassword(a, b, c);
+  console.log(`Đã đặt mật khẩu mới cho ${u.display_name} (${u.username}).`);
 } else if (cmd === 'reset' && a) {
   console.log(`Token mới: ${await resetToken(a)}`);
 } else if (cmd === 'revoke' && a) {

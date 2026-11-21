@@ -5,8 +5,13 @@
  * Defined in Section 5.5 of System Design v1.0.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { RagEngine } from './rag-engine.js';
 import { TestCaseSchemaValidator } from '../../packages/test-case-schema/validator.js';
+
+const WIKI_TC_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../database/test-cases-maint-iot-scm.json');
 
 export class TestPlanGenerator {
   /**
@@ -32,15 +37,27 @@ export class TestPlanGenerator {
     // 1. Retrieve RAG rules
     const matchedChunks = await RagEngine.retrieveChunks({
       moduleId,
-      keywords: ['ưu tiên', 'mapping', 'tạo phiếu', 'view xem', 'figma', 'mobile', 'migrate']
+      keywords: ['ưu tiên', 'mapping', 'tạo phiếu', 'view xem', 'figma', 'mobile', 'migrate', 'sla', 'pic', 'iot', 'scm', 'maint']
     });
     const citations = RagEngine.formatCitations(matchedChunks);
 
     const isMaintenanceModule = textLower.includes('bảo trì') || textLower.includes('ưu tiên');
+    const isWikiMsiSuite = ['mod_maint', 'mod_iot', 'mod_scm', 'MAINT', 'IOT', 'SCM', 'DV5S'].includes(moduleId) &&
+      (textLower.includes('wiki') || textLower.includes('toàn bộ') || textLower.includes('iot') || textLower.includes('scm'));
 
     const generatedCases = [];
 
-    if (isMaintenanceModule) {
+    if (isWikiMsiSuite && fs.existsSync(WIKI_TC_FILE)) {
+      const allWikiCases = JSON.parse(fs.readFileSync(WIKI_TC_FILE, 'utf8'));
+      const modFilter = moduleId === 'mod_iot' || moduleId === 'IOT' ? 'IOT'
+        : moduleId === 'mod_scm' || moduleId === 'SCM' ? 'SCM'
+        : moduleId === 'MAINT' ? 'MAINT' : '';
+      for (const tc of allWikiCases) {
+        if (!modFilter || tc.module_name.includes(modFilter) || tc.module_name.includes('DV5S')) {
+          generatedCases.push(TestCaseSchemaValidator.normalize({ ...tc, link_task: taskId || tc.link_task }));
+        }
+      }
+    } else if (isMaintenanceModule) {
       // Case 1: Positive Flow - Tạo phiếu với độ ưu tiên mặc định là Trung bình
       generatedCases.push(TestCaseSchemaValidator.normalize({
         case_key: 'TC-MAINT-01',

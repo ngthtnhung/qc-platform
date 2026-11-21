@@ -1,51 +1,53 @@
 {
-  "name": "Tạo lượt học cho học viên [AI TEST]",
-  "module": "LND",
-  "flow": "LUOT",
-  "description": "Giao một môn học cho học viên bằng cách tạo lượt học. Chọn môn theo tên, học viên theo mã nhân viên (trống: chính tài khoản đang chạy).",
-  "start_url": "https://ic.zuizui.io/lnd/manager/learning_turn",
-  "required_roles": [],
-  "writes": true,
-  "rule_ids": [
-    "LND-020",
-    "LND-021"
-  ],
-  "steps": [
-    "Đăng nhập Staging bằng tài khoản quản lý học tập, mở Quản lý lượt học, bấm Tạo lượt học",
-    "Chọn môn học {{mon_hoc}} (gõ đúng tên môn, không tìm theo mã)",
-    "Chọn học viên có mã nhân viên {{hoc_vien}} (trống: chính tài khoản đang chạy)",
-    "Thời hạn học {{thoi_han}} ngày (trống: bỏ qua); tích Vẫn tạo lượt học mới dù học viên đã đạt môn: {{van_tao}} (Có hoặc Không)",
-    "Bấm Tạo, kiểm tra lượt học mới xuất hiện đầu danh sách"
-  ],
-  "params": [
-    {
-      "key": "mon_hoc",
-      "label": "Tên môn học đã có (mặc định là môn do tác vụ Tạo môn học tạo)",
-      "value": "[AI TEST] Môn học thử",
-      "auto": false
-    },
-    {
-      "key": "hoc_vien",
-      "label": "Mã nhân viên của học viên (trống: tài khoản đang chạy)",
-      "value": "",
-      "auto": false
-    },
-    {
-      "key": "thoi_han",
-      "label": "Thời hạn học, số ngày (trống: bỏ qua)",
-      "value": "",
-      "auto": false
-    },
-    {
-      "key": "van_tao",
-      "label": "Vẫn tạo lượt học mới dù học viên đã đạt môn: Có hoặc Không",
-      "value": "Không",
-      "auto": false
-    }
-  ],
-  "script": "const subject = ctx.val('mon_hoc', ctx.testPrefix + ' Môn học thử');\nconst code = ctx.val('hoc_vien', ctx.username).trim();\nconst force = /^(có|co|yes|y)$/i.test(ctx.val('van_tao', 'Không').trim());\nconst dlg = page.locator('[role=dialog]');\n\nawait step('Mở hộp Tạo lượt học', async () => {\n  await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});\n  await page.getByText('Tạo lượt học', { exact: true }).first().click();\n  await dlg.waitFor({ timeout: 10000 });\n});\n\nawait step('Chọn môn học (gõ tên môn)', async () => {\n  const box = dlg.getByRole('textbox').first();\n  await box.click();\n  await box.pressSequentially(subject);\n  const opt = page.getByText(subject, { exact: true }).last();\n  await opt.waitFor({ timeout: 15000 }).catch(() => { throw new Error('Không tìm thấy môn học \"' + subject + '\". Môn học tìm theo tên, không tìm theo mã.'); });\n  await opt.click();\n});\n\nawait step('Chọn học viên theo mã nhân viên', async () => {\n  await dlg.getByText('Học viên').first().click();\n  await page.keyboard.type(code, { delay: 40 });\n  const opt = page.getByText(code).last();\n  await opt.waitFor({ timeout: 15000 }).catch(() => { throw new Error('Không tìm thấy học viên có mã ' + code); });\n  await opt.click();\n  await dlg.getByText('Tạo lượt học', { exact: true }).first().click(); // đóng danh sách gợi ý\n});\n\nif (ctx.has('thoi_han')) {\n  await step('Nhập thời hạn học (ngày)', async () => {\n    const n = dlg.locator('input[type=number]');\n    await n.click(); await n.pressSequentially(ctx.val('thoi_han', ''));\n  });\n}\nif (force) {\n  await step('Tích Vẫn tạo lượt học mới dù học viên đã đạt môn học', async () => {\n    await dlg.getByText('Vẫn tạo lượt học mới dù học viên đã đạt môn học').click();\n  });\n}\n\nawait step('Bấm Tạo và kiểm tra lượt học mới', async () => {\n  await dlg.getByRole('button', { name: 'Tạo', exact: true }).click();\n  await dlg.waitFor({ state: 'hidden', timeout: 20000 });\n  await page.getByText(subject).first().waitFor({ timeout: 20000 });\n});\nctx.log('Đã tạo lượt học: ' + subject + ' cho ' + code);",
-  "source": {
-    "explore_date": "2026-11-16",
-    "note": "Đã chạy tay đủ luồng trên staging (THL, LNK151515) ngày 16/11/2026, thao tác theo chữ hiển thị trên màn hình. CHƯA replay bằng Playwright nên selector theo chữ hiển thị và placeholder, chưa kiểm chứng trong DOM. Tìm học viên theo mã nhân viên trong hộp này chưa thử (đã thử gõ tên); ở hộp Thêm học viên của kỳ thi thì tìm theo mã được."
-  }
+    "name":  "Tạo lượt học cho học viên [AI TEST]",
+    "module":  "LND",
+    "flow":  "LUOT",
+    "description":  "Giao một môn học cho học viên bằng cách tạo lượt học. Chọn môn theo tên, học viên theo mã nhân viên (trống: chính tài khoản đang chạy).",
+    "start_url":  "https://ic.zuizui.io/lnd/manager/learning_turn",
+    "required_roles":  [
+
+                       ],
+    "writes":  true,
+    "rule_ids":  [
+                     "LND-020",
+                     "LND-021"
+                 ],
+    "steps":  [
+                  "Đăng nhập Staging bằng tài khoản quản lý học tập, mở Quản lý lượt học, bấm Tạo lượt học",
+                  "Chọn môn học {{mon_hoc}} (gõ đúng tên môn, không tìm theo mã)",
+                  "Chọn học viên có mã nhân viên {{hoc_vien}} (trống: chính tài khoản đang chạy)",
+                  "Thời hạn học {{thoi_han}} ngày (trống: bỏ qua); tích Vẫn tạo lượt học mới dù học viên đã đạt môn: {{van_tao}} (Có hoặc Không)",
+                  "Bấm Tạo, kiểm tra lượt học mới xuất hiện đầu danh sách"
+              ],
+    "params":  [
+                   {
+                       "key":  "mon_hoc",
+                       "label":  "Tên môn học đã có (mặc định là môn do tác vụ Tạo môn học tạo)",
+                       "value":  "[AI TEST] Môn học thử",
+                       "auto":  false
+                   },
+                   {
+                       "key":  "hoc_vien",
+                       "label":  "Mã nhân viên của học viên (trống: tài khoản đang chạy)",
+                       "value":  "",
+                       "auto":  false
+                   },
+                   {
+                       "key":  "thoi_han",
+                       "label":  "Thời hạn học, số ngày (trống: bỏ qua)",
+                       "value":  "",
+                       "auto":  false
+                   },
+                   {
+                       "key":  "van_tao",
+                       "label":  "Vẫn tạo lượt học mới dù học viên đã đạt môn: Có hoặc Không",
+                       "value":  "Không",
+                       "auto":  false
+                   }
+               ],
+    "script":  "const subject = ctx.val(\u0027mon_hoc\u0027, ctx.testPrefix + \u0027 Môn học thử\u0027);\nconst code = ctx.val(\u0027hoc_vien\u0027, ctx.username).trim();\nconst force = /^(có|co|yes|y)$/i.test(ctx.val(\u0027van_tao\u0027, \u0027Không\u0027).trim());\nconst dlg = page.locator(\u0027[role=dialog]\u0027);\n\nawait step(\u0027Mở hộp Tạo lượt học\u0027, async () =\u003e {\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 20000 }).catch(() =\u003e {});\n  await page.getByText(\u0027Tạo lượt học\u0027, { exact: true }).first().click();\n  await dlg.waitFor({ timeout: 10000 });\n});\n\nawait step(\u0027Chọn môn học (gõ tên môn)\u0027, async () =\u003e {\n  const box = dlg.getByRole(\u0027textbox\u0027).first();\n  await box.click();\n  await box.pressSequentially(subject);\n  const opt = page.getByText(subject, { exact: true }).last();\n  await opt.waitFor({ timeout: 15000 }).catch(() =\u003e { throw new Error(\u0027Không tìm thấy môn học \"\u0027 + subject + \u0027\". Môn học tìm theo tên, không tìm theo mã.\u0027); });\n  await opt.click();\n});\n\nawait step(\u0027Chọn học viên theo mã nhân viên\u0027, async () =\u003e {\n  await dlg.getByText(\u0027Học viên\u0027).first().click();\n  await page.keyboard.type(code, { delay: 40 });\n  const opt = page.getByText(code).last();\n  await opt.waitFor({ timeout: 15000 }).catch(() =\u003e { throw new Error(\u0027Không tìm thấy học viên có mã \u0027 + code); });\n  await opt.click();\n  await dlg.getByText(\u0027Tạo lượt học\u0027, { exact: true }).first().click(); // đóng danh sách gợi ý\n});\n\nif (ctx.has(\u0027thoi_han\u0027)) {\n  await step(\u0027Nhập thời hạn học (ngày)\u0027, async () =\u003e {\n    const n = dlg.locator(\u0027input[type=number]\u0027);\n    await n.click(); await n.pressSequentially(ctx.val(\u0027thoi_han\u0027, \u0027\u0027));\n  });\n}\nif (force) {\n  await step(\u0027Tích Vẫn tạo lượt học mới dù học viên đã đạt môn học\u0027, async () =\u003e {\n    await dlg.getByText(\u0027Vẫn tạo lượt học mới dù học viên đã đạt môn học\u0027).click();\n  });\n}\n\nawait step(\u0027Bấm Tạo và kiểm tra lượt học mới\u0027, async () =\u003e {\n  await dlg.getByRole(\u0027button\u0027, { name: \u0027Tạo\u0027, exact: true }).click();\n  await dlg.waitFor({ state: \u0027hidden\u0027, timeout: 20000 });\n  await page.getByText(subject).first().waitFor({ timeout: 20000 });\n});\nctx.log(\u0027Đã tạo lượt học: \u0027 + subject + \u0027 cho \u0027 + code);",
+    "source":  {
+                   "explore_date":  "2026-11-16",
+                   "note":  "Đã chạy tay đủ luồng trên staging (THL, LNK151515) ngày 16/11/2026, thao tác theo chữ hiển thị trên màn hình. CHƯA replay bằng Playwright nên selector theo chữ hiển thị và placeholder, chưa kiểm chứng trong DOM. Tìm học viên theo mã nhân viên trong hộp này chưa thử (đã thử gõ tên); ở hộp Thêm học viên của kỳ thi thì tìm theo mã được."
+               }
 }

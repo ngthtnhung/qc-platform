@@ -21,7 +21,7 @@ window.HELP_PAGES = {
       <li><b>Tài Khoản và Môi Trường</b>: bấm tài khoản để mở và đăng nhập; chọn link muốn vào; đặt mật khẩu (cần quyền).</li>
       <li><b>Phân Tích Bug</b>: gõ mô tả, hệ thống tự tìm rule và bug cũ liên quan; có thể đính kèm tối đa 5 ảnh/video/tài liệu (tổng 10 MB). Ảnh được gửi cho AI nếu server đã cấu hình khóa AI; video và tài liệu chưa được AI đọc.</li>
       <li><b>Tra Cứu Bug</b>: tra cứu hơn 6.000 bug cũ và bug mới lấy realtime từ Haraworks (kèm trạng thái, người xử lý), lọc theo module, trạng thái, người thực hiện, người duyệt, thời gian; mở chi tiết để xem bình luận, ảnh, video ngay trên trang.</li>
-      <li><b>Kho Business Rule</b>: xem, tìm, thêm, sửa, xóa rule (cần quyền để sửa). Rule có nhãn "Chưa xác nhận" là rule AI vừa khám phá, chưa có người kiểm.</li>
+      <li><b>Kho Business Rule</b>: xem rule theo module, tìm, thêm, sửa, xóa rule (cần quyền để sửa); admin cấu hình màu nhãn module và trạng thái trong tab Phân Quyền.</li>
       <li><b>Tác Vụ Tự Động</b>: chạy tác vụ Playwright (dùng được ngay, không cần duyệt), chỉ trên Staging.</li>
       <li><b>Phân Quyền</b>: chỉ quản trị viên thấy; thêm người dùng, đổi quyền, cấp token.</li>
     </ul>
@@ -96,7 +96,7 @@ window.HELP_PAGES = {
     <h3>Đưa rule, bug và tác vụ từ Kho lên platform</h3>
     <p>Sau khi Claude xuất dữ liệu từ Kho Business Rule vào <code>database/kb-snapshot/</code>, chạy trên máy có token (chỉ cần quyền "Đẩy rule và bug" và "Đẩy tác vụ nháp", không cần admin):</p>
     <pre class="help-code">$env:QA_SERVER_URL="{{ORIGIN}}"; $env:QA_TOKEN="token_cua_ban"; node scripts/qa-sync.mjs</pre>
-    <p>Rule chờ xác nhận lên platform kèm nhãn "Chưa xác nhận". Rule thêm hoặc sửa trực tiếp trên platform nằm ở lớp riêng, đồng bộ từ Kho không ghi đè và cũng không tự ghi ngược về Kho.</p>
+    <p>Rule được nhóm theo module. Rule thêm hoặc sửa trực tiếp trên platform nằm ở lớp riêng, đồng bộ từ Kho không ghi đè và cũng không tự ghi ngược về Kho.</p>
     <h3>Cấp lại token</h3>
     <p>Mất token hoặc token bị lộ: vào tab 6, bấm "Cấp token mới" ở dòng người đó. Token cũ mất hiệu lực ngay.</p>`,
 
@@ -125,7 +125,7 @@ window.HELP_PAGES = {
         <pre class="help-code">node scripts/qa-sync.mjs --save-config https://IP_MAY_CHU:3001 TOKEN_CUA_BAN</pre>
         Đẩy tay khi cần:
         <pre class="help-code">node scripts/qa-sync.mjs --no-bugs</pre>
-        Rule lên kèm nhãn "Chưa xác nhận" cho đến khi được xác nhận trong Kho. Tác vụ tự động sinh ra cũng lên cùng lúc, dùng được ngay.</li>
+        Rule được nhóm theo module trên platform. Tác vụ tự động sinh ra cũng lên cùng lúc, dùng được ngay.</li>
       <li><b>Không đẩy được tự động:</b> trên máy chạy server bấm <b>⟳ Cập nhật rule từ kho</b>. Ở máy khác, tạo file rồi bấm <b>Nhập file kho</b>:
         <pre class="help-code">node scripts/sync-business-rules.mjs --export kho-rule.json</pre></li>
     </ol>

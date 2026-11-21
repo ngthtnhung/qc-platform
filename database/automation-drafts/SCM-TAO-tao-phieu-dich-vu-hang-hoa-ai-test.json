@@ -1,0 +1,89 @@
+{
+    "id":  "at_8e12130256218653",
+    "name":  "Tạo phiếu Dịch vụ hàng hóa (SCM) [AI TEST] và kiểm tra xuất hiện trong danh sách",
+    "module":  "DV5S",
+    "flow":  "TAO",
+    "description":  "Mở danh sách phiếu Dịch vụ hàng hóa (/scm/doing/list), bấm Tạo phiếu, nhập vấn đề [AI TEST], thời gian, phân loại hàng hóa, đơn vị phát sinh và kiểm tra phiếu mới trong danh sách.",
+    "start_url":  "https://tasks.zuizui.io/scm/doing/list",
+    "required_roles":  [
+                           "quản trị"
+                       ],
+    "writes":  true,
+    "rule_ids":  [
+                     "DV5S-103",
+                     "DV5S-105",
+                     "DV5S-047",
+                     "DV5S-091"
+                 ],
+    "source":  {
+                   "explore_date":  "2026-11-18",
+                   "note":  "Sinh tự động từ kho Business Rule Haraworks Wiki (https://wiki.hrws.cloud/) cho module SCM."
+               },
+    "steps":  [
+                  "Đăng nhập Staging, mở danh sách phiếu Dịch vụ hàng hóa (/scm/doing/list)",
+                  "Bấm nút Tạo phiếu, đợi hộp thoại hiển thị",
+                  "Nhập vấn đề gặp phải: [AI TEST] {{van_de}} và đính kèm tệp {{anh_mo_ta}} (nếu có)",
+                  "Chọn ngày hôm nay cộng {{ngay_them}} ngày, giờ {{gio}}",
+                  "Chọn phân loại {{phan_loai}}, mức độ xử lý {{muc_do_xu_ly}}, đơn vị phát sinh {{don_vi}}",
+                  "Bấm Tạo và kiểm tra phiếu mới xuất hiện trong danh sách SCM"
+              ],
+    "params":  [
+                   {
+                       "value":  "Phiếu Dịch vụ hàng hóa SCM tự động",
+                       "label":  "Nội dung vấn đề SCM (tự thêm tiền tố [AI TEST])",
+                       "fallback":  "first",
+                       "auto":  true,
+                       "type":  "multiline",
+                       "key":  "van_de"
+                   },
+                   {
+                       "value":  "1",
+                       "label":  "Số ngày cộng thêm so với hôm nay",
+                       "fallback":  "first",
+                       "auto":  true,
+                       "type":  "text",
+                       "key":  "ngay_them"
+                   },
+                   {
+                       "value":  "17:00",
+                       "label":  "Giờ hoàn thành mong muốn",
+                       "fallback":  "first",
+                       "auto":  true,
+                       "type":  "text",
+                       "key":  "gio"
+                   },
+                   {
+                       "value":  "",
+                       "label":  "Phân loại phiếu SCM",
+                       "fallback":  "random",
+                       "auto":  true,
+                       "type":  "text",
+                       "key":  "phan_loai"
+                   },
+                   {
+                       "value":  "",
+                       "label":  "Mức độ xử lý",
+                       "fallback":  "random",
+                       "auto":  true,
+                       "type":  "text",
+                       "key":  "muc_do_xu_ly"
+                   },
+                   {
+                       "value":  "",
+                       "label":  "Đơn vị phát sinh",
+                       "fallback":  "random",
+                       "auto":  true,
+                       "type":  "text",
+                       "key":  "don_vi"
+                   },
+                   {
+                       "value":  "",
+                       "label":  "File đính kèm mô tả (bỏ trống để bỏ qua)",
+                       "fallback":  "first",
+                       "auto":  false,
+                       "type":  "file",
+                       "key":  "anh_mo_ta"
+                   }
+               ],
+    "script":  "const text = `${ctx.testPrefix} ${ctx.val(\u0027van_de\u0027, \u0027Phiếu Dịch vụ hàng hóa SCM tự động\u0027)}`;\nconst dlg = page.locator(\u0027[role=dialog]\u0027);\n\nawait step(\u0027Mở form Tạo phiếu Dịch vụ hàng hóa (SCM)\u0027, async () =\u003e {\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 20000 }).catch(() =\u003e {});\n  await page.getByRole(\u0027button\u0027, { name: \u0027Tạo phiếu\u0027 }).click();\n  await dlg.waitFor({ timeout: 10000 });\n});\n\nawait step(\u0027Nhập vấn đề gặp phải và đính kèm tệp (nếu có)\u0027, async () =\u003e {\n  const ta = dlg.locator(\u0027textarea\u0027).first();\n  await ta.click();\n  await ta.pressSequentially(text);\n  if (await attachFiles(dlg.locator(\u0027input[type=file]\u0027).first(), \u0027anh_mo_ta\u0027)) {\n    await page.waitForTimeout(2000);\n  }\n});\n\nawait step(\u0027Chọn ngày và giờ\u0027, async () =\u003e {\n  const label = dlg.locator(\u0027.rc-input-calendar__label\u0027).first();\n  if (await label.count()) {\n    await label.click();\n    const days = page.locator(\u0027.DayPicker-Day:not(.DayPicker-Day--outside)\u0027);\n    await days.first().waitFor({ state: \u0027visible\u0027, timeout: 8000 }).catch(async () =\u003e {\n      await label.dispatchEvent(\u0027click\u0027);\n      await days.first().waitFor({ state: \u0027visible\u0027, timeout: 8000 });\n    });\n    const now = new Date();\n    const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();\n    const offset = Math.max(parseInt(ctx.val(\u0027ngay_them\u0027, \u00271\u0027), 10) || 0, 0);\n    const day = Math.min(now.getDate() + offset, last);\n    await days.filter({ hasText: new RegExp(\u0027^\u0027 + day + \u0027$\u0027) }).first().click();\n    await page.locator(\u0027.hrv-date-time-picker-end-day input.hrv-date-time-picker-input-time\u0027).click();\n    await pickOption(page.locator(\u0027.hrv-date-time-picker-end-day .hrv-date-time-picker-input-menu-item\u0027), \u0027gio\u0027);\n    await dlg.getByText(\u0027Tạo phiếu\u0027, { exact: true }).first().click();\n  }\n});\n\nawait step(\u0027Chọn các trường danh mục trên form SCM\u0027, async () =\u003e {\n  const opens = dlg.getByRole(\u0027button\u0027, { name: \u0027Open\u0027 });\n  const items = page.locator(\u0027[role=listbox] li\u0027);\n  const count = await opens.count();\n  if (count \u003e= 1) { await opens.nth(0).click(); await pickOption(items, \u0027phan_loai\u0027); }\n  if (count \u003e= 2) { await opens.nth(1).click(); await pickOption(items, \u0027muc_do_xu_ly\u0027); }\n  if (count \u003e= 3) { await opens.nth(2).click(); await pickOption(items, \u0027don_vi\u0027); }\n});\n\nawait step(\u0027Bấm Tạo và kiểm tra phiếu SCM trong danh sách\u0027, async () =\u003e {\n  const btn = dlg.locator(\u0027.hrw-button-primary:not(.hrw-button_disable)\u0027, { hasText: /^Tạo$/ });\n  await btn.first().waitFor({ timeout: 10000 });\n  await btn.first().click();\n  await dlg.waitFor({ state: \u0027hidden\u0027, timeout: 15000 });\n  const allTab = page.getByText(\u0027Tất cả\u0027, { exact: true }).first();\n  if (await allTab.isVisible().catch(() =\u003e false)) await allTab.click();\n  await page.getByText(text).first().waitFor({ timeout: 30000 });\n});\nctx.log(\u0027Đã tạo phiếu SCM thành công: \u0027 + text);"
+}

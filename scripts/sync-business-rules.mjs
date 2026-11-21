@@ -7,8 +7,7 @@
  *   2. node scripts/sync-business-rules.mjs                 (ghi file trên máy này)
  *      QA_SERVER_URL=http://qa-server:3001 QA_TOKEN=qa_... node scripts/sync-business-rules.mjs   (đẩy lên server nhóm)
  *
- * Lấy rule đã xác nhận (active) và rule chờ xác nhận (pending). Rule pending hiện trên platform với nhãn Chưa xác nhận;
- * trạng thái trong Kho không đổi, chỉ người dùng mới xác nhận được.
+ * Lấy rule đã xác nhận (active) và rule chờ xác nhận (pending). Trạng thái gốc trong Kho không đổi.
  */
 import fs from 'node:fs';
 import path from 'node:path';

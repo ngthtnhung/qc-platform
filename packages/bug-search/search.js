@@ -82,6 +82,23 @@ export function newCutoff(days = NEW_DAYS) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 const ageOk = (b, age, cut) => (age !== 'new' && age !== 'old') || (age === 'new' ? String(b.d || '') >= cut : !!b.d && String(b.d) < cut);
+function fnAgeOk(b, age) {
+  if (!age) return true;
+  const d = String(b.d || '').slice(0, 10);
+  if (!d) return false;
+  const today = todayVN();
+  if (age === 'week') {
+    const dt = new Date(today + 'T00:00:00+07:00');
+    const day = (dt.getDay() + 6) % 7; // Thứ 2 = 0
+    dt.setDate(dt.getDate() - day);
+    const weekStart = todayVN(dt.getTime());
+    return d >= weekStart;
+  }
+  if (age === 'month') return d >= today.slice(0, 7) + '-01';
+  if (/^year_(\d{4})$/.test(age)) return d.startsWith(age.slice(5));
+  if (age === 'new' || age === 'old') return ageOk(b, age, newCutoff());
+  return true;
+}
 
 export const BugStore = {
   meta() { return load().meta; },
@@ -110,13 +127,14 @@ export const BugStore = {
   },
 
   /** Danh sách có lọc. q để trống: mới nhất trước; có q: xếp theo độ giống. */
-  list({ module, q = '', category = '', year = '', unknown = false, status = '', assignee = '', approver = '', closed = '', age = '', sort = 'created', live = false, offset = 0, limit = 50 } = {}) {
+  list({ module, project = '', q = '', category = '', year = '', unknown = false, status = '', assignee = '', approver = '', closed = '', age = '', sort = 'created', live = false, offset = 0, limit = 50 } = {}) {
     const c = load();
     const members = moduleMembers(module), cut = newCutoff();
     const qg = grams(tokens(q));
     let items = [];
     for (let i = 0; i < c.bugs.length; i++) {
       const b = c.bugs[i];
+      if (project && (b.project || '') !== project) continue;
       if (members && !members.has(b.m)) continue;
       if (unknown && b.m) continue;
       if (category && (b.c || '(chưa phân loại)') !== category) continue;
@@ -148,10 +166,16 @@ export const BugStore = {
     const c = load();
     const cat = {}, years = {}, mods = {};
     c.bugs.forEach(b => { const k = b.c || '(chưa phân loại)'; cat[k] = (cat[k] || 0) + 1; const y = String(b.d || '').slice(0, 4); if (y) years[y] = (years[y] || 0) + 1; const m = b.m || ''; mods[m] = (mods[m] || 0) + 1; });
-    const statuses = {}, assignees = {}, approvers = {};
-    c.bugs.forEach(b => { if (!b.live) return; statuses[b.status] = (statuses[b.status] || 0) + 1; if (b.assignee) assignees[b.assignee] = (assignees[b.assignee] || 0) + 1; if (b.approver) approvers[b.approver] = (approvers[b.approver] || 0) + 1; });
+    const statuses = {}, assignees = {}, approvers = {}, projects = {};
+    c.bugs.forEach(b => {
+      if (!b.live) return;
+      statuses[b.status] = (statuses[b.status] || 0) + 1;
+      if (b.assignee) assignees[b.assignee] = (assignees[b.assignee] || 0) + 1;
+      if (b.approver) approvers[b.approver] = (approvers[b.approver] || 0) + 1;
+      if (b.project) projects[b.project] = (projects[b.project] || 0) + 1;
+    });
     const unknown = c.bugs.filter(b => !b.m).length;
-    return { categories: cat, years, modules: mods, statuses, assignees, approvers, unknown };
+    return { categories: cat, years, modules: mods, statuses, assignees, approvers, projects, unknown };
   },
 
   /** Bug cũ giống mô tả nhất */
@@ -178,7 +202,12 @@ export const BugStore = {
 function present(b, c, score) {
   const n = c.notes.get(String(b.id));
   return { id: b.id, title: b.t, category: b.c || '', date: b.d, is_new: String(b.d || '') >= newCutoff(), is_today: String(b.d || '').startsWith(todayVN()), module_name: moduleName(b.m), module: b.m || '', url: b.u, score: Math.round(score * 10) / 10,
-    ...(b.live ? { live: true, status: b.status, status_label: statusLabel(b.status), priority: b.priority ?? null, priority_label: priorityLabel(b.priority), closed: CLOSED_STATUS.has(b.status), assignee: b.assignee || '', approver: b.approver || '', project: b.project || '', customer: b.customer || '', updated: b.updated || '' } : {}),
+    ...(b.live ? {
+      live: true, status: b.status, status_label: statusLabel(b.status), priority: b.priority ?? null, priority_label: priorityLabel(b.priority),
+      closed: CLOSED_STATUS.has(b.status), assignee: b.assignee || '', assigneeId: b.assigneeId || '', approver: b.approver || '', project: b.project || '',
+      customer: b.customer || '', platform: b.platform || '', module_custom: b.module_custom || '', classification: b.classification || '', severity: b.severity || '',
+      plan_start_at: b.plan_start_at || '', plan_end_at: b.plan_end_at || '', updated: b.updated || ''
+    } : {}),
     note: n ? { root_cause: n.root_cause || '', fix: n.fix || '', rule_ids: n.rule_ids || [], comments: n.comments || '' } : null };
 }
 
@@ -218,3 +247,164 @@ export function guessModule(text) {
   const mods = BusinessRuleStore.load().modules || [];
   return mods.find(m => m.code === code)?.cluster || code;
 }
+
+// ==========================================
+// Kho Task Function Realtime (4 dự án Team trên Haraworks từ 01/01/2024)
+// ==========================================
+let liveFunctions = [];
+let liveQcFunctions = [];
+let fnRev = 0;
+let fnAt = null;
+let fnCache = { rev: -1, items: [], tok: [], df: new Map(), byId: new Map(), byTitle: new Map(), meta: null };
+
+const cleanFnTitle = (s) => {
+  let x = String(s || '');
+  const idx = x.indexOf('BUILD PRODUCTION -');
+  if (idx !== -1) x = x.slice(idx + 'BUILD PRODUCTION -'.length);
+  x = x.replace(/^\s*(?:\[[^\]]{1,40}\]\s*)+/, '');
+  return fold(x).replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+};
+
+function loadFunctions() {
+  if (fnCache.rev === fnRev && fnCache.items) return fnCache;
+  const items = liveFunctions.filter(t => String(t.d || '') >= '2024-01-01');
+  const tok = items.map(b => grams(tokens(b.t)));
+  const df = new Map();
+  const byId = new Map();
+  const byTitle = new Map();
+  items.forEach((b, i) => {
+    tok[i].forEach(g => df.set(g, (df.get(g) || 0) + 1));
+    if (b.id) byId.set(String(b.id).toLowerCase(), b);
+    const ct = cleanFnTitle(b.t);
+    if (ct && ct.length >= 6 && !byTitle.has(ct)) byTitle.set(ct, b);
+  });
+  const dates = items.map(b => b.d).filter(Boolean).sort();
+  const meta = {
+    count: items.length,
+    range: dates.length ? [dates[0], dates[dates.length - 1]] : [],
+    synced_at: fnAt,
+    revision: fnRev,
+    live: items.length > 0,
+    live_count: items.length,
+    live_at: fnAt
+  };
+  return fnCache = { rev: fnRev, items, tok, df, byId, byTitle, meta };
+}
+
+function presentFunction(b, score) {
+  return {
+    id: b.id, title: b.t, category: b.c || '', date: b.d,
+    is_new: String(b.d || '') >= newCutoff(),
+    is_today: String(b.d || '').startsWith(todayVN()),
+    module_name: moduleName(b.m), module: b.m || '', url: b.u,
+    score: Math.round(score * 10) / 10,
+    live: true, status: b.status, status_label: statusLabel(b.status),
+    priority: b.priority ?? null, priority_label: priorityLabel(b.priority),
+    closed: CLOSED_STATUS.has(b.status),
+    assignee: b.assignee || '', assigneeId: b.assigneeId || '', approver: b.approver || '',
+    projectId: b.projectId || '', project: b.project || '', team: b.team || b.project || '',
+    customer: b.customer || '', platform: b.platform || '', module_custom: b.module_custom || '', classification: b.classification || '', severity: b.severity || '',
+    plan_start_at: b.plan_start_at || '', plan_end_at: b.plan_end_at || '', updated: b.updated || ''
+  };
+}
+
+export const FunctionStore = {
+  meta() { return loadFunctions().meta; },
+  setLive(arr) {
+    liveFunctions = Array.isArray(arr) ? arr : [];
+    fnRev += 1;
+    fnAt = new Date().toISOString();
+    return fnRev;
+  },
+  setQcLive(arr) {
+    liveQcFunctions = Array.isArray(arr) ? arr : [];
+    return liveQcFunctions.length;
+  },
+  listQc() {
+    return liveQcFunctions.map(b => presentFunction(b, 0));
+  },
+  liveRevision() { return fnRev; },
+  list({ team = '', projectId = '', module = '', q = '', category = '', year = '', unknown = false, status = '', assignee = '', approver = '', closed = '', age = '', sort = 'created', offset = 0, limit = 50 } = {}) {
+    const c = loadFunctions();
+    const members = moduleMembers(module), cut = newCutoff();
+    const qg = grams(tokens(q));
+    let items = [];
+    for (let i = 0; i < c.items.length; i++) {
+      const b = c.items[i];
+      if (team && b.team !== team && b.projectId !== team && b.project !== team) continue;
+      if (projectId && b.projectId !== projectId) continue;
+      if (members && !members.has(b.m)) continue;
+      if (unknown && b.m) continue;
+      if (category && (b.c || '(chưa phân loại)') !== category) continue;
+      if (year && !String(b.d || '').startsWith(year)) continue;
+      if (!fnAgeOk(b, age)) continue;
+      if (status !== '' && String(b.status) !== String(status)) continue;
+      if (assignee && (b.assignee || '') !== assignee) continue;
+      if (approver === '__none__' ? !!b.approver : (approver && (b.approver || '') !== approver)) continue;
+      if (closed === 'open' && CLOSED_STATUS.has(b.status)) continue;
+      if (closed === 'closed' && !CLOSED_STATUS.has(b.status)) continue;
+      let score = 0;
+      if (qg.size) {
+        for (const g of qg) if (c.tok[i].has(g)) score += idf(c.df, c.items.length, g) * (g.includes('_') ? 2 : 1);
+        if (!score) continue;
+      }
+      items.push({ b, score });
+    }
+    if (qg.size) items.sort((x, y) => y.score - x.score || String(y.b.d).localeCompare(String(x.b.d)));
+    else if (sort === 'updated') items.sort((x, y) => String(y.b.updated || y.b.d).localeCompare(String(x.b.updated || x.b.d)));
+    else if (sort === 'priority') items.sort((x, y) => priorityRank(x.b.priority) - priorityRank(y.b.priority) || String(y.b.d).localeCompare(String(x.b.d)));
+    else items.sort((x, y) => String(y.b.d).localeCompare(String(x.b.d)));
+    const total = items.length;
+    const page = items.slice(offset, offset + limit).map(({ b, score }) => presentFunction(b, score));
+    return { total, items: page, meta: c.meta };
+  },
+  facets() {
+    const c = loadFunctions();
+    const cat = {}, years = {}, mods = {}, teams = {}, statuses = {}, assignees = {}, approvers = {};
+    c.items.forEach(b => {
+      const k = b.c || '(chưa phân loại)'; cat[k] = (cat[k] || 0) + 1;
+      const y = String(b.d || '').slice(0, 4); if (y) years[y] = (years[y] || 0) + 1;
+      const m = b.m || ''; mods[m] = (mods[m] || 0) + 1;
+      const tm = b.team || b.project || ''; if (tm) teams[tm] = (teams[tm] || 0) + 1;
+      statuses[b.status] = (statuses[b.status] || 0) + 1;
+      if (b.assignee) assignees[b.assignee] = (assignees[b.assignee] || 0) + 1;
+      if (b.approver) approvers[b.approver] = (approvers[b.approver] || 0) + 1;
+    });
+    const unknown = c.items.filter(b => !b.m).length;
+    return { teams, categories: cat, years, modules: mods, statuses, assignees, approvers, unknown };
+  },
+  similar(text, module = '', limit = 10, age = '') {
+    const c = loadFunctions(), cut = newCutoff();
+    const qg = grams(tokens(text));
+    if (!qg.size) return [];
+    const members = moduleMembers(module);
+    const out = [];
+    for (let i = 0; i < c.items.length; i++) {
+      const b = c.items[i];
+      let score = 0;
+      for (const g of qg) if (c.tok[i].has(g)) score += idf(c.df, c.items.length, g) * (g.includes('_') ? 2 : 1);
+      if (!score) continue;
+      if (members && !members.has(b.m)) continue;
+      if (!ageOk(b, age, cut)) continue;
+      out.push({ b, score });
+    }
+    out.sort((x, y) => y.score - x.score || String(y.b.d).localeCompare(String(x.b.d)));
+    return out.slice(0, limit).map(({ b, score }) => presentFunction(b, score));
+  },
+  findSource({ ids = [], title = '', sourceTitle = '', selfId = '' } = {}) {
+    const c = loadFunctions();
+    const selfLow = String(selfId || '').toLowerCase();
+    for (const id of ids || []) {
+      const k = String(id || '').toLowerCase();
+      if (!k || k === selfLow) continue;
+      const hit = c.byId.get(k);
+      if (hit) return { id: hit.id, title: hit.t, team: hit.team || hit.project || '', url: hit.u };
+    }
+    const ct = cleanFnTitle(sourceTitle || title);
+    if (ct && ct.length >= 6) {
+      const hit = c.byTitle.get(ct);
+      if (hit) return { id: hit.id, title: hit.t, team: hit.team || hit.project || '', url: hit.u };
+    }
+    return null;
+  }
+};

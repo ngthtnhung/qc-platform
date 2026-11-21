@@ -1,0 +1,34 @@
+{
+  "name": "Thiết lập hiển thị cột trên bảng danh sách phiếu (MAINT/SCM/IOT)",
+  "module": "DV5S",
+  "flow": "COT",
+  "description": "Mở dialog Thiết lập hiển thị cột từ thanh công cụ danh sách phiếu, kiểm tra danh sách các cột cấu hình (Mã phiếu, Vấn đề, Trạng thái, Ảnh, Đơn vị, Người phụ trách, SLA tiếp nhận, SLA hoàn tất, Phân loại phiếu...), bấm Áp dụng và kiểm tra các tiêu đề cột hiển thị trên bảng.",
+  "start_url": "https://tasks.zuizui.io/maintenance/create/list",
+  "required_roles": [],
+  "writes": false,
+  "rule_ids": [
+    "DV5S-055",
+    "DV5S-054"
+  ],
+  "source": {
+    "explore_date": "2026-11-21",
+    "note": "Sinh từ Playwright codegen thao tác thực tế trên module MAINT (dùng chung cho SCM/IOT/DV5S)."
+  },
+  "steps": [
+    "Mở trang danh sách phiếu phân hệ {{phan_he}}",
+    "Bấm nút 'Thiết lập hiển thị cột' để mở hộp thoại cấu hình cột",
+    "Kiểm tra các mục cột trong hộp thoại (.col-settings-list) và bấm Áp dụng",
+    "Xác nhận các tiêu đề cột chính (Mã phiếu, Vấn đề, Trạng thái, Đơn vị, Phụ trách...) hiển thị trên bảng"
+  ],
+  "params": [
+    {
+      "key": "phan_he",
+      "label": "Phân hệ (maintenance, scm, iot)",
+      "value": "maintenance",
+      "type": "text",
+      "auto": true,
+      "fallback": "first"
+    }
+  ],
+  "script": "const phanHe = ctx.val('phan_he', 'maintenance').trim().toLowerCase() || 'maintenance';\nconst targetUrl = `https://tasks.zuizui.io/${phanHe}/create/list`;\nconst dlg = page.getByRole('dialog');\n\nawait step('Mở hộp thoại Thiết lập hiển thị cột', async () => {\n  if (!page.url().includes(`/${phanHe}/`)) {\n    await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });\n  }\n  await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});\n  const btn = page.getByTitle('Thiết lập hiển thị cột');\n  await btn.waitFor({ timeout: 15000 });\n  await btn.click();\n  await dlg.waitFor({ timeout: 10000 });\n});\n\nawait step('Kiểm tra danh sách cột trong dialog và bấm Áp dụng', async () => {\n  const expectedCols = ['Mã phiếu', 'Vấn đề', 'Trạng thái', 'Ảnh', 'Đơn vị', 'Người phụ trách', 'SLA tiếp nhận', 'SLA hoàn tất', 'Phân loại phiếu'];\n  const dlgText = await dlg.innerText();\n  for (const col of expectedCols) {\n    assert(dlgText.includes(col), 'Thiếu tùy chọn cột trong dialog: ' + col);\n  }\n  await dlg.getByText('Áp dụng', { exact: true }).click();\n  await dlg.waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});\n});\n\nawait step('Kiểm tra tiêu đề cột hiển thị trên bảng danh sách', async () => {\n  const headers = page.locator('.maint-col-header');\n  const count = await headers.count();\n  assert(count >= 4, 'Số lượng cột hiển thị trên bảng quá ít: ' + count);\n  const bodyText = await page.locator('#react-app, body').first().innerText();\n  for (const h of ['Mã phiếu', 'Vấn đề', 'Trạng thái']) {\n    assert(bodyText.includes(h), 'Không thấy tiêu đề cột trên bảng: ' + h);\n  }\n  ctx.log(`Bảng hiển thị ${count} cột header hợp lệ.`);\n});"
+}

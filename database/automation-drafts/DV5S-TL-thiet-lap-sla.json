@@ -1,0 +1,36 @@
+{
+  "name": "Thiết lập SLA: mở màn hình và kiểm tra cấu hình SLA (MAINT/SCM/IOT)",
+  "module": "DV5S",
+  "flow": "TL",
+  "description": "Điều hướng vào Thiết Lập -> Thiết lập SLA, kiểm tra trang cấu hình SLA tiếp nhận và SLA hoàn tất tải thành công.",
+  "start_url": "https://tasks.zuizui.io/maintenance/dashboard",
+  "required_roles": [
+    "quản trị"
+  ],
+  "writes": false,
+  "rule_ids": [
+    "DV5S-010",
+    "DV5S-029",
+    "DV5S-036",
+    "DV5S-037"
+  ],
+  "source": {
+    "explore_date": "2026-11-21",
+    "note": "Sinh từ Playwright codegen thao tác thực tế trên module MAINT (dùng chung cho SCM/IOT/DV5S)."
+  },
+  "steps": [
+    "Mở phân hệ {{phan_he}}, bấm menu Thiết Lập -> Thiết lập SLA",
+    "Kiểm tra trang Thiết lập SLA tải thành công và hiển thị nội dung cấu hình"
+  ],
+  "params": [
+    {
+      "key": "phan_he",
+      "label": "Phân hệ (maintenance, scm, iot)",
+      "value": "maintenance",
+      "type": "text",
+      "auto": true,
+      "fallback": "first"
+    }
+  ],
+  "script": "const phanHe = ctx.val('phan_he', 'maintenance').trim().toLowerCase() || 'maintenance';\n\nawait step('Điều hướng vào Thiết Lập -> Thiết lập SLA', async () => {\n  if (!page.url().includes(`/${phanHe}/`)) {\n    await page.goto(`https://tasks.zuizui.io/${phanHe}/dashboard`, { waitUntil: 'domcontentloaded' });\n  }\n  await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});\n  const setupBtn = page.getByRole('button', { name: 'Thiết Lập' });\n  if (await setupBtn.isVisible().catch(() => false)) await setupBtn.click();\n  const link = page.getByRole('link', { name: 'Thiết lập SLA' });\n  await link.waitFor({ timeout: 10000 });\n  await link.click();\n  await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});\n});\n\nawait step('Kiểm tra nội dung trang Thiết lập SLA', async () => {\n  const txt = await page.locator('body').innerText();\n  assert(txt.length > 50, 'Trang Thiết lập SLA không có nội dung');\n  assert(/SLA/i.test(txt), 'Không tìm thấy nội dung SLA trên trang');\n  ctx.log('Đã tải thành công trang Thiết lập SLA tại: ' + page.url());\n});"
+}

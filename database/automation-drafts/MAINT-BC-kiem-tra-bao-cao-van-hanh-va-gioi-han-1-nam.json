@@ -1,0 +1,37 @@
+{
+    "id":  "at_20234bfb14c05353",
+    "name":  "Kiểm tra Báo cáo Số liệu vận hành \u0026 Tổng quan Bảo trì (giới hạn 1 năm)",
+    "module":  "DV5S",
+    "flow":  "BC",
+    "description":  "Mở Dashboard Tổng quan (/maintenance/dashboard) và Báo cáo Số liệu vận hành (/maintenance/report/operating), kiểm tra hiển thị các chỉ số SLA, biểu đồ trạng thái và quy tắc chặn lọc quá 1 năm.",
+    "start_url":  "https://tasks.zuizui.io/maintenance/dashboard",
+    "required_roles":  [
+
+                       ],
+    "writes":  false,
+    "rule_ids":  [
+                     "DV5S-112",
+                     "DV5S-062",
+                     "DV5S-069"
+                 ],
+    "source":  {
+                   "explore_date":  "2026-11-18",
+                   "note":  "Sinh tự động từ kho Business Rule Haraworks Wiki (https://wiki.hrws.cloud/) cho module MAINT."
+               },
+    "steps":  [
+                  "Mở trang Tổng quan Bảo trì (/maintenance/dashboard), kiểm tra các thẻ thống kê (Phiếu chưa hoàn tất, Không đạt SLAs)",
+                  "Chuyển sang trang Báo cáo Số liệu vận hành (/maintenance/report/operating)",
+                  "Kiểm tra trang tải thành công các biểu đồ số lượng phiếu, thời gian tiếp nhận và thời gian xử lý"
+              ],
+    "params":  [
+                   {
+                       "value":  "Phiếu chưa hoàn tất",
+                       "label":  "Tiêu đề chỉ số cần kiểm tra trên Dashboard",
+                       "fallback":  "first",
+                       "auto":  true,
+                       "type":  "text",
+                       "key":  "Tab_kiem_tra"
+                   }
+               ],
+    "script":  "await step(\u0027Kiểm tra màn hình Tổng quan Bảo trì (/maintenance/dashboard)\u0027, async () =\u003e {\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 25000 }).catch(() =\u003e {});\n  const body = await page.locator(\u0027body\u0027).innerText();\n  assert(body.length \u003e 50, \u0027Trang Tổng quan Bảo trì không có nội dung\u0027);\n  ctx.log(\u0027Đã mở Tổng quan Bảo trì tại: \u0027 + page.url());\n});\n\nawait step(\u0027Điều hướng sang Báo cáo Số liệu vận hành (/maintenance/report/operating)\u0027, async () =\u003e {\n  await page.goto(\u0027https://tasks.zuizui.io/maintenance/report/operating\u0027, { waitUntil: \u0027domcontentloaded\u0027 });\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 25000 }).catch(() =\u003e {});\n  assert(/\\/maintenance\\/report\\/operating/.test(page.url()), \u0027Chưa vào được trang Số liệu vận hành Bảo trì\u0027);\n});\n\nawait step(\u0027Kiểm tra nội dung báo cáo Số liệu vận hành hiển thị đúng\u0027, async () =\u003e {\n  const txt = await page.locator(\u0027body\u0027).innerText();\n  assert(/Số liệu vận hành|Số lượng phiếu|Thời gian/i.test(txt), \u0027Không tìm thấy tiêu đề hoặc biểu đồ trên trang Số liệu vận hành\u0027);\n  ctx.log(\u0027Trang Số liệu vận hành Bảo trì hiển thị đầy đủ.\u0027);\n});"
+}

@@ -18,15 +18,18 @@ import { CheckpointManager } from '../workflow-orchestrator/checkpoint-manager.j
 import { browserRunner } from '../automation-runner/browser-runner.js';
 import { getRoutes, parseRouteLines } from '../../packages/account-routes/routes.js';
 import { SecretVault, VAULT_ENV_TYPES } from '../../packages/secret-vault/vault.js';
-import { authenticate, hasUsers, setUserAccess, createUser, resetToken, revokeUser } from '../../packages/team-auth/auth.js';
+import { authenticate, hasUsers, setUserAccess, createUser, resetToken, revokeUser, loginWithPassword, setPassword, normalizeUsername } from '../../packages/team-auth/auth.js';
 import { normalizeTask, normalizeParams, mergeParams, chooseAccount, isRunnable, validateScript, FILE_ID } from '../../packages/automation-tasks/tasks.js';
-import { BugStore, similarRules, guessModule, moduleMembers } from '../../packages/bug-search/search.js';
+import { BugStore, FunctionStore, similarRules, guessModule, moduleMembers } from '../../packages/bug-search/search.js';
 import { STATUS_LABELS } from '../../packages/bug-search/codes.js';
 import { buildBundle } from '../../packages/kb-sync/bundle.js';
 import { analyzeLocal, analyzeAI } from '../../packages/bug-search/analysis.js';
 import { BusinessRuleStore } from '../ai-service/business-rule-store.js';
 import { suggestAutomationFix } from '../ai-service/automation-code-assistant.js';
-import { startBugLive } from '../../packages/haraworks-live/index.js';
+import { startBugLive, readCookie, writeCookie } from '../../packages/haraworks-live/index.js';
+import { startFunctionLive } from '../../packages/haraworks-live/function-live.js';
+import { startNotifyLive } from '../../packages/haraworks-live/notifications.js';
+import { startBuildLive } from '../../packages/haraworks-live/build-live.js';
 import { getBugDetail, fetchBugImages } from '../../packages/haraworks-live/detail.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -100,18 +103,111 @@ const HOST = process.env.HOST || '127.0.0.1';
 // ---- File người dùng tải lên để tác vụ đính kèm (ảnh, PDF): lưu ở database/automation-files, tối đa 10 MB, xóa sau 14 ngày
 const FILES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../database/automation-files');
 const LABEL_COLORS_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../database/label-colors.json');
+const PROJECT_COLOR_PALETTE = ['#2563eb', '#db2777', '#059669', '#d97706', '#7c3aed', '#0891b2', '#dc2626', '#4f46e5', '#0d9488', '#ea580c'];
 const DEFAULT_LABEL_COLORS = {
-  module: {},
-  status: { 0: '#6b7280', 1: '#2563eb', 2: '#d97706', 3: '#7c3aed', 4: '#dc2626', 5: '#16a34a', 6: '#d97706', 10: '#6b7280', 11: '#6b7280' }
+  module: {
+    '4RUM': '#8b5cf6', ACC: '#0ea5e9', ANNOUN: '#f59e0b', BONUS: '#ec4899', BOOKING: '#14b8a6',
+    BOSS: '#6366f1', BUDGET: '#84cc16', CHAT: '#3b82f6', CHECK: '#eab308', CHECKLIST: '#10b981',
+    COMMON: '#64748b', CORE: '#e11d48', CUS: '#06b6d4', DELP: '#f97316', DRIVE: '#22c55e',
+    DV5S: '#2563eb', EFORM: '#a855f7', ESIGN: '#0d9488', FILE: '#6d28d9', HOME: '#0284c7',
+    HRM: '#db2777', 'HRWS DIS': '#059669', IOT: '#ea580c', LISTEN: '#9333ea', LND: '#4f46e5',
+    MAIL: '#dc2626', MAINT: '#d97706', NEWS: '#0891b2', NPS: '#65a30d', QC: '#be123c',
+    REC: '#7c3aed', RISK: '#b91c1c', SAL: '#15803d', SCM: '#0369a1', SHIFT: '#c026d3',
+    SMART: '#1d4ed8', TASK: '#0f766e', VHST: '#b45309'
+  },
+  status: { 0: '#6b7280', 1: '#2563eb', 2: '#d97706', 3: '#7c3aed', 4: '#dc2626', 5: '#16a34a', 6: '#d97706', 10: '#6b7280', 11: '#6b7280' },
+  project: {
+    'Super Team': '#3b82f6',
+    'Winx Team': '#ec4899',
+    'Integrity Team': '#10b981',
+    'Team 1': '#f59e0b',
+    'ODOO BUG PRODUCTION': '#64748b',
+    'HRWs APP - RELEASE': '#8b5cf6',
+    'HRWs - RELEASE CHECKLIST': '#06b6d4'
+  }
 };
-function readLabelColors() {
-  if (!fs.existsSync(LABEL_COLORS_FILE)) return DEFAULT_LABEL_COLORS;
-  const saved = JSON.parse(fs.readFileSync(LABEL_COLORS_FILE, 'utf8'));
-  return { module: saved.module || {}, status: { ...DEFAULT_LABEL_COLORS.status, ...(saved.status || {}) } };
+function readLabelColorsRaw() {
+  if (!fs.existsSync(LABEL_COLORS_FILE)) return {};
+  try { return JSON.parse(fs.readFileSync(LABEL_COLORS_FILE, 'utf8')) || {}; } catch { return {}; }
 }
-function writeLabelColors(colors) {
-  fs.writeFileSync(LABEL_COLORS_FILE + '.tmp', JSON.stringify(colors, null, 2));
+function readLabelColors() {
+  const saved = readLabelColorsRaw();
+  return {
+    module: { ...DEFAULT_LABEL_COLORS.module, ...(saved.module || {}) },
+    status: { ...DEFAULT_LABEL_COLORS.status, ...(saved.status || {}) },
+    project: { ...DEFAULT_LABEL_COLORS.project, ...(saved.project || {}) }
+  };
+}
+function readEffectiveModulesAndStatuses() {
+  const saved = readLabelColorsRaw();
+  const colors = readLabelColors();
+  const baseMods = (BusinessRuleStore.load().modules || []).map(m => ({ code: m.code, name: m.name }));
+  const deletedMods = new Set(Array.isArray(saved.deleted_modules) ? saved.deleted_modules : []);
+  const customMods = Array.isArray(saved.custom_modules) ? saved.custom_modules : [];
+  const modNames = saved.module_names || {};
+
+  const modMap = new Map();
+  for (const m of baseMods) {
+    if (!deletedMods.has(m.code)) modMap.set(m.code, { code: m.code, name: modNames[m.code] || m.name, color: colors.module[m.code] || '#3b82f6' });
+  }
+  for (const m of customMods) {
+    if (m?.code) modMap.set(m.code, { code: m.code, name: m.name || m.code, color: colors.module[m.code] || m.color || '#3b82f6' });
+  }
+
+  const deletedSt = new Set(Array.isArray(saved.deleted_statuses) ? saved.deleted_statuses.map(String) : []);
+  const customSt = Array.isArray(saved.custom_statuses) ? saved.custom_statuses : [];
+  const stNames = saved.status_names || {};
+
+  const stMap = new Map();
+  for (const [code, name] of Object.entries(STATUS_LABELS)) {
+    if (!deletedSt.has(String(code))) stMap.set(String(code), { code: String(code), name: stNames[code] || name, color: colors.status[code] || '#6b7280' });
+  }
+  for (const s of customSt) {
+    if (s?.code != null && String(s.code) !== '') stMap.set(String(s.code), { code: String(s.code), name: s.name || String(s.code), color: colors.status[s.code] || s.color || '#6b7280' });
+  }
+
+  // Tập hợp tất cả dự án từ Bug, Function, Build và mặc định
+  const projNames = new Set([
+    ...Object.keys(DEFAULT_LABEL_COLORS.project),
+    ...Object.keys(colors.project || {}),
+    ...Object.keys((typeof BugStore?.facets === 'function' ? BugStore.facets().projects : {}) || {}),
+    ...Object.keys((typeof FunctionStore?.facets === 'function' ? FunctionStore.facets().teams : {}) || {})
+  ]);
+  const projects = [];
+  let pIdx = 0;
+  for (const pName of projNames) {
+    if (!pName) continue;
+    const col = colors.project[pName] || PROJECT_COLOR_PALETTE[pIdx % PROJECT_COLOR_PALETTE.length];
+    colors.project[pName] = col;
+    projects.push({ code: pName, name: pName, color: col });
+    pIdx++;
+  }
+  projects.sort((a, b) => a.name.localeCompare(b.name));
+
+  return { colors, modules: [...modMap.values()], statuses: [...stMap.values()], projects };
+}
+function writeLabelColors(data) {
+  fs.writeFileSync(LABEL_COLORS_FILE + '.tmp', JSON.stringify(data, null, 2));
   fs.renameSync(LABEL_COLORS_FILE + '.tmp', LABEL_COLORS_FILE);
+}
+const PERSONAL_WS_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../database/personal-workspace.json');
+function readAllPersonalWs() {
+  if (!fs.existsSync(PERSONAL_WS_FILE)) return {};
+  try { return JSON.parse(fs.readFileSync(PERSONAL_WS_FILE, 'utf8')) || {}; } catch { return {}; }
+}
+function readPersonalWs(userId) {
+  const all = readAllPersonalWs();
+  const u = all[userId] || {};
+  return {
+    todos: Array.isArray(u.todos) ? u.todos : [],
+    notes: Array.isArray(u.notes) ? u.notes : []
+  };
+}
+function writePersonalWs(userId, data) {
+  const all = readAllPersonalWs();
+  all[userId] = { todos: data.todos || [], notes: data.notes || [] };
+  fs.writeFileSync(PERSONAL_WS_FILE + '.tmp', JSON.stringify(all, null, 2));
+  fs.renameSync(PERSONAL_WS_FILE + '.tmp', PERSONAL_WS_FILE);
 }
 const MAX_FILE = 10 * 1024 * 1024;
 // Loại file được phép đính kèm: nhận dạng theo nội dung (không tin đuôi file), đuôi chỉ để phân biệt các loại cùng khuôn (zip, OLE, văn bản)
@@ -243,11 +339,23 @@ const handler = async (req, res) => {
   try {
     await db.init();
 
-    // Xác thực: khi đã có người dùng nhóm thì mọi API (trừ health) cần token
+    // Đăng nhập bằng Tài khoản & Mật khẩu
+    if (pathname === '/api/v1/auth/login' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      try {
+        const result = await loginWithPassword(body.username, body.password);
+        await PolicyEngine.logAudit({ actor: result.user, action: 'USER_LOGIN', decision: 'ALLOW', reason: `Đăng nhập tài khoản ${result.user.username}`, correlationId: `corr_login_${result.user.id}` });
+        return sendJson(res, 200, { success: true, data: result });
+      } catch (e) {
+        return sendJson(res, 401, { success: false, error: { code: 'INVALID_CREDENTIALS', message: e.message } });
+      }
+    }
+
+    // Xác thực: khi đã có người dùng nhóm thì mọi API (trừ health, auth/login) cần đăng nhập
     const authRequired = await hasUsers();
     const authedUser = await authenticate(req);
-    if (authRequired && pathname.startsWith('/api/v1/') && pathname !== '/api/v1/health' && !authedUser) {
-      return sendJson(res, 401, { success: false, error: { code: 'AUTH_REQUIRED', message: 'Cần đăng nhập bằng token cá nhân.' } });
+    if (authRequired && pathname.startsWith('/api/v1/') && pathname !== '/api/v1/health' && pathname !== '/api/v1/auth/login' && !authedUser) {
+      return sendJson(res, 401, { success: false, error: { code: 'AUTH_REQUIRED', message: 'Cần đăng nhập bằng tài khoản và mật khẩu.' } });
     }
     const DEFAULT_QC_USER = authedUser || LOCAL_USER; // người thực hiện, dùng cho kiểm toán
     // Admin có mọi quyền; member chỉ có quyền lẻ được cấp: environments, secrets, rules
@@ -262,7 +370,7 @@ const handler = async (req, res) => {
     };
     if (pathname === '/api/v1/team/users' && method === 'GET') {
       if (!requireAdmin()) return;
-      return sendJson(res, 200, { success: true, data: (await db.find('team_users')).map(u => ({ id: u.id, display_name: u.display_name, role: u.role, perms: u.perms || [], is_active: u.is_active, created_at: u.created_at, is_me: u.id === DEFAULT_QC_USER.id })) });
+      return sendJson(res, 200, { success: true, data: (await db.find('team_users')).map(u => ({ id: u.id, username: u.username || normalizeUsername(u.display_name), display_name: u.display_name, employee_code: u.employee_code || '', role: u.role, perms: u.perms || [], is_active: u.is_active, created_at: u.created_at, is_me: u.id === DEFAULT_QC_USER.id })) });
     }
     if (pathname === '/api/v1/team/users' && method === 'POST') {
       if (!requireAdmin()) return;
@@ -270,15 +378,15 @@ const handler = async (req, res) => {
       try {
         const name = String(body.name || '').trim();
         if (!name || name.length > 80) throw new Error('Tên người dùng 1 đến 80 ký tự');
-        const { user, token } = await createUser(name, body.role || 'member');
+        const { user, token } = await createUser(name, body.role || 'member', body.username || name, body.password || '123456', body.employee_code || '');
         let u = user;
-        if (Array.isArray(body.perms) && body.perms.length) u = await setUserAccess(user.id, { perms: body.perms });
-        await PolicyEngine.logAudit({ actor: DEFAULT_QC_USER, action: 'USER_CREATE', decision: 'ALLOW', reason: `${user.id} (${name}), role=${u.role}`, correlationId: `corr_user_${user.id}` });
-        return sendJson(res, 201, { success: true, data: { id: user.id, display_name: name, role: u.role, perms: u.perms || [], token } });
+        if (Array.isArray(body.perms) && body.perms.length) u = await setUserAccess(user.id, { perms: body.perms, employee_code: body.employee_code });
+        await PolicyEngine.logAudit({ actor: DEFAULT_QC_USER, action: 'USER_CREATE', decision: 'ALLOW', reason: `${user.id} (${name}, user=${u.username}), role=${u.role}`, correlationId: `corr_user_${user.id}` });
+        return sendJson(res, 201, { success: true, data: { id: user.id, username: u.username, display_name: name, employee_code: u.employee_code || '', role: u.role, perms: u.perms || [], token } });
       } catch (e) { return sendJson(res, 400, { success: false, error: { message: e.message } }); }
     }
     let um;
-    if ((um = /^\/api\/v1\/team\/users\/([^/]+)\/(reset-token|revoke)$/.exec(pathname)) && method === 'POST') {
+    if ((um = /^\/api\/v1\/team\/users\/([^/]+)\/(reset-token|reset-password|revoke)$/.exec(pathname)) && method === 'POST') {
       if (!requireAdmin()) return;
       const uid = um[1];
       const target = await db.findById('team_users', uid);
@@ -291,6 +399,16 @@ const handler = async (req, res) => {
         await PolicyEngine.logAudit({ actor: DEFAULT_QC_USER, action: 'USER_REVOKE', decision: 'ALLOW', reason: uid, correlationId: `corr_user_${uid}` });
         return sendJson(res, 200, { success: true, data: { id: uid, is_active: 0 } });
       }
+      if (um[2] === 'reset-password') {
+        const body = await parseJsonBody(req);
+        try {
+          const u = await setPassword(uid, body.password, body.username, body.employee_code);
+          await PolicyEngine.logAudit({ actor: DEFAULT_QC_USER, action: 'USER_RESET_PASSWORD', decision: 'ALLOW', reason: uid, correlationId: `corr_user_${uid}` });
+          const payload = { id: uid, username: u.username, employee_code: u.employee_code || '' };
+          if (uid === DEFAULT_QC_USER.id && u.session_token) payload.token = u.session_token;
+          return sendJson(res, 200, { success: true, data: payload });
+        } catch (e) { return sendJson(res, 400, { success: false, error: { message: e.message } }); }
+      }
       const token = await resetToken(uid);
       await PolicyEngine.logAudit({ actor: DEFAULT_QC_USER, action: 'USER_RESET_TOKEN', decision: 'ALLOW', reason: uid, correlationId: `corr_user_${uid}` });
       return sendJson(res, 200, { success: true, data: { id: uid, token } });
@@ -300,29 +418,251 @@ const handler = async (req, res) => {
       const uid = pathname.split('/')[5];
       const body = await parseJsonBody(req);
       try {
-        const u = await setUserAccess(uid, { role: body.role, perms: body.perms });
+        const u = await setUserAccess(uid, { role: body.role, perms: body.perms, username: body.username, password: body.password, employee_code: body.employee_code });
         await PolicyEngine.logAudit({ actor: DEFAULT_QC_USER, action: 'USER_ACCESS_CHANGE', decision: 'ALLOW', reason: `${uid}: role=${u.role}, perms=${(u.perms || []).join(',') || '-'}`, correlationId: `corr_user_${uid}` });
-        return sendJson(res, 200, { success: true, data: { id: u.id, role: u.role, perms: u.perms || [] } });
+        return sendJson(res, 200, { success: true, data: { id: u.id, username: u.username, employee_code: u.employee_code || '', role: u.role, perms: u.perms || [] } });
       } catch (e) { return sendJson(res, 400, { success: false, error: { message: e.message } }); }
     }
+    // Cập nhật thông tin cá nhân của chính mình (avatar, tên, biệt danh, vai trò, ngày tham gia, mã nhân viên, đổi mật khẩu)
+    if (pathname === '/api/v1/me/profile' && method === 'PUT') {
+      const body = await parseJsonBody(req);
+      try {
+        const extraUpdates = {};
+        if (body.display_name !== undefined) extraUpdates.display_name = String(body.display_name || '').trim();
+        if (body.nickname !== undefined) extraUpdates.nickname = String(body.nickname || '').trim().slice(0, 60);
+        if (body.job_title !== undefined) extraUpdates.job_title = String(body.job_title || '').trim().slice(0, 80);
+        if (body.joined_at !== undefined) extraUpdates.joined_at = String(body.joined_at || '').trim().slice(0, 20);
+        if (body.avatar !== undefined) {
+          const av = String(body.avatar || '').trim();
+          if (av.length > 250000) throw new Error('Ảnh avatar quá lớn (tối đa ~180KB).');
+          extraUpdates.avatar = av;
+        }
+        let u;
+        if (body.password) {
+          u = await setPassword(DEFAULT_QC_USER.id, body.password, body.username, body.employee_code);
+        } else {
+          u = await setUserAccess(DEFAULT_QC_USER.id, { username: body.username, employee_code: body.employee_code });
+        }
+        if (Object.keys(extraUpdates).length) {
+          await db.update('team_users', u.id, extraUpdates);
+          Object.assign(u, extraUpdates);
+        }
+        const token = u.session_token || undefined;
+        return sendJson(res, 200, {
+          success: true,
+          data: {
+            id: u.id,
+            username: u.username,
+            display_name: u.display_name,
+            employee_code: u.employee_code || '',
+            nickname: u.nickname || '',
+            job_title: u.job_title || '',
+            joined_at: u.joined_at || '',
+            avatar: u.avatar || '',
+            role: u.role,
+            token
+          }
+        });
+      } catch (e) { return sendJson(res, 400, { success: false, error: { message: e.message } }); }
+    }
+    // ==========================================
+    // Quản lý To-do & Note cá nhân trên Dashboard (lưu riêng theo từng user)
+    // ==========================================
+    if (pathname === '/api/v1/personal-workspace' && method === 'GET') {
+      return sendJson(res, 200, { success: true, data: readPersonalWs(DEFAULT_QC_USER.id) });
+    }
+    if (pathname === '/api/v1/personal-workspace/task-search' && method === 'GET') {
+      const q = (urlObj.searchParams.get('q') || '').trim();
+      const bugs = BugStore.list({ live: true, q, limit: 10, offset: 0 }).items.map(b => ({ id: b.id, taskType: 'bug', typeLabel: 'Bug', title: b.title, url: b.url, statusLabel: b.status_label || '' }));
+      const fns = FunctionStore.list({ q, limit: 10, offset: 0 }).items.map(f => ({ id: f.id, taskType: 'function', typeLabel: 'Function', title: f.title, url: f.url, statusLabel: f.status_label || '' }));
+      const bds = buildLive.list({ q, limit: 10, offset: 0 }).items.map(b => ({ id: b.id, taskType: 'build', typeLabel: 'Build', title: b.title, url: b.url, statusLabel: b.status_label || '' }));
+      return sendJson(res, 200, { success: true, data: [...bugs, ...fns, ...bds].slice(0, 24) });
+    }
+    if (pathname === '/api/v1/personal-workspace/todos' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const ws = readPersonalWs(DEFAULT_QC_USER.id);
+      const cleanLinks = Array.isArray(body.linkedTasks)
+        ? body.linkedTasks.slice(0, 15).map(t => ({ id: String(t.id || ''), taskType: String(t.taskType || 'bug'), title: String(t.title || '').slice(0, 200), url: String(t.url || '') })).filter(t => t.id && t.title)
+        : undefined;
+      if (body.id) {
+        const idx = ws.todos.findIndex(x => x.id === body.id);
+        if (idx === -1) return sendJson(res, 404, { success: false, error: { message: 'Không tìm thấy công việc.' } });
+        if (body.text !== undefined) ws.todos[idx].text = String(body.text).trim().slice(0, 400);
+        if (body.done !== undefined) ws.todos[idx].done = !!body.done;
+        if (body.dueDate !== undefined) ws.todos[idx].dueDate = String(body.dueDate || '').slice(0, 20);
+        if (cleanLinks !== undefined) ws.todos[idx].linkedTasks = cleanLinks;
+        ws.todos[idx].updatedAt = new Date().toISOString();
+      } else {
+        const text = String(body.text || '').trim().slice(0, 400);
+        if (!text) return sendJson(res, 400, { success: false, error: { message: 'Vui lòng nhập nội dung To-do.' } });
+        ws.todos.unshift({
+          id: 'td_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+          text,
+          done: !!body.done,
+          dueDate: String(body.dueDate || '').slice(0, 20),
+          linkedTasks: cleanLinks || [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+      }
+      writePersonalWs(DEFAULT_QC_USER.id, ws);
+      return sendJson(res, 200, { success: true, data: ws });
+    }
+    let pwMatch;
+    if ((pwMatch = /^\/api\/v1\/personal-workspace\/todos\/([^/]+)$/.exec(pathname)) && method === 'DELETE') {
+      const ws = readPersonalWs(DEFAULT_QC_USER.id);
+      ws.todos = ws.todos.filter(x => x.id !== pwMatch[1]);
+      writePersonalWs(DEFAULT_QC_USER.id, ws);
+      return sendJson(res, 200, { success: true, data: ws });
+    }
+    if (pathname === '/api/v1/personal-workspace/notes' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const ws = readPersonalWs(DEFAULT_QC_USER.id);
+      const cleanLinks = Array.isArray(body.linkedTasks)
+        ? body.linkedTasks.slice(0, 20).map(t => ({ id: String(t.id || ''), taskType: String(t.taskType || 'bug'), title: String(t.title || '').slice(0, 200), url: String(t.url || '') })).filter(t => t.id && t.title)
+        : undefined;
+      if (body.id) {
+        const idx = ws.notes.findIndex(x => x.id === body.id);
+        if (idx === -1) return sendJson(res, 404, { success: false, error: { message: 'Không tìm thấy ghi chú.' } });
+        if (body.title !== undefined) ws.notes[idx].title = String(body.title).trim().slice(0, 150);
+        if (body.content !== undefined) ws.notes[idx].content = String(body.content).slice(0, 4000);
+        if (body.pinned !== undefined) ws.notes[idx].pinned = !!body.pinned;
+        if (cleanLinks !== undefined) ws.notes[idx].linkedTasks = cleanLinks;
+        ws.notes[idx].updatedAt = new Date().toISOString();
+      } else {
+        const title = String(body.title || '').trim().slice(0, 150);
+        const content = String(body.content || '').trim().slice(0, 4000);
+        if (!title && !content) return sendJson(res, 400, { success: false, error: { message: 'Vui lòng nhập tiêu đề hoặc nội dung ghi chú.' } });
+        ws.notes.unshift({
+          id: 'nt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+          title: title || 'Ghi chú',
+          content,
+          pinned: !!body.pinned,
+          linkedTasks: cleanLinks || [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+      }
+      writePersonalWs(DEFAULT_QC_USER.id, ws);
+      return sendJson(res, 200, { success: true, data: ws });
+    }
+    if ((pwMatch = /^\/api\/v1\/personal-workspace\/notes\/([^/]+)$/.exec(pathname)) && method === 'DELETE') {
+      const ws = readPersonalWs(DEFAULT_QC_USER.id);
+      ws.notes = ws.notes.filter(x => x.id !== pwMatch[1]);
+      writePersonalWs(DEFAULT_QC_USER.id, ws);
+      return sendJson(res, 200, { success: true, data: ws });
+    }
+    // Cập nhật token/cookie Haraworks để đồng bộ realtime (lưu cục bộ secrets/haraworks.json trong .gitignore, không lưu DB và không trả lại giao diện)
+    if (pathname === '/api/v1/me/haraworks-token' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const rawToken = String(body.token || '').trim();
+      if (!rawToken) return sendJson(res, 400, { success: false, error: { message: 'Vui lòng nhập token/cookie.' } });
+      try {
+        const cleanCookie = writeCookie(rawToken);
+        bugLive.setCookie(cleanCookie);
+        functionLive.setCookie(cleanCookie);
+        buildLive.setCookie(cleanCookie);
+        notifyLive.setCookie(cleanCookie);
+        await PolicyEngine.logAudit({
+          actor: DEFAULT_QC_USER,
+          action: 'HARAWORKS_TOKEN_UPDATE',
+          decision: 'ALLOW',
+          reason: 'Cập nhật token/cookie Haraworks để đồng bộ realtime',
+          correlationId: `corr_hw_token_${DEFAULT_QC_USER.id}`
+        });
+        return sendJson(res, 200, { success: true, data: { has_haraworks_token: true } });
+      } catch (e) {
+        return sendJson(res, 400, { success: false, error: { message: e.message } });
+      }
+    }
     if (pathname === '/api/v1/me' && method === 'GET') {
-      return sendJson(res, 200, { success: true, data: { ...DEFAULT_QC_USER, auth_required: authRequired } });
+      const st = bugLive.status();
+      return sendJson(res, 200, {
+        success: true,
+        data: {
+          ...DEFAULT_QC_USER,
+          auth_required: authRequired,
+          has_haraworks_token: !!st.enabled,
+          haraworks_auth_error: !!(st.error && /^AUTH:/.test(st.error))
+        }
+      });
     }
     if (pathname === '/api/v1/label-colors' && method === 'GET') {
-      const modules = (BusinessRuleStore.load().modules || []).map(m => ({ code: m.code, name: m.name }));
-      return sendJson(res, 200, { success: true, data: {
-        colors: readLabelColors(),
-        modules,
-        statuses: Object.entries(STATUS_LABELS).map(([code, name]) => ({ code, name }))
-      } });
+      return sendJson(res, 200, { success: true, data: readEffectiveModulesAndStatuses() });
+    }
+    if (pathname === '/api/v1/settings/general' && method === 'PUT') {
+      const body = await parseJsonBody(req);
+      const prev = readLabelColorsRaw();
+      const next = {
+        module: { ...DEFAULT_LABEL_COLORS.module, ...(prev.module || {}) },
+        status: { ...DEFAULT_LABEL_COLORS.status, ...(prev.status || {}) },
+        project: { ...DEFAULT_LABEL_COLORS.project, ...(prev.project || {}) },
+        custom_modules: [],
+        deleted_modules: [],
+        module_names: {},
+        custom_statuses: [],
+        deleted_statuses: [],
+        status_names: {}
+      };
+      const baseMods = new Map((BusinessRuleStore.load().modules || []).map(m => [String(m.code), m.name]));
+      if (Array.isArray(body.modules)) {
+        const seenMod = new Set();
+        for (const m of body.modules) {
+          const code = String(m?.code || '').trim().toUpperCase();
+          const name = String(m?.name || code).trim();
+          const color = /^#[0-9a-f]{6}$/i.test(String(m?.color || '')) ? String(m.color).toLowerCase() : '#3b82f6';
+          if (!code) continue;
+          seenMod.add(code);
+          next.module[code] = color;
+          if (baseMods.has(code)) {
+            if (name && name !== baseMods.get(code)) next.module_names[code] = name;
+          } else {
+            next.custom_modules.push({ code, name, color });
+          }
+        }
+        for (const bc of baseMods.keys()) {
+          if (!seenMod.has(bc)) next.deleted_modules.push(bc);
+        }
+      }
+      if (Array.isArray(body.statuses)) {
+        const seenSt = new Set();
+        for (const s of body.statuses) {
+          const code = String(s?.code ?? '').trim();
+          const name = String(s?.name || code).trim();
+          const color = /^#[0-9a-f]{6}$/i.test(String(s?.color || '')) ? String(s.color).toLowerCase() : '#6b7280';
+          if (code === '') continue;
+          seenSt.add(code);
+          next.status[code] = color;
+          if (Object.prototype.hasOwnProperty.call(STATUS_LABELS, code)) {
+            if (name && name !== STATUS_LABELS[code]) next.status_names[code] = name;
+          } else {
+            next.custom_statuses.push({ code, name, color });
+          }
+        }
+        for (const bs of Object.keys(STATUS_LABELS)) {
+          if (!seenSt.has(bs)) next.deleted_statuses.push(bs);
+        }
+      }
+      if (Array.isArray(body.projects)) {
+        for (const p of body.projects) {
+          const code = String(p?.code || p?.name || '').trim();
+          const color = /^#[0-9a-f]{6}$/i.test(String(p?.color || '')) ? String(p.color).toLowerCase() : '';
+          if (code && color) next.project[code] = color;
+        }
+      }
+      writeLabelColors(next);
+      await PolicyEngine.logAudit({ actor: DEFAULT_QC_USER, action: 'GENERAL_SETTINGS_UPDATE', decision: 'ALLOW', reason: 'Cập nhật cấu hình Module và Trạng thái', correlationId: `corr_general_${Date.now()}` });
+      return sendJson(res, 200, { success: true, data: readEffectiveModulesAndStatuses() });
     }
     if (pathname === '/api/v1/label-colors' && method === 'PUT') {
       if (!requireAdmin()) return;
       const body = await parseJsonBody(req);
       const incoming = body.colors || {};
-      const moduleCodes = new Set((BusinessRuleStore.load().modules || []).map(m => String(m.code)));
-      const statusCodes = new Set(Object.keys(STATUS_LABELS));
-      const colors = { module: {}, status: { ...DEFAULT_LABEL_COLORS.status } };
+      const prev = readLabelColorsRaw();
+      const eff = readEffectiveModulesAndStatuses();
+      const moduleCodes = new Set(eff.modules.map(m => String(m.code)));
+      const statusCodes = new Set(eff.statuses.map(s => String(s.code)));
+      const colors = { ...prev, module: { ...DEFAULT_LABEL_COLORS.module, ...(prev.module || {}) }, status: { ...DEFAULT_LABEL_COLORS.status, ...(prev.status || {}) } };
       for (const [group, allowed] of [['module', moduleCodes], ['status', statusCodes]]) {
         const values = incoming[group] || {};
         if (!values || typeof values !== 'object' || Array.isArray(values)) return sendJson(res, 400, { success: false, error: { message: `Cấu hình màu ${group} không hợp lệ.` } });
@@ -335,7 +675,7 @@ const handler = async (req, res) => {
       }
       writeLabelColors(colors);
       await PolicyEngine.logAudit({ actor: DEFAULT_QC_USER, action: 'LABEL_COLORS_UPDATE', decision: 'ALLOW', reason: 'Cập nhật màu nhãn module và trạng thái', correlationId: `corr_label_colors_${Date.now()}` });
-      return sendJson(res, 200, { success: true, data: { colors } });
+      return sendJson(res, 200, { success: true, data: { colors: readLabelColors() } });
     }
 
     // ==========================================
@@ -696,7 +1036,14 @@ const handler = async (req, res) => {
       const kind = sniff(buf, body.name);
       if (!kind) return jerr(415, 'Chỉ nhận ảnh (PNG, JPG, GIF, WEBP, BMP), PDF, Word (doc, docx), Excel (xls, xlsx), PowerPoint (ppt, pptx), văn bản (txt, csv, md, rtf) và zip. Không nhận chương trình, script hoặc file có macro');
       fs.mkdirSync(FILES_DIR, { recursive: true });
-      if ((await db.find('automation_files', () => true)).length >= 100) return jerr(409, 'Kho ảnh test đã đủ 100 file. Xóa bớt file không dùng rồi tải lên lại.');
+      const allFiles = await db.find('automation_files', () => true);
+      if (allFiles.length >= 100) {
+        const oldest = allFiles.slice().sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || ''))).slice(0, allFiles.length - 99);
+        for (const old of oldest) {
+          try { fs.rmSync(path.join(FILES_DIR, old.stored), { force: true }); } catch {}
+          await db.delete('automation_files', old.id);
+        }
+      }
       const id = 'f_' + Math.random().toString(36).slice(2, 14).padEnd(10, '0');
       const base = path.basename(String(body.name || 'tep')).replace(/[^\w.\- ]/g, '_').slice(0, 80) || 'tep';
       const name = base.toLowerCase().endsWith('.' + kind[1]) ? base : `${base}.${kind[1]}`;
@@ -774,7 +1121,7 @@ const handler = async (req, res) => {
     if (pathname === '/api/v1/bugs' && method === 'GET') {
       const q = urlObj.searchParams;
       return sendJson(res, 200, { success: true, data: BugStore.list({
-        module: q.get('module') || '', q: q.get('q') || '', category: q.get('category') || '', year: q.get('year') || '',
+        module: q.get('module') || '', project: q.get('project') || '', q: q.get('q') || '', category: q.get('category') || '', year: q.get('year') || '',
         status: q.get('status') || '', assignee: q.get('assignee') || '', approver: q.get('approver') || '', closed: q.get('closed') || '', age: q.get('age') || '', sort: q.get('sort') || 'created', live: q.get('live') === '1',
         unknown: q.get('unknown') === '1', offset: Math.max(0, +q.get('offset') || 0), limit: Math.min(200, +q.get('limit') || 50)
       }) });
@@ -794,9 +1141,544 @@ const handler = async (req, res) => {
     if (pathname === '/api/v1/bugs/live' && method === 'GET') {
       return sendJson(res, 200, { success: true, data: { ...bugLive.status(), revision: BugStore.liveRevision() } });
     }
+    if (pathname === '/api/v1/sync-all' && method === 'POST') {
+      bugLive.trigger('đồng bộ toàn bộ');
+      functionLive.trigger('đồng bộ toàn bộ');
+      buildLive.trigger('đồng bộ toàn bộ');
+      notifyLive.trigger('đồng bộ toàn bộ');
+      return sendJson(res, 202, {
+        success: true,
+        data: {
+          enabled: bugLive.enabled,
+          bugs: bugLive.status(),
+          functions: functionLive.status(),
+          builds: buildLive.status()
+        }
+      });
+    }
     if (pathname === '/api/v1/bugs/live/refresh' && method === 'POST') {
       bugLive.trigger('người dùng yêu cầu');
       return sendJson(res, 202, { success: true, data: { enabled: bugLive.enabled } });
+    }
+    if (pathname === '/api/v1/bugs/today-mentions' && method === 'GET') {
+      const foldTxt = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().trim();
+      const targets = [DEFAULT_QC_USER.display_name, DEFAULT_QC_USER.username, DEFAULT_QC_USER.employee_code].map(foldTxt).filter(t => t.length >= 2);
+      const meFold = foldTxt(DEFAULT_QC_USER.display_name);
+      const todayBugs = BugStore.list({ live: true, sort: 'created', offset: 0, limit: 100 }).items.filter(b => b.is_today).slice(0, 25);
+      const mentions = [];
+      const hasMention = (txt) => {
+        const f = foldTxt(txt);
+        if (!f) return false;
+        return targets.some(t => {
+          const escRe = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          return new RegExp(`(?:^|[^a-z0-9])${escRe}(?:$|[^a-z0-9])`, 'i').test(f);
+        });
+      };
+      for (let i = 0; i < todayBugs.length; i += 5) {
+        const chunk = todayBugs.slice(i, i + 5);
+        await Promise.all(chunk.map(async (b) => {
+          try {
+            const detail = await getBugDetail(b.id);
+            for (const c of (detail.comments?.items || [])) {
+              if (foldTxt(c.by) !== meFold && hasMention(c.text)) {
+                mentions.push({ commentId: c.id, bugId: b.id, bugTitle: b.title, bugUrl: b.url, by: c.by || '', text: c.text || '', at: c.at || '' });
+              }
+              for (const r of (c.replies || [])) {
+                if (foldTxt(r.by) !== meFold && hasMention(r.text)) {
+                  mentions.push({ commentId: r.id, bugId: b.id, bugTitle: b.title, bugUrl: b.url, by: r.by || '', text: r.text || '', at: r.at || '' });
+                }
+              }
+            }
+          } catch {}
+        }));
+      }
+      mentions.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+      return sendJson(res, 200, { success: true, data: mentions });
+    }
+
+    // ==========================================
+    // My Tasks Dashboard (Jira-inspired Kanban, Gantt, Metrics & Reminders)
+    // ==========================================
+    if (pathname === '/api/v1/my-tasks' && method === 'GET') {
+      const period = urlObj.searchParams.get('period') || 'week';
+      const foldTxt = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().trim();
+      const codeTarget = foldTxt(DEFAULT_QC_USER.employee_code || '');
+      const nameTarget = foldTxt(DEFAULT_QC_USER.display_name || '');
+      const userTargets = [DEFAULT_QC_USER.display_name, DEFAULT_QC_USER.username].map(foldTxt).filter(t => t.length >= 2);
+
+      // Quét Bug tasks, QC Function child tasks & Release Function tasks (HRWs - RELEASE CHECKLIST)
+      const allBugs = BugStore.list({ live: true, sort: 'created', offset: 0, limit: 2000 }).items;
+      const allQcFns = FunctionStore.listQc();
+      const allReleaseFns = buildLive.list({ kind: 'function', offset: 0, limit: 2000 }).items;
+
+      if (!globalThis.__qaColleagueHrMap) globalThis.__qaColleagueHrMap = new Map();
+      const hrMap = globalThis.__qaColleagueHrMap;
+      if (codeTarget) {
+        const cookie = readCookie();
+        const baseUrl = process.env.HARAWORKS_BASE_URL || 'https://tasks.haraworks.vn';
+        const missingIds = [];
+        for (const t of [...allBugs, ...allQcFns]) {
+          const aid = t.assigneeId ? String(t.assigneeId) : '';
+          if (aid && !hrMap.has(aid) && !missingIds.includes(aid)) missingIds.push(aid);
+        }
+        if (cookie && missingIds.length) {
+          for (let i = 0; i < Math.min(missingIds.length, 40); i += 10) {
+            const chunk = missingIds.slice(i, i + 10);
+            await Promise.all(chunk.map(async (aid) => {
+              try {
+                const r = await fetch(`${baseUrl}/call/hr_api/colleague?HaraId=${encodeURIComponent(aid)}`, { headers: { cookie, accept: 'application/json' } });
+                if (!r.ok) { hrMap.set(aid, null); return; }
+                const j = await r.json();
+                const d = j?.data || {};
+                const hrId = foldTxt(d.hrId || d.hr_Id || d.employeeCode || d.staffCode || d.code || '');
+                const fullName = foldTxt(d.fullName || d.name || '');
+                hrMap.set(aid, { hrId, fullName });
+              } catch { hrMap.set(aid, null); }
+            }));
+          }
+        }
+      }
+
+      const detectMyRole = (task) => {
+        const aFold = foldTxt(task.assignee || '');
+        const apFold = foldTxt(task.approver || '');
+        const aid = task.assigneeId ? String(task.assigneeId) : '';
+        const col = aid ? hrMap.get(aid) : null;
+
+        let isAssignee = false;
+        let isApprover = false;
+
+        if (codeTarget) {
+          if (col?.hrId && col.hrId === codeTarget) isAssignee = true;
+          if (aFold && aFold.includes(codeTarget)) isAssignee = true;
+          if (apFold && apFold.includes(codeTarget)) isApprover = true;
+        }
+        if (nameTarget) {
+          if (aFold && (aFold === nameTarget || aFold.includes(nameTarget) || nameTarget.includes(aFold))) isAssignee = true;
+          if (apFold && (apFold === nameTarget || apFold.includes(nameTarget) || nameTarget.includes(apFold))) isApprover = true;
+        }
+        for (const t of userTargets) {
+          if (aFold && (aFold === t || aFold.includes(t))) isAssignee = true;
+          if (apFold && (apFold === t || apFold.includes(t))) isApprover = true;
+        }
+        if (isAssignee) return 'assignee';
+        if (isApprover) return 'approver';
+        return null;
+      };
+
+      const now = new Date();
+      const todayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).format(now);
+      const nowMs = now.getTime();
+      const oneDayMs = 24 * 60 * 60 * 1000;
+
+      // Tính khoảng thời gian cho bộ lọc (Tuần này, Tháng này, 30 ngày gần đây, Năm, Tất cả)
+      const vnNow = new Date(todayStr + 'T12:00:00+07:00');
+      const dayOfWeek = (vnNow.getDay() + 6) % 7; // 0 = Thứ 2
+      const mondayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(vnNow.getTime() - dayOfWeek * oneDayMs));
+      const sundayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(vnNow.getTime() + (6 - dayOfWeek) * oneDayMs));
+      const monthPrefix = todayStr.slice(0, 7);
+      const thirtyDaysAgoStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(vnNow.getTime() - 30 * oneDayMs));
+
+      const inPeriod = (t) => {
+        if (period === 'all') return true;
+        const cDate = String(t.createdAt || '').slice(0, 10);
+        if (!cDate) return false;
+        if (period === 'week') return cDate >= mondayStr && cDate <= sundayStr;
+        if (period === 'month') return cDate.startsWith(monthPrefix);
+        if (period === '30d') return cDate >= thirtyDaysAgoStr;
+        if (/^\d{4}$/.test(period)) return cDate.startsWith(period);
+        return true;
+      };
+
+      const CLOSED_STATUS_SET = new Set([5, 11]); // Hoàn thành (5), Không thực hiện (11)
+      const HIDDEN_CLOSED_SET = new Set([10, 11]); // Task bị đóng (Không xử lý / Không thực hiện) -> không hiện trong dashboard
+      const allMatchedTasks = [];
+      const yearSet = new Set([todayStr.slice(0, 4)]);
+
+      const isInTimelineToday = (startAt, endAt, createdAt) => {
+        const s = String(startAt || '').slice(0, 10);
+        const e = String(endAt || '').slice(0, 10);
+        const c = String(createdAt || '').slice(0, 10);
+        if (s && e) return s <= todayStr && todayStr <= e;
+        if (e) return todayStr <= e;
+        if (s) return s <= todayStr;
+        return c === todayStr;
+      };
+
+      for (const b of allBugs) {
+        if (HIDDEN_CLOSED_SET.has(b.status)) continue;
+        const myRole = detectMyRole(b);
+        if (!myRole) continue;
+        const isClosed = CLOSED_STATUS_SET.has(b.status);
+        const missing = [];
+        if (!b.customer || !String(b.customer).trim()) missing.push('Khách hàng');
+        if (!b.module && !b.module_custom && !b.module_name) missing.push('Ứng dụng');
+        if (!b.platform || !String(b.platform).trim()) missing.push('Nền tảng');
+        if (!b.classification && !b.category) missing.push('Phân loại');
+        if (!b.severity && b.priority == null) missing.push('Độ nghiêm trọng');
+
+        const deadline = b.plan_end_at || '';
+        const startAt = b.plan_start_at || b.date || '';
+        let isOverdue = false;
+        let isDueToday = false;
+        if (deadline && !isClosed) {
+          const dDate = deadline.slice(0, 10);
+          if (dDate < todayStr) isOverdue = true;
+          else if (dDate === todayStr) isDueToday = true;
+        }
+        const createdMs = b.date ? new Date(b.date).getTime() : 0;
+        // Task gán mới trong 24h: chỉ lấy task bug đã gán tôi là người thực hiện
+        const isAssigned24h = myRole === 'assignee' && (nowMs - createdMs) <= oneDayMs;
+        const inTimeline = !isClosed && isInTimelineToday(startAt, deadline, b.date);
+        const isNeedToDoToday = !isClosed && (isOverdue || myRole === 'assignee' || (myRole === 'approver' && inTimeline));
+        if (b.date && /^\d{4}/.test(b.date)) yearSet.add(b.date.slice(0, 4));
+
+        allMatchedTasks.push({
+          id: b.id,
+          taskType: 'bug',
+          typeLabel: 'Bug',
+          myRole,
+          myRoleLabel: myRole === 'assignee' ? 'Tôi thực hiện' : 'Tôi duyệt',
+          title: b.title,
+          url: b.url,
+          status: b.status,
+          statusLabel: b.status_label || 'Mới',
+          priority: b.priority,
+          priorityLabel: b.priority_label || 'Không ưu tiên',
+          assignee: b.assignee,
+          approver: b.approver,
+          module: b.module || b.module_custom || '',
+          moduleName: b.module_name || b.module || '',
+          customer: b.customer || '',
+          platform: b.platform || '',
+          classification: b.classification || b.category || '',
+          severity: b.severity || '',
+          project: b.project || '',
+          createdAt: b.date || '',
+          updatedAt: b.updated || '',
+          startAt,
+          endAt: deadline,
+          closed: isClosed,
+          missingFields: missing,
+          isMissingInfo: missing.length > 0,
+          isOverdue,
+          isDueToday,
+          isAssigned24h,
+          isNeedToDoToday
+        });
+      }
+
+      for (const f of allQcFns) {
+        if (HIDDEN_CLOSED_SET.has(f.status)) continue;
+        const myRole = detectMyRole(f);
+        if (myRole !== 'assignee') continue; // Đối với task function: track task con có tiền tố QC được gán cho user
+        const isClosed = CLOSED_STATUS_SET.has(f.status);
+        const deadline = f.plan_end_at || '';
+        const startAt = f.plan_start_at || f.date || '';
+        let isOverdue = false;
+        let isDueToday = false;
+        if (deadline && !isClosed) {
+          const dDate = deadline.slice(0, 10);
+          if (dDate < todayStr) isOverdue = true;
+          else if (dDate === todayStr) isDueToday = true;
+        }
+        const isAssigned24h = false;
+        const inTimeline = !isClosed && isInTimelineToday(startAt, deadline, f.date);
+        const isNeedToDoToday = !isClosed && (isOverdue || inTimeline);
+        if (f.date && /^\d{4}/.test(f.date)) yearSet.add(f.date.slice(0, 4));
+
+        allMatchedTasks.push({
+          id: f.id,
+          taskType: 'function',
+          typeLabel: 'Task Function',
+          myRole: 'assignee',
+          myRoleLabel: 'Tôi thực hiện',
+          title: f.title,
+          url: f.url,
+          status: f.status,
+          statusLabel: f.status_label || 'Mới',
+          priority: f.priority,
+          priorityLabel: f.priority_label || 'Không ưu tiên',
+          assignee: f.assignee,
+          approver: f.approver,
+          module: f.module || f.module_custom || '',
+          moduleName: f.module_name || f.module || '',
+          customer: f.customer || '',
+          platform: f.platform || '',
+          classification: f.classification || f.category || '',
+          severity: f.severity || '',
+          team: f.team || f.project || '',
+          project: f.project || '',
+          createdAt: f.date || '',
+          updatedAt: f.updated || '',
+          startAt,
+          endAt: deadline,
+          closed: isClosed,
+          missingFields: [],
+          isMissingInfo: false,
+          isOverdue,
+          isDueToday,
+          isAssigned24h,
+          isNeedToDoToday
+        });
+      }
+
+      for (const rf of allReleaseFns) {
+        if (HIDDEN_CLOSED_SET.has(rf.status)) continue;
+        const myRole = detectMyRole(rf);
+        if (myRole !== 'assignee') continue; // Task Release: chỉ track những task tôi là người thực hiện
+        const isClosed = CLOSED_STATUS_SET.has(rf.status);
+        const deadline = rf.plan_end_at || '';
+        const startAt = rf.plan_start_at || '';
+        const hasAssignedDates = !!(startAt || deadline);
+        let isOverdue = false;
+        let isDueToday = false;
+        if (deadline && !isClosed) {
+          const dDate = deadline.slice(0, 10);
+          if (dDate < todayStr) isOverdue = true;
+          else if (dDate === todayStr) isDueToday = true;
+        }
+        const isAssigned24h = false;
+        const inTimeline = !isClosed && hasAssignedDates && isInTimelineToday(startAt, deadline, '');
+        const isNeedToDoToday = !isClosed && hasAssignedDates && (isOverdue || inTimeline);
+        if (rf.date && /^\d{4}/.test(rf.date)) yearSet.add(rf.date.slice(0, 4));
+
+        allMatchedTasks.push({
+          id: rf.id,
+          taskType: 'release',
+          subType: 'release',
+          typeLabel: 'Release Function',
+          myRole: 'assignee',
+          myRoleLabel: 'Tôi thực hiện',
+          title: rf.title,
+          url: rf.url,
+          status: rf.status,
+          statusLabel: rf.status_label || 'Mới',
+          priority: rf.priority,
+          priorityLabel: rf.priority_label || 'Không ưu tiên',
+          assignee: rf.assignee,
+          approver: rf.approver,
+          module: rf.module || '',
+          moduleName: rf.module || '',
+          customer: '',
+          platform: '',
+          classification: '',
+          severity: '',
+          team: rf.project || 'HRWs - RELEASE CHECKLIST',
+          project: rf.project || 'HRWs - RELEASE CHECKLIST',
+          createdAt: rf.date || '',
+          updatedAt: rf.updated || '',
+          startAt,
+          endAt: deadline,
+          closed: isClosed,
+          missingFields: [],
+          isMissingInfo: false,
+          isOverdue,
+          isDueToday,
+          isAssigned24h,
+          isNeedToDoToday
+        });
+      }
+
+      // Helper kiểm tra task có thuộc hôm nay hoặc tương lai hay không
+      const isTodayOrFutureTask = (t) => {
+        if (t.closed || HIDDEN_CLOSED_SET.has(t.status)) return false;
+        const s = String(t.startAt || '').slice(0, 10);
+        const e = String(t.endAt || '').slice(0, 10);
+        const c = String(t.createdAt || '').slice(0, 10);
+        if (e && e >= todayStr) return true;
+        if (s && s >= todayStr) return true;
+        if (!e && !s && c && c >= todayStr) return true;
+        return false;
+      };
+
+      // Áp dụng bộ lọc thời gian chung cho Kanban, Gantt và Charts
+      // Riêng task Release Function: luôn hiện các task trong tương lai (từ hôm nay trở đi), quá khứ thì theo bộ lọc
+      const myTasks = allMatchedTasks.filter(t => {
+        if (t.taskType === 'release') {
+          if (isTodayOrFutureTask(t)) return true;
+        }
+        return inPeriod(t);
+      });
+
+      const total = myTasks.length;
+      const openTasks = myTasks.filter(t => !t.closed);
+      const closedTasks = myTasks.filter(t => t.closed);
+      const overdueTasks = myTasks.filter(t => t.isOverdue);
+      const dueTodayTasks = myTasks.filter(t => t.isDueToday);
+      const missingInfoBugs = myTasks.filter(t => t.taskType === 'bug' && t.isMissingInfo);
+      const newAssigned24h = myTasks.filter(t => t.isAssigned24h);
+
+      const priOrder = p => ({ 1: 0, 2: 0, 3: 1, 4: 2 })[p] ?? 3;
+      // To do: luôn lấy tất cả task trạng thái Mới từ hôm nay đến tương lai (không áp dụng bộ lọc thời gian, không lấy task quá khứ không hạn hoặc đã đóng)
+      const todoItems = allMatchedTasks
+        .filter(t => (t.status === 0 || t.status == null) && !t.closed && !HIDDEN_CLOSED_SET.has(t.status) && isTodayOrFutureTask(t))
+        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || priOrder(a.priority) - priOrder(b.priority));
+
+      // Future tasks: các task chưa đóng có thời gian ở hôm nay hoặc tương lai (luôn hiện trên Gantt chart)
+      const futureTasks = allMatchedTasks.filter(t => isTodayOrFutureTask(t));
+
+      const kanban = {
+        todo: todoItems,
+        inProgress: myTasks.filter(t => t.status === 1),
+        paused: myTasks.filter(t => t.status === 2 || t.status === 3 || t.status === 4 || t.status === 6),
+        done: myTasks.filter(t => t.status === 5)
+      };
+
+      const byType = { bug: myTasks.filter(t => t.taskType === 'bug').length, function: myTasks.filter(t => t.taskType === 'function').length };
+      const byStatus = {
+        'Mới (To do)': kanban.todo.length,
+        'Đang thực hiện': kanban.inProgress.length,
+        'Tạm ngưng': kanban.paused.length,
+        'Hoàn thành': kanban.done.length
+      };
+
+      const byPriority = { 'Ưu tiên cao': 0, 'Ưu tiên': 0, 'Không ưu tiên': 0, 'Chưa gắn': 0 };
+      myTasks.forEach(t => {
+        if (t.priority === 1 || t.priority === 2) byPriority['Ưu tiên cao']++;
+        else if (t.priority === 3) byPriority['Ưu tiên']++;
+        else if (t.priority === 4) byPriority['Không ưu tiên']++;
+        else byPriority['Chưa gắn']++;
+      });
+
+      return sendJson(res, 200, {
+        success: true,
+        data: {
+          period,
+          years: [...yearSet].sort((a, b) => b.localeCompare(a)),
+          projects: [...new Set(allMatchedTasks.map(t => t.project || t.team).filter(Boolean))].sort(),
+          user: {
+            id: DEFAULT_QC_USER.id,
+            display_name: DEFAULT_QC_USER.display_name,
+            username: DEFAULT_QC_USER.username,
+            employee_code: DEFAULT_QC_USER.employee_code || ''
+          },
+          summary: {
+            total,
+            open: openTasks.length,
+            closed: closedTasks.length,
+            overdue: overdueTasks.length,
+            dueToday: dueTodayTasks.length,
+            missingInfoBugs: missingInfoBugs.length,
+            assigned24h: newAssigned24h.length
+          },
+          kanban,
+          charts: {
+            byType,
+            byStatus,
+            byPriority
+          },
+          tasks: myTasks,
+          todoTasks: todoItems,
+          futureTasks
+        }
+      });
+    }
+
+    // ==========================================
+    // Tra Cứu Task Function Realtime (4 dự án Team trên Haraworks từ 01/01/2024)
+    // ==========================================
+    if (pathname === '/api/v1/functions/meta' && method === 'GET') {
+      return sendJson(res, 200, { success: true, data: { ...FunctionStore.meta(), facets: FunctionStore.facets() } });
+    }
+    if (pathname === '/api/v1/functions' && method === 'GET') {
+      const q = urlObj.searchParams;
+      return sendJson(res, 200, { success: true, data: FunctionStore.list({
+        team: q.get('team') || '', projectId: q.get('projectId') || '',
+        module: q.get('module') || '', q: q.get('q') || '', category: q.get('category') || '', year: q.get('year') || '',
+        status: q.get('status') || '', assignee: q.get('assignee') || '', approver: q.get('approver') || '', closed: q.get('closed') || '', age: q.get('age') || '', sort: q.get('sort') || 'created',
+        unknown: q.get('unknown') === '1', offset: Math.max(0, +q.get('offset') || 0), limit: Math.min(200, +q.get('limit') || 50)
+      }) });
+    }
+    {
+      const fdm = /^\/api\/v1\/functions\/([0-9a-f]{24})\/detail$/.exec(pathname);
+      if (fdm && method === 'GET') {
+        try { return sendJson(res, 200, { success: true, data: await getBugDetail(fdm[1]) }); }
+        catch (e) {
+          const code = e.code || 'ERROR';
+          return sendJson(res, code === 'NO_COOKIE' || code === 'AUTH' ? 503 : code === 'NOT_FOUND' ? 404 : 502, { success: false, error: { code, message: e.message } });
+        }
+      }
+    }
+    if (pathname === '/api/v1/functions/live' && method === 'GET') {
+      return sendJson(res, 200, { success: true, data: { ...functionLive.status(), revision: FunctionStore.liveRevision() } });
+    }
+    if (pathname === '/api/v1/functions/live/refresh' && method === 'POST') {
+      functionLive.trigger('người dùng yêu cầu');
+      return sendJson(res, 202, { success: true, data: { enabled: functionLive.enabled } });
+    }
+
+    // ==========================================
+    // Notification Realtime từ Haraworks
+    // ==========================================
+    if (pathname === '/api/v1/notifications' && method === 'GET') {
+      return sendJson(res, 200, { success: true, data: notifyLive.state(DEFAULT_QC_USER.id) });
+    }
+    if (pathname === '/api/v1/notifications/mark-seen' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      return sendJson(res, 200, { success: true, data: notifyLive.markSeen(DEFAULT_QC_USER.id, body.id || '') });
+    }
+    if (pathname === '/api/v1/notifications/refresh' && method === 'POST') {
+      notifyLive.trigger('người dùng yêu cầu');
+      return sendJson(res, 202, { success: true, data: { enabled: notifyLive.enabled } });
+    }
+
+    // ==========================================
+    // Theo dõi Đợt Build App Mobile & Build Task Function
+    // ==========================================
+    if (pathname === '/api/v1/builds/meta' && method === 'GET') {
+      const st = buildLive.status();
+      const facets = buildLive.facets();
+      const projFacets = { ...(facets.projects || {}) };
+      for (const teamName of ['Super Team', 'Winx Team', 'Integrity Team', 'Team 1']) {
+        if (!projFacets[teamName]) projFacets[teamName] = 0;
+      }
+      return sendJson(res, 200, { success: true, data: { count: st.count, lastSyncAt: st.lastSyncAt, revision: st.revision, facets: { ...facets, projects: projFacets } } });
+    }
+    if (pathname === '/api/v1/builds' && method === 'GET') {
+      const q = urlObj.searchParams;
+      const projParam = q.get('project') || '';
+      const isTeamProj = ['Super Team', 'Winx Team', 'Integrity Team', 'Team 1'].includes(projParam);
+      const data = buildLive.list({
+        kind: q.get('kind') || '', project: isTeamProj ? '' : projParam, q: q.get('q') || '', status: q.get('status') || '',
+        closed: q.get('closed') || '', assignee: q.get('assignee') || '', year: q.get('year') || '',
+        sort: q.get('sort') || 'created',
+        offset: isTeamProj ? 0 : Math.max(0, +q.get('offset') || 0),
+        limit: isTeamProj ? 2000 : Math.min(200, +q.get('limit') || 50)
+      });
+      data.items = (data.items || []).map(b => {
+        const src = FunctionStore.findSource({ ids: b.linked_ids, title: b.title, sourceTitle: b.source_title, selfId: b.id });
+        return { ...b, source_function: src, source_team: src?.team || '' };
+      });
+      if (isTeamProj) {
+        const filtered = data.items.filter(b => b.source_team === projParam);
+        const off = Math.max(0, +q.get('offset') || 0);
+        const lim = Math.min(200, +q.get('limit') || 50);
+        data.total = filtered.length;
+        data.items = filtered.slice(off, off + lim);
+      }
+      return sendJson(res, 200, { success: true, data });
+    }
+    if (pathname === '/api/v1/builds/check' && method === 'GET') {
+      const q = urlObj.searchParams;
+      return sendJson(res, 200, { success: true, data: buildLive.checkTask({ id: q.get('id') || '', title: q.get('title') || '' }) });
+    }
+    if (pathname === '/api/v1/builds/live' && method === 'GET') {
+      return sendJson(res, 200, { success: true, data: buildLive.status() });
+    }
+    if (pathname === '/api/v1/builds/live/refresh' && method === 'POST') {
+      buildLive.trigger('người dùng yêu cầu');
+      return sendJson(res, 202, { success: true, data: { enabled: buildLive.enabled } });
+    }
+    {
+      const bdm = /^\/api\/v1\/builds\/([0-9a-f]{24})\/detail$/.exec(pathname);
+      if (bdm && method === 'GET') {
+        try { return sendJson(res, 200, { success: true, data: await getBugDetail(bdm[1]) }); }
+        catch (e) {
+          const code = e.code || 'ERROR';
+          return sendJson(res, code === 'NO_COOKIE' || code === 'AUTH' ? 503 : code === 'NOT_FOUND' ? 404 : 502, { success: false, error: { code, message: e.message } });
+        }
+      }
     }
     if (pathname === '/api/v1/bugs/sync' && method === 'POST') {
       if (!requireAdmin('rules')) return;
@@ -820,9 +1702,12 @@ const handler = async (req, res) => {
       const used = body.module || '';
       const guess = used ? '' : guessModule(text);
       const rules = similarRules(text, used, 8);
+      const age = ['new', 'old'].includes(body.age) ? body.age : '';
       return sendJson(res, 200, { success: true, data: {
         module_guess: guess, module_used: used, artifact_url: rules.artifact_url,
-        rules: rules.rules, bugs: BugStore.similar(text, used, 10, ['new', 'old'].includes(body.age) ? body.age : '')
+        rules: rules.rules,
+        bugs: BugStore.similar(text, used, 10, age),
+        functions: FunctionStore.similar(text, used, 10, age)
       } });
     }
 
@@ -849,7 +1734,8 @@ const handler = async (req, res) => {
       const guess = used ? '' : guessModule(text);
       const rules = similarRules(text, used, 8).rules;
       const bugs = BugStore.similar(text, used, 10);
-      const tasks = await db.find('automation_tasks', t => t.status !== 'retired');
+      const taskModule = used || guess;
+      const tasks = await db.find('automation_tasks', t => t.status !== 'retired' && taskModule && t.module === taskModule);
       const input = { text, moduleUsed: used, moduleGuess: guess, platform: body.platform === 'Mobile' ? 'Mobile' : 'Web', rules, bugs, tasks, attachments };
       let out;
       const ai = process.env.GEMINI_API_KEY ? { provider: 'gemini', apiKey: process.env.GEMINI_API_KEY, baseUrl: process.env.GEMINI_BASE_URL || undefined }
@@ -1004,6 +1890,19 @@ const bugLive = startBugLive({
   onChange: (rows) => BugStore.setLive(rows),
   getModules: () => BusinessRuleStore.load().modules || []
 });
+
+// Task Function realtime: lấy từ 4 dự án Super Team, Winx Team, Integrity Team, Team 1 (từ 01/01/2024 đến nay)
+const functionLive = startFunctionLive({
+  onChange: (rows) => FunctionStore.setLive(rows),
+  onQcChange: (rows) => FunctionStore.setQcLive(rows),
+  getModules: () => BusinessRuleStore.load().modules || []
+});
+
+// Notification realtime từ Haraworks
+const notifyLive = startNotifyLive();
+
+// Build / Release realtime (HRWs APP - RELEASE & HRWs - RELEASE CHECKLIST)
+const buildLive = startBuildLive();
 
 const useTls = process.env.TLS_CERT && process.env.TLS_KEY;
 const server = useTls

@@ -15,17 +15,39 @@ const DB = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../databa
 const FILE = path.join(DB, 'business_rules.json');
 const LOCAL_FILE = path.join(DB, 'business_rules_local.json');
 
-// Module của platform -> mã module trong kho rule (MAINT dùng chung rule cụm DV5S)
-export const MODULE_MAP = { mod_maint: 'DV5S', mod_sales: 'SAL', mod_inv: 'SCM' };
+// Module của platform -> mã module trong kho rule (MAINT, IOT, SCM thuộc cụm DV5S)
+export const MODULE_MAP = { mod_maint: 'MAINT', mod_iot: 'IOT', mod_scm: 'SCM', mod_sales: 'SAL', mod_inv: 'SCM' };
 export const SETTING_TYPES = { fixed: 'Cố định', org_config: 'Cấu hình theo tổ chức', default_editable: 'Mặc định có thể đổi', unknown: 'Chưa xác định' };
 
 const fold = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase();
 const atomicWrite = (file, data) => { fs.writeFileSync(file + '.tmp', JSON.stringify(data, null, 2)); fs.renameSync(file + '.tmp', file); };
 
 export class BusinessRuleStore {
+  static #asArr(v) {
+    return Array.isArray(v) ? v : (v == null || v === '' ? [] : [String(v)]);
+  }
+
+  static #normalizeRule(r) {
+    if (!r || typeof r !== 'object') return r;
+    return {
+      ...r,
+      user_roles: this.#asArr(r.user_roles),
+      source_modules: this.#asArr(r.source_modules),
+      related_rules: this.#asArr(r.related_rules),
+      open_questions: this.#asArr(r.open_questions)
+    };
+  }
+
   static loadBase() {
     if (!fs.existsSync(FILE)) return { synced_at: null, artifact_url: '', modules: [], rules: [] };
-    return JSON.parse(fs.readFileSync(FILE, 'utf8'));
+    const d = JSON.parse(fs.readFileSync(FILE, 'utf8'));
+    d.rules = (Array.isArray(d.rules) ? d.rules : []).map(r => this.#normalizeRule(r));
+    d.modules = (Array.isArray(d.modules) ? d.modules : []).map(m => ({ ...m, flows: Array.isArray(m.flows) ? m.flows : (m.flows ? [m.flows] : []) }));
+    if (!d.modules.some(m => m.code === 'CORE')) {
+      d.modules.push({ code: 'CORE', name: 'CORE', flows: [] });
+      d.modules.sort((a, b) => String(a.code).localeCompare(String(b.code)));
+    }
+    return d;
   }
 
   static loadLocal() {
@@ -142,32 +164,30 @@ export class BusinessRuleStore {
     this.#save(local);
   }
 
-  /** Bỏ thay đổi trên platform của một rule, trả về đúng bản của Kho */
-  static restoreLocal(id) {
-    const local = this.loadLocal();
-    if (!local.changes[id]) throw new Error('Rule này không có thay đổi trên platform');
-    delete local.changes[id];
-    this.#save(local);
-  }
-
-  /** Các rule bị ẩn trên platform (xóa) để có thể khôi phục */
-  static deletedLocal() {
-    const local = this.loadLocal();
-    const base = this.loadBase();
-    return Object.entries(local.changes).filter(([, c]) => c.op === 'delete')
-      .map(([id, c]) => ({ rule_id: id, title: base.rules.find(r => r.rule_id === id)?.title || '', by: c.by, at: c.at }));
-  }
-
   // ------------------------------------------------------------------ đọc và tìm
-  static list({ module, q, confirmed = false } = {}) {
+  static #matchesModule(rule, mod, modules = []) {
+    if (!mod) return true;
+    if (rule.module === mod) return true;
+    const modDef = modules.find(m => m.code === mod);
+    // Khi lọc theo module thành viên (MAINT, IOT, SCM), lấy cả rule dùng chung ở cụm (DV5S) áp dụng cho module đó
+    if (modDef?.cluster && rule.module === modDef.cluster) {
+      const src = Array.isArray(rule.source_modules) ? rule.source_modules : [];
+      return src.length === 0 || src.includes(mod);
+    }
+    // Khi lọc theo cụm (DV5S), lấy cả rule riêng của các module thành viên thuộc cụm đó
+    const ruleModDef = modules.find(m => m.code === rule.module);
+    if (ruleModDef?.cluster === mod) return true;
+    return false;
+  }
+
+  static list({ module, q } = {}) {
     const data = this.load();
     const mod = MODULE_MAP[module] || module;
     const terms = fold(q).split(/\s+/).filter(Boolean);
     const rules = data.rules.filter(r =>
-      (!mod || r.module === mod) &&
-      (!confirmed || (r.state || 'active') === 'active') &&
-      terms.every(t => fold([r.rule_id, r.title, r.description, r.flow_name, r.menu].join(' ')).includes(t)));
-    return { revision: data.revision, synced_at: data.synced_at, artifact_url: data.artifact_url, modules: data.modules, rules, deleted: this.deletedLocal() };
+      this.#matchesModule(r, mod, data.modules || []) &&
+      terms.every(t => fold([r.rule_id, r.module, ...(r.source_modules || []), r.title, r.description, r.flow_name, r.menu].join(' ')).includes(t)));
+    return { revision: data.revision, synced_at: data.synced_at, artifact_url: data.artifact_url, modules: data.modules, rules };
   }
 
   /** Trả về chunk cùng định dạng RagEngine để dùng chung phần trích dẫn */
@@ -177,17 +197,17 @@ export class BusinessRuleStore {
     const kws = keywords.map(fold).filter(Boolean);
     const scored = [];
     for (const r of data.rules) {
-      if (mod && r.module !== mod) continue;
-      const text = fold([r.title, r.description, r.flow_name].join(' '));
-      let score = 3;
+      if (!this.#matchesModule(r, mod, data.modules || [])) continue;
+      const text = fold([r.rule_id, r.module, ...(r.source_modules || []), r.title, r.description, r.flow_name].join(' '));
+      let score = r.module === mod ? 4 : 3;
       kws.forEach(k => { if (text.includes(k)) score += 2; });
-      if (score <= 3 && kws.length) continue; // trong module nhưng không khớp từ khóa -> bỏ
+      if (score <= 4 && kws.length && !kws.some(k => text.includes(k))) continue; // trong module nhưng không khớp từ khóa -> bỏ
       scored.push({
         chunkId: r.rule_id,
         sourceId: `kb_${r.rule_id}`,
-        sourceTitle: `[Kho BR${(r.state || 'active') === 'pending' ? ', CHƯA XÁC NHẬN' : ''}] ${r.rule_id} · ${r.title}`,
+        sourceTitle: `[Kho BR] ${r.rule_id} · ${r.title}`,
         sourceVersion: `v${r.version}`,
-        sourceUri: r.local === 'created' ? '' : `${data.artifact_url}#rule-${r.rule_id}`,
+        sourceUri: r.local === 'created' ? '' : (r.source?.url || `${data.artifact_url}#rule-${r.rule_id}`),
         contentText: r.description,
         metadata: { origin: 'business-rule-kb', state: r.state || 'active', flow: r.flow_name, roles: r.user_roles, setting_type: r.setting_type },
         score

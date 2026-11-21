@@ -1,72 +1,74 @@
 {
-  "name": "Soạn và gửi thư [AI TEST] (nhiều người nhận, CC, đính kèm file)",
-  "module": "MAIL",
-  "flow": "SOAN",
-  "description": "Mở form Tạo thư mới, thêm người nhận (Đến) và người nhận CC theo danh sách mã nhân viên bạn nhập (nhiều người), nhập tiêu đề và nội dung, đính kèm file nếu bạn chọn, bấm Gửi. Ô để trống thì bỏ qua; riêng người nhận để trống thì gửi cho chính tài khoản đang chạy. Gửi một thư thật trên Staging.",
-  "start_url": "https://ic.zuizui.io/internal_mailold/create",
-  "required_roles": [],
-  "writes": true,
-  "rule_ids": [
-    "MAIL-014",
-    "MAIL-015",
-    "MAIL-016",
-    "MAIL-017",
-    "MAIL-019"
-  ],
-  "steps": [
-    "Đăng nhập Staging, mở Tạo thư mới",
-    "Chọn người nhận (Đến): {{nguoi_nhan}} (nhiều mã cách nhau bằng dấu phẩy; trống: chính tài khoản đang chạy), chọn từng người trong danh sách gợi ý",
-    "Chọn người nhận CC: {{cc}} (nhiều mã cách nhau bằng dấu phẩy; trống: bỏ qua)",
-    "Nhập tiêu đề: [AI TEST] {{tieu_de}}; nội dung: {{noi_dung}} (nội dung trống: bỏ qua)",
-    "Đính kèm file: {{tep_dinh_kem}} (không chọn: bỏ qua)",
-    "Bấm Gửi, đợi thư được gửi và quay về Hộp thư đến",
-    "Nếu gửi cho chính mình, kiểm tra thư có trong Hộp thư đến"
-  ],
-  "params": [
-    {
-      "key": "nguoi_nhan",
-      "label": "Mã nhân viên người nhận, nhiều người cách nhau bằng dấu phẩy (trống: chính tài khoản đang chạy)",
-      "value": "",
-      "auto": false,
-      "type": "list",
-      "fallback": "first"
-    },
-    {
-      "key": "cc",
-      "label": "Mã nhân viên người nhận CC, nhiều người cách nhau bằng dấu phẩy (trống: bỏ qua)",
-      "value": "",
-      "auto": false,
-      "type": "list",
-      "fallback": "first"
-    },
-    {
-      "key": "tieu_de",
-      "label": "Tiêu đề (tự thêm tiền tố [AI TEST])",
-      "value": "Thư tự động",
-      "auto": true,
-      "type": "text",
-      "fallback": "first"
-    },
-    {
-      "key": "noi_dung",
-      "label": "Nội dung thư (trống: bỏ qua)",
-      "value": "Nội dung thư thử tự động.",
-      "auto": true,
-      "type": "multiline",
-      "fallback": "first"
-    },
-    {
-      "key": "tep_dinh_kem",
-      "label": "File đính kèm (ảnh, PDF, Word, Excel, zip...; chọn nhiều file được; không chọn: bỏ qua)",
-      "value": "",
-      "auto": false,
-      "type": "file",
-      "fallback": "first"
-    }
-  ],
-  "source": {
-    "explore_date": "2026-11-16",
-    "note": "Đã làm tay trên Staging (ic.zuizui.io, OrgID THL, NTTN191919): thêm 2 người vào Đến và 1 người vào CC (mỗi người hiện thành một nhãn), gửi thư thành công. Đính kèm: đã thử gán file vào ô .file-upload input[type=file] bằng DataTransfer và thấy tên file hiện ở danh sách đính kèm; CHƯA thử qua Playwright thật, CHƯA gửi thư có đính kèm. Hai ô người nhận có hai danh sách gợi ý riêng và cả hai cùng hiện; danh sách lọc xong sau 2 đến 3 giây. Cần chạy thử một lần trước khi duyệt."
-  },
-  "script": "const subject = `${ctx.testPrefix} ${ctx.val('tieu_de', 'Thư tự động')}`;\nconst to = ctx.list('nguoi_nhan');\nif (!to.length) to.push(ctx.username);   // bắt buộc có người nhận: để trống thì gửi cho chính tài khoản đang chạy\nconst cc = ctx.list('cc');               // tùy chọn: để trống thì bỏ qua\n\n// Hai ô người nhận (Đến, CC) là hai khung .hrw-treecompany-box. Mỗi ô có một danh sách gợi ý riêng (.t-s-menu__comboBox),\n// được tạo khi ô nhận con trỏ lần đầu (Đến trước, CC sau). Danh sách của ô kia vẫn hiện nên phải chọn đúng danh sách theo thứ tự ô.\nconst box = i => page.locator('.hrw-treecompany-box').nth(i);\nconst suggestions = i => page.locator('.t-s-menu__comboBox').nth(i).locator('li.t-s-item');\nconst addPeople = async (i, codes, key) => {\n  for (const code of codes) {\n    const input = box(i).locator('input.hrv-next-input');\n    await input.focus();   // focus thay vì click: danh sách gợi ý của ô khác có thể che ô này; sau khi có người, ô Đến mất placeholder\n    await input.pressSequentially(code);\n    await pickOption(suggestions(i), key, code);   // chờ danh sách lọc xong (mất vài giây) rồi chọn đúng mã\n  }\n};\n\nawait step('Mở form Tạo thư mới', async () => {\n  await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});\n  await box(0).waitFor({ timeout: 20000 });\n});\n\nawait step(`Chọn người nhận (Đến): ${to.join(', ')}`, async () => { await addPeople(0, to, 'nguoi_nhan'); });\n\nif (cc.length) await step(`Chọn người nhận CC: ${cc.join(', ')}`, async () => { await addPeople(1, cc, 'cc'); });\nelse ctx.log('CC để trống, bỏ qua');\n\nawait step('Nhập tiêu đề và nội dung', async () => {\n  const title = page.locator('input[placeholder=\"Tiêu đề:\"]');\n  await title.focus();\n  await title.pressSequentially(subject);\n  if (!ctx.has('noi_dung')) { ctx.log('Nội dung để trống, bỏ qua (chỉ có chữ ký)'); return; }\n  // Nội dung là trình soạn thảo CKEditor; chữ chèn lên đầu, chữ ký có sẵn nằm bên dưới\n  const editor = page.locator('.ck-editor__editable');\n  await editor.focus();\n  await page.keyboard.press('Control+Home');\n  await page.keyboard.type(ctx.val('noi_dung'));\n});\n\nawait step('Đính kèm file (nếu có)', async () => {\n  // Ô file đính kèm nằm trong .file-upload; ô input[type=file] còn lại của CKEditor chỉ để chèn ảnh vào nội dung\n  const attached = await attachFiles(page.locator('.file-upload input[type=file]'), 'tep_dinh_kem');\n  if (!attached) { ctx.log('Không có file đính kèm, bỏ qua'); return; }\n  await page.locator('.form-new__attachment__name').first().waitFor({ timeout: 30000 });\n});\n\nawait step('Bấm Gửi, thư được gửi và quay về Hộp thư đến', async () => {\n  const send = page.getByRole('button', { name: 'Gửi', exact: true });\n  await send.click({ timeout: 8000 }).catch(() => send.dispatchEvent('click'));\n  // Gửi mất vài giây (nút ở trạng thái đang tải, có thông báo \"Thư đang được gửi.\")\n  await page.waitForURL(/\\/internal_mailold\\/inbox/, { timeout: 90000 });\n});\n\nawait step('Thư xuất hiện trong Hộp thư đến', async () => {\n  // Thư gửi cho chính mình mới hiện ở Hộp thư đến; gửi cho người khác thì kiểm tra ở mục Đã gửi\n  if (to.some(c => c.toLowerCase() === String(ctx.username).toLowerCase())) {\n    await page.locator('tbody tr .mail-content__subject', { hasText: subject }).first().waitFor({ timeout: 30000 });\n  } else {\n    ctx.log('Không gửi cho chính mình nên không kiểm tra Hộp thư đến');\n  }\n});\nctx.log('Đã gửi thư: ' + subject);"
+    "name":  "Soạn và gửi thư [AI TEST] (nhiều người nhận, CC, đính kèm file)",
+    "module":  "MAIL",
+    "flow":  "SOAN",
+    "description":  "Mở form Tạo thư mới, thêm người nhận (Đến) và người nhận CC theo danh sách mã nhân viên bạn nhập (nhiều người), nhập tiêu đề và nội dung, đính kèm file nếu bạn chọn, bấm Gửi. Ô để trống thì bỏ qua; riêng người nhận để trống thì gửi cho chính tài khoản đang chạy. Gửi một thư thật trên Staging.",
+    "start_url":  "https://ic.zuizui.io/internal_mailold/create",
+    "required_roles":  [
+
+                       ],
+    "writes":  true,
+    "rule_ids":  [
+                     "MAIL-014",
+                     "MAIL-015",
+                     "MAIL-016",
+                     "MAIL-017",
+                     "MAIL-019"
+                 ],
+    "steps":  [
+                  "Đăng nhập Staging, mở Tạo thư mới",
+                  "Chọn người nhận (Đến): {{nguoi_nhan}} (nhiều mã cách nhau bằng dấu phẩy; trống: chính tài khoản đang chạy), chọn từng người trong danh sách gợi ý",
+                  "Chọn người nhận CC: {{cc}} (nhiều mã cách nhau bằng dấu phẩy; trống: bỏ qua)",
+                  "Nhập tiêu đề: [AI TEST] {{tieu_de}}; nội dung: {{noi_dung}} (nội dung trống: bỏ qua)",
+                  "Đính kèm file: {{tep_dinh_kem}} (không chọn: bỏ qua)",
+                  "Bấm Gửi, đợi thư được gửi và quay về Hộp thư đến",
+                  "Nếu gửi cho chính mình, kiểm tra thư có trong Hộp thư đến"
+              ],
+    "params":  [
+                   {
+                       "key":  "nguoi_nhan",
+                       "label":  "Mã nhân viên người nhận, nhiều người cách nhau bằng dấu phẩy (trống: chính tài khoản đang chạy)",
+                       "value":  "",
+                       "auto":  false,
+                       "type":  "list",
+                       "fallback":  "first"
+                   },
+                   {
+                       "key":  "cc",
+                       "label":  "Mã nhân viên người nhận CC, nhiều người cách nhau bằng dấu phẩy (trống: bỏ qua)",
+                       "value":  "",
+                       "auto":  false,
+                       "type":  "list",
+                       "fallback":  "first"
+                   },
+                   {
+                       "key":  "tieu_de",
+                       "label":  "Tiêu đề (tự thêm tiền tố [AI TEST])",
+                       "value":  "Thư tự động",
+                       "auto":  true,
+                       "type":  "text",
+                       "fallback":  "first"
+                   },
+                   {
+                       "key":  "noi_dung",
+                       "label":  "Nội dung thư (trống: bỏ qua)",
+                       "value":  "Nội dung thư thử tự động.",
+                       "auto":  true,
+                       "type":  "multiline",
+                       "fallback":  "first"
+                   },
+                   {
+                       "key":  "tep_dinh_kem",
+                       "label":  "File đính kèm (ảnh, PDF, Word, Excel, zip...; chọn nhiều file được; không chọn: bỏ qua)",
+                       "value":  "",
+                       "auto":  false,
+                       "type":  "file",
+                       "fallback":  "first"
+                   }
+               ],
+    "source":  {
+                   "explore_date":  "2026-11-16",
+                   "note":  "Đã làm tay trên Staging (ic.zuizui.io, OrgID THL, NTTN191919): thêm 2 người vào Đến và 1 người vào CC (mỗi người hiện thành một nhãn), gửi thư thành công. Đính kèm: đã thử gán file vào ô .file-upload input[type=file] bằng DataTransfer và thấy tên file hiện ở danh sách đính kèm; CHƯA thử qua Playwright thật, CHƯA gửi thư có đính kèm. Hai ô người nhận có hai danh sách gợi ý riêng và cả hai cùng hiện; danh sách lọc xong sau 2 đến 3 giây. Cần chạy thử một lần trước khi duyệt."
+               },
+    "script":  "const subject = `${ctx.testPrefix} ${ctx.val(\u0027tieu_de\u0027, \u0027Thư tự động\u0027)}`;\nconst to = ctx.list(\u0027nguoi_nhan\u0027);\nif (!to.length) to.push(ctx.username);   // bắt buộc có người nhận: để trống thì gửi cho chính tài khoản đang chạy\nconst cc = ctx.list(\u0027cc\u0027);               // tùy chọn: để trống thì bỏ qua\n\n// Hai ô người nhận (Đến, CC) là hai khung .hrw-treecompany-box. Mỗi ô có một danh sách gợi ý riêng (.t-s-menu__comboBox),\n// được tạo khi ô nhận con trỏ lần đầu (Đến trước, CC sau). Danh sách của ô kia vẫn hiện nên phải chọn đúng danh sách theo thứ tự ô.\nconst box = i =\u003e page.locator(\u0027.hrw-treecompany-box\u0027).nth(i);\nconst suggestions = i =\u003e page.locator(\u0027.t-s-menu__comboBox\u0027).nth(i).locator(\u0027li.t-s-item\u0027);\nconst addPeople = async (i, codes, key) =\u003e {\n  for (const code of codes) {\n    const input = box(i).locator(\u0027input.hrv-next-input\u0027);\n    await input.focus();   // focus thay vì click: danh sách gợi ý của ô khác có thể che ô này; sau khi có người, ô Đến mất placeholder\n    await input.pressSequentially(code);\n    await pickOption(suggestions(i), key, code);   // chờ danh sách lọc xong (mất vài giây) rồi chọn đúng mã\n  }\n};\n\nawait step(\u0027Mở form Tạo thư mới\u0027, async () =\u003e {\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 20000 }).catch(() =\u003e {});\n  await box(0).waitFor({ timeout: 20000 });\n});\n\nawait step(`Chọn người nhận (Đến): ${to.join(\u0027, \u0027)}`, async () =\u003e { await addPeople(0, to, \u0027nguoi_nhan\u0027); });\n\nif (cc.length) await step(`Chọn người nhận CC: ${cc.join(\u0027, \u0027)}`, async () =\u003e { await addPeople(1, cc, \u0027cc\u0027); });\nelse ctx.log(\u0027CC để trống, bỏ qua\u0027);\n\nawait step(\u0027Nhập tiêu đề và nội dung\u0027, async () =\u003e {\n  const title = page.locator(\u0027input[placeholder=\"Tiêu đề:\"]\u0027);\n  await title.focus();\n  await title.pressSequentially(subject);\n  if (!ctx.has(\u0027noi_dung\u0027)) { ctx.log(\u0027Nội dung để trống, bỏ qua (chỉ có chữ ký)\u0027); return; }\n  // Nội dung là trình soạn thảo CKEditor; chữ chèn lên đầu, chữ ký có sẵn nằm bên dưới\n  const editor = page.locator(\u0027.ck-editor__editable\u0027);\n  await editor.focus();\n  await page.keyboard.press(\u0027Control+Home\u0027);\n  await page.keyboard.type(ctx.val(\u0027noi_dung\u0027));\n});\n\nawait step(\u0027Đính kèm file (nếu có)\u0027, async () =\u003e {\n  // Ô file đính kèm nằm trong .file-upload; ô input[type=file] còn lại của CKEditor chỉ để chèn ảnh vào nội dung\n  const attached = await attachFiles(page.locator(\u0027.file-upload input[type=file]\u0027), \u0027tep_dinh_kem\u0027);\n  if (!attached) { ctx.log(\u0027Không có file đính kèm, bỏ qua\u0027); return; }\n  await page.locator(\u0027.form-new__attachment__name\u0027).first().waitFor({ timeout: 30000 });\n});\n\nawait step(\u0027Bấm Gửi, thư được gửi và quay về Hộp thư đến\u0027, async () =\u003e {\n  const send = page.getByRole(\u0027button\u0027, { name: \u0027Gửi\u0027, exact: true });\n  await send.click({ timeout: 8000 }).catch(() =\u003e send.dispatchEvent(\u0027click\u0027));\n  // Gửi mất vài giây (nút ở trạng thái đang tải, có thông báo \"Thư đang được gửi.\")\n  await page.waitForURL(/\\/internal_mailold\\/inbox/, { timeout: 90000 });\n});\n\nawait step(\u0027Thư xuất hiện trong Hộp thư đến\u0027, async () =\u003e {\n  // Thư gửi cho chính mình mới hiện ở Hộp thư đến; gửi cho người khác thì kiểm tra ở mục Đã gửi\n  if (to.some(c =\u003e c.toLowerCase() === String(ctx.username).toLowerCase())) {\n    await page.locator(\u0027tbody tr .mail-content__subject\u0027, { hasText: subject }).first().waitFor({ timeout: 30000 });\n  } else {\n    ctx.log(\u0027Không gửi cho chính mình nên không kiểm tra Hộp thư đến\u0027);\n  }\n});\nctx.log(\u0027Đã gửi thư: \u0027 + subject);"
 }

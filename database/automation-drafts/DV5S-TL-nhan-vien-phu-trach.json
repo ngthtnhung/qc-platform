@@ -1,0 +1,37 @@
+{
+  "name": "Thiết lập Nhân viên phụ trách: danh sách, xem/sửa/xóa/thêm dialog (MAINT/SCM/IOT)",
+  "module": "DV5S",
+  "flow": "TL",
+  "description": "Mở Thiết Lập -> Nhân Viên Phụ Trách, kiểm tra bảng danh sách nhân viên phụ trách và kiểm tra mở/đóng an toàn các dialog Chỉnh sửa thông tin, Xóa nhân viên phụ trách (kèm chọn người thay thế), và Thêm nhân viên phụ trách.",
+  "start_url": "https://tasks.zuizui.io/maintenance/dashboard",
+  "required_roles": [
+    "quản trị"
+  ],
+  "writes": false,
+  "rule_ids": [
+    "DV5S-033",
+    "DV5S-002"
+  ],
+  "source": {
+    "explore_date": "2026-11-21",
+    "note": "Sinh từ Playwright codegen thao tác thực tế trên module MAINT (dùng chung cho SCM/IOT/DV5S)."
+  },
+  "steps": [
+    "Mở phân hệ {{phan_he}}, bấm menu Thiết Lập -> Nhân Viên Phụ Trách",
+    "Kiểm tra bảng hiển thị các cột: Nhân viên phụ trách, Mô tả ngắn, Thao tác",
+    "Mở thử dialog Chỉnh sửa thông tin từ dòng đầu tiên rồi bấm Đóng",
+    "Mở thử dialog Xoá nhân viên phụ trách (kiểm tra có chọn nhân viên thay thế) rồi bấm Đóng",
+    "Mở thử dialog Thêm nhân viên phụ trách (kiểm tra trường Chọn người phụ trách, Mô tả ngắn) rồi bấm Đóng"
+  ],
+  "params": [
+    {
+      "key": "phan_he",
+      "label": "Phân hệ (maintenance, scm, iot)",
+      "value": "maintenance",
+      "type": "text",
+      "auto": true,
+      "fallback": "first"
+    }
+  ],
+  "script": "const phanHe = ctx.val('phan_he', 'maintenance').trim().toLowerCase() || 'maintenance';\nconst dlg = page.getByRole('dialog');\n\nawait step('Điều hướng vào Thiết Lập -> Nhân Viên Phụ Trách', async () => {\n  if (!page.url().includes(`/${phanHe}/`)) {\n    await page.goto(`https://tasks.zuizui.io/${phanHe}/dashboard`, { waitUntil: 'domcontentloaded' });\n  }\n  await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});\n  const setupBtn = page.getByRole('button', { name: 'Thiết Lập' });\n  if (await setupBtn.isVisible().catch(() => false)) await setupBtn.click();\n  const link = page.getByRole('link', { name: 'Nhân Viên Phụ Trách' });\n  await link.waitFor({ timeout: 10000 });\n  await link.click();\n  await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});\n});\n\nawait step('Kiểm tra bảng danh sách nhân viên phụ trách', async () => {\n  const txt = await page.locator('body').innerText();\n  for (const h of ['Nhân viên phụ trách', 'Mô tả ngắn', 'Thao tác']) {\n    assert(txt.includes(h), 'Thiếu cột trên bảng Nhân viên phụ trách: ' + h);\n  }\n});\n\nawait step('Kiểm tra mở/đóng dialog Chỉnh sửa và Xóa nhân viên', async () => {\n  const editIcon = page.locator('.box-icon-table').first();\n  if (await editIcon.isVisible().catch(() => false)) {\n    await editIcon.click();\n    await dlg.waitFor({ timeout: 8000 });\n    assert(await dlg.getByText('Chỉnh sửa thông tin').isVisible().catch(() => false), 'Không thấy tiêu đề Chỉnh sửa thông tin');\n    await page.getByRole('button', { name: 'Đóng' }).click();\n    await dlg.waitFor({ state: 'hidden', timeout: 8000 }).catch(() => {});\n  }\n\n  const delIcon = page.locator('.svg-next-icon.svg-next-icon-size-16').first();\n  if (await delIcon.isVisible().catch(() => false)) {\n    await delIcon.click();\n    await dlg.waitFor({ timeout: 8000 });\n    assert(await page.getByText(/Bạn có chắc chắn muốn xoá/).isVisible().catch(() => false), 'Không thấy thông báo xác nhận xóa');\n    await page.getByRole('button', { name: 'Đóng' }).click();\n    await dlg.waitFor({ state: 'hidden', timeout: 8000 }).catch(() => {});\n  }\n});\n\nawait step('Kiểm tra mở/đóng dialog Thêm nhân viên phụ trách', async () => {\n  const addBtn = page.getByRole('button', { name: 'Thêm nhân viên phụ trách' });\n  await addBtn.waitFor({ timeout: 10000 });\n  await addBtn.click();\n  await dlg.waitFor({ timeout: 8000 });\n  await page.getByRole('heading', { name: 'Thêm nhân viên phụ trách' }).waitFor({ timeout: 8000 });\n  assert(await page.getByRole('textbox', { name: 'Chọn người phụ trách' }).isVisible().catch(() => false), 'Thiếu ô Chọn người phụ trách');\n  await page.getByRole('button', { name: 'Đóng' }).click();\n  ctx.log('Đã kiểm tra đầy đủ màn hình Nhân Viên Phụ Trách.');\n});"
+}

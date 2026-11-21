@@ -23,10 +23,17 @@ database/qa_platform_data.json
 database/qa_platform_data.backup.json
 database/bugs.json
 database/bugs-live.json
+database/builds-live.json
+database/functions-live.json
+database/notify-seen.json
+database/personal-workspace.json
+database/label-colors.json
 database/business_rules.json
 database/business_rules_local.json
 database/kb-snapshot/
 database/kb-drafts/
 *.tmp
 *.log
+*.lnk
+start-qa-ngrok.bat
 database/bugs-enrich.json

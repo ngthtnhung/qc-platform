@@ -21,7 +21,7 @@ node scripts/qa-sync.mjs --save-config https://IP_MAY_CHU:3001 TOKEN_CUA_BAN
 ```powershell
 node scripts/qa-sync.mjs --no-bugs
 ```
-3. Rule lên platform kèm nhãn **Chưa xác nhận** cho đến khi được xác nhận trong Kho. Tác vụ tự động sinh ra cũng lên cùng lúc và dùng được ngay.
+3. Rule được nhóm theo module khi lên platform; trạng thái xác nhận vẫn được quản lý trong Kho. Tác vụ tự động sinh ra cũng lên cùng lúc và dùng được ngay.
 
 ### Cách 3. Cập nhật tay khi không đẩy tự động được
 - Trên máy chạy server, tab **Kho Business Rule**, nút **⟳ Cập nhật rule từ kho**: nạp lại từ `database/kb-snapshot/`.

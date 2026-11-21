@@ -1,77 +1,79 @@
 {
-  "name": "Tạo lớp học [AI TEST] (môn Cần mở lớp, học viên, một tiết học)",
-  "module": "LND",
-  "flow": "LOP",
-  "description": "Tạo một lớp học đủ ba bước: chọn môn Cần mở lớp và giảng viên, thêm học viên, thêm một tiết học rồi tạo lớp. Lớp mới ở trạng thái Chưa bắt đầu.",
-  "start_url": "https://ic.zuizui.io/lnd/class/manager",
-  "required_roles": [],
-  "writes": true,
-  "rule_ids": [
-    "LND-013",
-    "LND-014",
-    "LND-027",
-    "LND-028",
-    "LND-029",
-    "LND-030",
-    "LND-031",
-    "LND-032"
-  ],
-  "steps": [
-    "Đăng nhập Staging bằng tài khoản quản lý học tập, mở Quản lý lớp học, bấm Thêm lớp học",
-    "Nhập tên lớp: [AI TEST] {{ten_lop}}",
-    "Chọn môn học {{mon_hoc}} (chỉ có môn hình thức Cần mở lớp, gõ mã hoặc tên) và giảng viên có mã {{giang_vien}} (trống: tài khoản đang chạy), bấm Tiếp tục",
-    "Thêm học viên có mã nhân viên {{hoc_vien}} (nhiều người cách nhau bằng dấu phẩy), bấm Tiếp tục",
-    "Thêm một tiết học: ngày hôm nay cộng {{ngay_them}} ngày, từ {{gio_bat_dau}} đến {{gio_ket_thuc}}, môn của lớp",
-    "Bấm Tạo lớp học, xác nhận, kiểm tra lớp mới có trong danh sách (trạng thái Chưa bắt đầu)"
-  ],
-  "params": [
-    {
-      "key": "ten_lop",
-      "label": "Tên lớp (tự thêm tiền tố [AI TEST])",
-      "value": "Lớp học thử",
-      "auto": true
-    },
-    {
-      "key": "mon_hoc",
-      "label": "Môn học hình thức Cần mở lớp, gõ mã hoặc tên (ví dụ MOLOP - MỞ LỚP)",
-      "value": "MOLOP - MỞ LỚP",
-      "auto": false
-    },
-    {
-      "key": "giang_vien",
-      "label": "Mã nhân viên của giảng viên (trống: tài khoản đang chạy)",
-      "value": "",
-      "auto": false
-    },
-    {
-      "key": "hoc_vien",
-      "label": "Mã nhân viên của học viên, nhiều người cách nhau bằng dấu phẩy",
-      "value": "VQH00652",
-      "auto": false,
-      "type": "list"
-    },
-    {
-      "key": "ngay_them",
-      "label": "Số ngày cộng thêm so với hôm nay cho tiết học",
-      "value": "1",
-      "auto": true
-    },
-    {
-      "key": "gio_bat_dau",
-      "label": "Giờ bắt đầu tiết học (HH:MM)",
-      "value": "09:00",
-      "auto": false
-    },
-    {
-      "key": "gio_ket_thuc",
-      "label": "Giờ kết thúc tiết học (HH:MM)",
-      "value": "10:00",
-      "auto": false
-    }
-  ],
-  "script": "const name = ctx.testPrefix + ' ' + ctx.val('ten_lop', 'Lớp học thử');\nconst subject = ctx.val('mon_hoc', 'MOLOP - MỞ LỚP').trim();\nconst lecturer = ctx.val('giang_vien', ctx.username).trim();\nconst students = ctx.list('hoc_vien');\nconst addDays = Math.max(parseInt(ctx.val('ngay_them', '1'), 10) || 0, 0);\nconst dlg = page.locator('[role=dialog]');\nconst type = async (loc, text) => { await loc.click(); await loc.pressSequentially(text); };\n// Chờ danh sách gợi ý có chữ cần tìm rồi bấm (danh sách nạp chậm vài giây)\nconst pickText = async (text, what) => {\n  const opt = page.getByText(text).last();\n  await opt.waitFor({ timeout: 15000 }).catch(() => { throw new Error('Không tìm thấy ' + what + ' \"' + text + '\" trong danh sách'); });\n  await opt.click();\n};\nconst next = async () => { await page.getByText('Tiếp tục', { exact: true }).last().click(); };\n\nawait step('Mở form Thêm lớp học', async () => {\n  await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});\n  await page.getByText('Thêm lớp học', { exact: true }).first().click();\n  await page.waitForURL(/\\/lnd\\/class\\/create/, { timeout: 20000 });\n});\n\nawait step('Nhập tên lớp', async () => {\n  await type(page.getByRole('textbox').nth(1), name);\n});\n\nawait step('Chọn môn học (chỉ có môn Cần mở lớp) và giảng viên', async () => {\n  // Khối Môn học có sẵn một dòng, không bấm Thêm môn học. Gõ để lọc rồi chọn đúng dòng \"mã - tên\".\n  await page.getByText('Môn học', { exact: true }).last().click();\n  await page.keyboard.type(subject, { delay: 40 });\n  await pickText(subject, 'môn học (môn hình thức Tự học không có ở đây)');\n  await page.getByText('Giảng viên', { exact: true }).last().click();\n  await page.keyboard.type(lecturer, { delay: 40 });\n  await pickText(lecturer, 'giảng viên');\n});\n\nawait step('Tiếp tục sang bước 2', async () => { await next(); await page.getByText('Danh sách học viên').first().waitFor({ timeout: 20000 }); });\n\nawait step('Thêm học viên vào lớp', async () => {\n  if (!students.length) { ctx.log('Không nhập học viên: lớp phải bật cho phép tự đăng ký mới sang được bước 3'); return; }\n  await page.getByText('Thêm học viên', { exact: true }).first().click();\n  await dlg.waitFor({ timeout: 10000 });\n  for (const code of students) {\n    await dlg.getByPlaceholder('Chọn học viên').click();\n    await page.keyboard.type(code, { delay: 40 });\n    await pickText(code, 'học viên');\n  }\n  await dlg.getByText('Thêm học viên', { exact: true }).first().click(); // đóng danh sách gợi ý\n  await dlg.getByRole('button', { name: 'Thêm học viên' }).click();\n  await dlg.waitFor({ state: 'hidden', timeout: 15000 });\n  await page.getByText('Học viên (' + students.length + ')').first().waitFor({ timeout: 15000 });\n});\n\nawait step('Tiếp tục sang bước 3', async () => { await next(); await page.getByText('Danh sách tiết học').first().waitFor({ timeout: 20000 }); });\n\nawait step('Thêm một tiết học', async () => {\n  await page.getByText('Thêm tiết học', { exact: true }).first().click();\n  await page.getByText('Ngày học').last().waitFor({ timeout: 10000 });\n  // ngày: mở lịch, chọn hôm nay cộng ngay_them ngày (qua cuối tháng thì lấy ngày cuối tháng; lịch chỉ hiện tháng này)\n  await page.getByText('Ngày học').last().click();\n  const now = new Date();\n  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();\n  const day = Math.min(now.getDate() + addDays, last);\n  const cell = page.getByText(String(day), { exact: true });\n  await (day <= 15 ? cell.first() : cell.last()).click(); // ngày đầu tháng có thêm ô của tháng sau ở cuối lịch, ngày cuối tháng có ô của tháng trước ở đầu\n  await type(page.getByPlaceholder('00:00').nth(0), ctx.val('gio_bat_dau', '09:00'));\n  await type(page.getByPlaceholder('00:00').nth(1), ctx.val('gio_ket_thuc', '10:00'));\n  await page.getByText(/^Môn học\\s*\\*?$/).last().click(); // ô Môn học của tiết, chỉ có các môn đã chọn cho lớp\n  await pickText(subject, 'môn học của tiết');\n  await page.getByText('Thêm tiết học', { exact: true }).last().click();\n  await page.getByText(/\\d{2}:\\d{2} - \\d{2}:\\d{2}/).first().waitFor({ timeout: 15000 });\n});\n\nawait step('Tạo lớp học và xác nhận', async () => {\n  await page.getByText('Tạo lớp học', { exact: true }).last().click();\n  await dlg.getByText('Tạo lớp học ' + name).waitFor({ timeout: 10000 }).catch(() => {});\n  await dlg.getByRole('button', { name: 'Tạo', exact: true }).click();\n  await page.waitForURL(/\\/lnd\\/class\\/manager/, { timeout: 30000 });\n  await page.getByText(name).first().waitFor({ timeout: 20000 });\n});\nctx.log('Đã tạo lớp: ' + name + ' (môn ' + subject + ', ' + students.length + ' học viên)');",
-  "source": {
-    "explore_date": "2026-11-16",
-    "note": "Đã chạy tay đủ ba bước trên staging (THL, LNK151515, môn MOLOP, học viên VQH00652, một tiết 17/11 09:00 đến 10:00), lớp tạo ra có trạng thái Chưa bắt đầu. CHƯA replay bằng Playwright: selector theo chữ hiển thị, riêng các ô chọn Môn học, Giảng viên, ô Môn học của tiết học và ô ngày trên lịch chưa kiểm chứng trong DOM nên là chỗ dễ hỏng nhất. Khi chạy tay tôi tìm giảng viên bằng cách gõ tên, tác vụ gõ mã nhân viên. Hình thức tiết học để mặc định Online."
-  }
+    "name":  "Tạo lớp học [AI TEST] (môn Cần mở lớp, học viên, một tiết học)",
+    "module":  "LND",
+    "flow":  "LOP",
+    "description":  "Tạo một lớp học đủ ba bước: chọn môn Cần mở lớp và giảng viên, thêm học viên, thêm một tiết học rồi tạo lớp. Lớp mới ở trạng thái Chưa bắt đầu.",
+    "start_url":  "https://ic.zuizui.io/lnd/class/manager",
+    "required_roles":  [
+
+                       ],
+    "writes":  true,
+    "rule_ids":  [
+                     "LND-013",
+                     "LND-014",
+                     "LND-027",
+                     "LND-028",
+                     "LND-029",
+                     "LND-030",
+                     "LND-031",
+                     "LND-032"
+                 ],
+    "steps":  [
+                  "Đăng nhập Staging bằng tài khoản quản lý học tập, mở Quản lý lớp học, bấm Thêm lớp học",
+                  "Nhập tên lớp: [AI TEST] {{ten_lop}}",
+                  "Chọn môn học {{mon_hoc}} (chỉ có môn hình thức Cần mở lớp, gõ mã hoặc tên) và giảng viên có mã {{giang_vien}} (trống: tài khoản đang chạy), bấm Tiếp tục",
+                  "Thêm học viên có mã nhân viên {{hoc_vien}} (nhiều người cách nhau bằng dấu phẩy), bấm Tiếp tục",
+                  "Thêm một tiết học: ngày hôm nay cộng {{ngay_them}} ngày, từ {{gio_bat_dau}} đến {{gio_ket_thuc}}, môn của lớp",
+                  "Bấm Tạo lớp học, xác nhận, kiểm tra lớp mới có trong danh sách (trạng thái Chưa bắt đầu)"
+              ],
+    "params":  [
+                   {
+                       "key":  "ten_lop",
+                       "label":  "Tên lớp (tự thêm tiền tố [AI TEST])",
+                       "value":  "Lớp học thử",
+                       "auto":  true
+                   },
+                   {
+                       "key":  "mon_hoc",
+                       "label":  "Môn học hình thức Cần mở lớp, gõ mã hoặc tên (ví dụ MOLOP - MỞ LỚP)",
+                       "value":  "MOLOP - MỞ LỚP",
+                       "auto":  false
+                   },
+                   {
+                       "key":  "giang_vien",
+                       "label":  "Mã nhân viên của giảng viên (trống: tài khoản đang chạy)",
+                       "value":  "",
+                       "auto":  false
+                   },
+                   {
+                       "key":  "hoc_vien",
+                       "label":  "Mã nhân viên của học viên, nhiều người cách nhau bằng dấu phẩy",
+                       "value":  "VQH00652",
+                       "auto":  false,
+                       "type":  "list"
+                   },
+                   {
+                       "key":  "ngay_them",
+                       "label":  "Số ngày cộng thêm so với hôm nay cho tiết học",
+                       "value":  "1",
+                       "auto":  true
+                   },
+                   {
+                       "key":  "gio_bat_dau",
+                       "label":  "Giờ bắt đầu tiết học (HH:MM)",
+                       "value":  "09:00",
+                       "auto":  false
+                   },
+                   {
+                       "key":  "gio_ket_thuc",
+                       "label":  "Giờ kết thúc tiết học (HH:MM)",
+                       "value":  "10:00",
+                       "auto":  false
+                   }
+               ],
+    "script":  "const name = ctx.testPrefix + \u0027 \u0027 + ctx.val(\u0027ten_lop\u0027, \u0027Lớp học thử\u0027);\nconst subject = ctx.val(\u0027mon_hoc\u0027, \u0027MOLOP - MỞ LỚP\u0027).trim();\nconst lecturer = ctx.val(\u0027giang_vien\u0027, ctx.username).trim();\nconst students = ctx.list(\u0027hoc_vien\u0027);\nconst addDays = Math.max(parseInt(ctx.val(\u0027ngay_them\u0027, \u00271\u0027), 10) || 0, 0);\nconst dlg = page.locator(\u0027[role=dialog]\u0027);\nconst type = async (loc, text) =\u003e { await loc.click(); await loc.pressSequentially(text); };\n// Chờ danh sách gợi ý có chữ cần tìm rồi bấm (danh sách nạp chậm vài giây)\nconst pickText = async (text, what) =\u003e {\n  const opt = page.getByText(text).last();\n  await opt.waitFor({ timeout: 15000 }).catch(() =\u003e { throw new Error(\u0027Không tìm thấy \u0027 + what + \u0027 \"\u0027 + text + \u0027\" trong danh sách\u0027); });\n  await opt.click();\n};\nconst next = async () =\u003e { await page.getByText(\u0027Tiếp tục\u0027, { exact: true }).last().click(); };\n\nawait step(\u0027Mở form Thêm lớp học\u0027, async () =\u003e {\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 20000 }).catch(() =\u003e {});\n  await page.getByText(\u0027Thêm lớp học\u0027, { exact: true }).first().click();\n  await page.waitForURL(/\\/lnd\\/class\\/create/, { timeout: 20000 });\n});\n\nawait step(\u0027Nhập tên lớp\u0027, async () =\u003e {\n  await type(page.getByRole(\u0027textbox\u0027).nth(1), name);\n});\n\nawait step(\u0027Chọn môn học (chỉ có môn Cần mở lớp) và giảng viên\u0027, async () =\u003e {\n  // Khối Môn học có sẵn một dòng, không bấm Thêm môn học. Gõ để lọc rồi chọn đúng dòng \"mã - tên\".\n  await page.getByText(\u0027Môn học\u0027, { exact: true }).last().click();\n  await page.keyboard.type(subject, { delay: 40 });\n  await pickText(subject, \u0027môn học (môn hình thức Tự học không có ở đây)\u0027);\n  await page.getByText(\u0027Giảng viên\u0027, { exact: true }).last().click();\n  await page.keyboard.type(lecturer, { delay: 40 });\n  await pickText(lecturer, \u0027giảng viên\u0027);\n});\n\nawait step(\u0027Tiếp tục sang bước 2\u0027, async () =\u003e { await next(); await page.getByText(\u0027Danh sách học viên\u0027).first().waitFor({ timeout: 20000 }); });\n\nawait step(\u0027Thêm học viên vào lớp\u0027, async () =\u003e {\n  if (!students.length) { ctx.log(\u0027Không nhập học viên: lớp phải bật cho phép tự đăng ký mới sang được bước 3\u0027); return; }\n  await page.getByText(\u0027Thêm học viên\u0027, { exact: true }).first().click();\n  await dlg.waitFor({ timeout: 10000 });\n  for (const code of students) {\n    await dlg.getByPlaceholder(\u0027Chọn học viên\u0027).click();\n    await page.keyboard.type(code, { delay: 40 });\n    await pickText(code, \u0027học viên\u0027);\n  }\n  await dlg.getByText(\u0027Thêm học viên\u0027, { exact: true }).first().click(); // đóng danh sách gợi ý\n  await dlg.getByRole(\u0027button\u0027, { name: \u0027Thêm học viên\u0027 }).click();\n  await dlg.waitFor({ state: \u0027hidden\u0027, timeout: 15000 });\n  await page.getByText(\u0027Học viên (\u0027 + students.length + \u0027)\u0027).first().waitFor({ timeout: 15000 });\n});\n\nawait step(\u0027Tiếp tục sang bước 3\u0027, async () =\u003e { await next(); await page.getByText(\u0027Danh sách tiết học\u0027).first().waitFor({ timeout: 20000 }); });\n\nawait step(\u0027Thêm một tiết học\u0027, async () =\u003e {\n  await page.getByText(\u0027Thêm tiết học\u0027, { exact: true }).first().click();\n  await page.getByText(\u0027Ngày học\u0027).last().waitFor({ timeout: 10000 });\n  // ngày: mở lịch, chọn hôm nay cộng ngay_them ngày (qua cuối tháng thì lấy ngày cuối tháng; lịch chỉ hiện tháng này)\n  await page.getByText(\u0027Ngày học\u0027).last().click();\n  const now = new Date();\n  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();\n  const day = Math.min(now.getDate() + addDays, last);\n  const cell = page.getByText(String(day), { exact: true });\n  await (day \u003c= 15 ? cell.first() : cell.last()).click(); // ngày đầu tháng có thêm ô của tháng sau ở cuối lịch, ngày cuối tháng có ô của tháng trước ở đầu\n  await type(page.getByPlaceholder(\u002700:00\u0027).nth(0), ctx.val(\u0027gio_bat_dau\u0027, \u002709:00\u0027));\n  await type(page.getByPlaceholder(\u002700:00\u0027).nth(1), ctx.val(\u0027gio_ket_thuc\u0027, \u002710:00\u0027));\n  await page.getByText(/^Môn học\\s*\\*?$/).last().click(); // ô Môn học của tiết, chỉ có các môn đã chọn cho lớp\n  await pickText(subject, \u0027môn học của tiết\u0027);\n  await page.getByText(\u0027Thêm tiết học\u0027, { exact: true }).last().click();\n  await page.getByText(/\\d{2}:\\d{2} - \\d{2}:\\d{2}/).first().waitFor({ timeout: 15000 });\n});\n\nawait step(\u0027Tạo lớp học và xác nhận\u0027, async () =\u003e {\n  await page.getByText(\u0027Tạo lớp học\u0027, { exact: true }).last().click();\n  await dlg.getByText(\u0027Tạo lớp học \u0027 + name).waitFor({ timeout: 10000 }).catch(() =\u003e {});\n  await dlg.getByRole(\u0027button\u0027, { name: \u0027Tạo\u0027, exact: true }).click();\n  await page.waitForURL(/\\/lnd\\/class\\/manager/, { timeout: 30000 });\n  await page.getByText(name).first().waitFor({ timeout: 20000 });\n});\nctx.log(\u0027Đã tạo lớp: \u0027 + name + \u0027 (môn \u0027 + subject + \u0027, \u0027 + students.length + \u0027 học viên)\u0027);",
+    "source":  {
+                   "explore_date":  "2026-11-16",
+                   "note":  "Đã chạy tay đủ ba bước trên staging (THL, LNK151515, môn MOLOP, học viên VQH00652, một tiết 17/11 09:00 đến 10:00), lớp tạo ra có trạng thái Chưa bắt đầu. CHƯA replay bằng Playwright: selector theo chữ hiển thị, riêng các ô chọn Môn học, Giảng viên, ô Môn học của tiết học và ô ngày trên lịch chưa kiểm chứng trong DOM nên là chỗ dễ hỏng nhất. Khi chạy tay tôi tìm giảng viên bằng cách gõ tên, tác vụ gõ mã nhân viên. Hình thức tiết học để mặc định Online."
+               }
 }

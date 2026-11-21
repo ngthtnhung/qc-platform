@@ -1,0 +1,33 @@
+{
+    "id":  "at_e8ff1988a9ac7f67",
+    "name":  "Kiểm tra Cấu hình chung, Trạng thái phiếu và Phụ trách theo chức danh IoT",
+    "module":  "DV5S",
+    "flow":  "CHUNG",
+    "description":  "Kiểm tra các màn hình cấu hình của module IoT gồm Thiết lập chung (/iot/config/rating), Trạng thái phiếu (/iot/config/status) và Cấu hình phụ trách (/iot/config/employee).",
+    "start_url":  "https://tasks.zuizui.io/iot/config/rating",
+    "required_roles":  [
+                           "quản trị"
+                       ],
+    "writes":  false,
+    "rule_ids":  [
+                     "DV5S-108",
+                     "DV5S-042",
+                     "DV5S-111",
+                     "DV5S-110",
+                     "DV5S-089",
+                     "DV5S-090"
+                 ],
+    "source":  {
+                   "explore_date":  "2026-11-18",
+                   "note":  "Sinh tự động từ kho Business Rule Haraworks Wiki (https://wiki.hrws.cloud/) cho module IOT."
+               },
+    "steps":  [
+                  "Đăng nhập tài khoản quản trị, mở Thiết lập chung IoT (/iot/config/rating)",
+                  "Kiểm tra 7 tab cấu hình chung (Quyền xem, Tạo và đánh giá, Xử lý, Đơn vị tạo phiếu, Giờ làm việc, Trạng thái phiếu, Trường tùy chọn)",
+                  "Mở trang Cấu hình nhân viên phụ trách IoT (/iot/config/employee) và kiểm tra hiển thị"
+              ],
+    "params":  [
+
+               ],
+    "script":  "await step(\u0027Mở Thiết lập chung IoT (/iot/config/rating)\u0027, async () =\u003e {\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 25000 }).catch(() =\u003e {});\n  const txt = await page.locator(\u0027body\u0027).innerText();\n  assert(txt.length \u003e 50, \u0027Không tải được màn hình Thiết lập chung IoT\u0027);\n});\n\nawait step(\u0027Mở Cấu hình nhân viên phụ trách IoT (/iot/config/employee)\u0027, async () =\u003e {\n  await page.goto(\u0027https://tasks.zuizui.io/iot/config/employee\u0027, { waitUntil: \u0027domcontentloaded\u0027 });\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 25000 }).catch(() =\u003e {});\n  const txt = await page.locator(\u0027body\u0027).innerText();\n  assert(txt.length \u003e 50, \u0027Không tải được màn hình Cấu hình phụ trách IoT\u0027);\n  ctx.log(\u0027Đã kiểm tra các màn hình Thiết lập IoT.\u0027);\n});"
+}

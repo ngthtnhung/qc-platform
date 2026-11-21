@@ -48,6 +48,7 @@ if (SERVER.startsWith('https://') && !process.env.NODE_EXTRA_CA_CERTS) {
   console.warn('Chưa tìm thấy rootCA.pem. Nếu gặp lỗi chứng chỉ, chạy lại với: --ca "C:\\duong-dan\\rootCA.pem"');
 }
 const ALLOWED_ORIGIN = new URL(SERVER).origin;
+const ALLOWED_ORIGINS = new Set([ALLOWED_ORIGIN, 'http://localhost:3001', 'http://127.0.0.1:3001']);
 const statuses = new Map(); // sessionId -> { status, detail }
 
 const api = async (path, token, opts = {}) => {
@@ -74,7 +75,8 @@ const api = async (path, token, opts = {}) => {
 };
 
 function cors(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
+  const origin = req.headers.origin;
+  res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGINS.has(origin) ? origin : ALLOWED_ORIGIN);
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -114,7 +116,7 @@ http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   // Chỉ chấp nhận lời gọi từ trang của server nhóm (chặn website lạ gọi vào máy bạn)
   const origin = req.headers.origin;
-  if (req.method !== 'OPTIONS' && url.pathname !== '/health' && origin !== ALLOWED_ORIGIN) return send(res, 403, { error: 'Origin không được phép' });
+  if (req.method !== 'OPTIONS' && url.pathname !== '/health' && !ALLOWED_ORIGINS.has(origin)) return send(res, 403, { error: 'Origin không được phép' });
   cors(req, res);
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
 

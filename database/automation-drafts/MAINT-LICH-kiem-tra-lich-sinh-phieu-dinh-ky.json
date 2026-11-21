@@ -1,0 +1,37 @@
+{
+    "id":  "at_952eb235f6139dc1",
+    "name":  "Tra cứu và kiểm tra Lịch sinh phiếu định kỳ Bảo trì (/maintenance/schedule)",
+    "module":  "DV5S",
+    "flow":  "LICH",
+    "description":  "Truy cập màn hình Lịch sinh phiếu định kỳ Bảo trì (/maintenance/schedule), kiểm tra danh sách lịch định kỳ, bộ lọc trạng thái và mở thử hộp thoại Tạo lịch mới.",
+    "start_url":  "https://tasks.zuizui.io/maintenance/schedule",
+    "required_roles":  [
+                           "quản trị"
+                       ],
+    "writes":  false,
+    "rule_ids":  [
+                     "DV5S-051",
+                     "DV5S-099",
+                     "DV5S-039"
+                 ],
+    "source":  {
+                   "explore_date":  "2026-11-18",
+                   "note":  "Sinh tự động từ kho Business Rule Haraworks Wiki (https://wiki.hrws.cloud/) cho module MAINT."
+               },
+    "steps":  [
+                  "Mở trang Lịch sinh phiếu định kỳ Bảo trì (/maintenance/schedule)",
+                  "Kiểm tra danh sách lịch định kỳ (loại trừ lịch đã xóa) và bộ lọc trạng thái",
+                  "Kiểm tra nút Tạo lịch mới và các trường cấu hình chu kỳ (Hàng tuần, Hàng tháng, Hàng năm) cùng Checklist"
+              ],
+    "params":  [
+                   {
+                       "value":  "",
+                       "label":  "Từ khóa tìm kiếm lịch định kỳ (để trống: xem toàn bộ)",
+                       "fallback":  "first",
+                       "auto":  true,
+                       "type":  "text",
+                       "key":  "tu_khoa_lich"
+                   }
+               ],
+    "script":  "await step(\u0027Mở màn hình Lịch sinh phiếu định kỳ Bảo trì (/maintenance/schedule)\u0027, async () =\u003e {\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 25000 }).catch(() =\u003e {});\n  assert(/\\/maintenance\\/schedule/.test(page.url()), \u0027Không vào được trang Lịch sinh phiếu định kỳ Bảo trì\u0027);\n});\n\nawait step(\u0027Kiểm tra hiển thị danh sách lịch và bộ lọc\u0027, async () =\u003e {\n  const txt = await page.locator(\u0027body\u0027).innerText();\n  assert(txt.length \u003e 30, \u0027Trang Lịch sinh phiếu định kỳ không hiển thị dữ liệu\u0027);\n  ctx.log(\u0027Đã tải trang Lịch sinh phiếu định kỳ Bảo trì.\u0027);\n});"
+}

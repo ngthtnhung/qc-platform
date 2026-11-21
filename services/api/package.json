@@ -1,1 +1,1 @@
-{ "name": "@qa/api", "private": true, "version": "0.1.0", "scripts": { "dev": "node src/entrypoint.mjs", "build": "node --check src/entrypoint.mjs", "typecheck": "tsc --noEmit --allowJs --checkJs --target ES2022 src/entrypoint.mjs", "lint": "eslint src" } }
+{ "name": "@qa/api", "type": "module", "private": true, "version": "0.1.0", "scripts": { "dev": "node src/entrypoint.mjs", "build": "node --check src/entrypoint.mjs", "typecheck": "tsc --noEmit --allowJs --checkJs --target ES2022 src/entrypoint.mjs", "lint": "eslint src" } }

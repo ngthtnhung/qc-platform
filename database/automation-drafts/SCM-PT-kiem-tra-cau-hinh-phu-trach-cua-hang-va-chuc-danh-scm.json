@@ -1,0 +1,30 @@
+{
+    "id":  "at_b732713829d42428",
+    "name":  "Kiểm tra Cấu hình phụ trách theo cửa hàng (/scm/config/store) và theo chức danh (/scm/config/employee) SCM",
+    "module":  "DV5S",
+    "flow":  "PT",
+    "description":  "Mở màn hình cấu hình người phụ trách theo cửa hàng (/scm/config/store) và theo chức danh (/scm/config/employee) của SCM, kiểm tra danh sách cửa hàng, người xử lý mặc định và cấu hình đơn vị tạo phiếu (/scm/config/unit).",
+    "start_url":  "https://tasks.zuizui.io/scm/config/store",
+    "required_roles":  [
+                           "quản trị"
+                       ],
+    "writes":  false,
+    "rule_ids":  [
+                     "DV5S-108",
+                     "DV5S-109",
+                     "DV5S-110"
+                 ],
+    "source":  {
+                   "explore_date":  "2026-11-18",
+                   "note":  "Sinh tự động từ kho Business Rule Haraworks Wiki (https://wiki.hrws.cloud/) cho module SCM."
+               },
+    "steps":  [
+                  "Đăng nhập tài khoản quản trị, mở trang Cấu hình cửa hàng SCM (/scm/config/store)",
+                  "Kiểm tra hiển thị danh sách cửa hàng và nút thiết lập người xử lý mặc định",
+                  "Mở trang Cấu hình phụ trách theo chức danh (/scm/config/employee) và Đơn vị tạo phiếu (/scm/config/unit)"
+              ],
+    "params":  [
+
+               ],
+    "script":  "await step(\u0027Mở màn hình Cấu hình cửa hàng SCM (/scm/config/store)\u0027, async () =\u003e {\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 25000 }).catch(() =\u003e {});\n  const txt = await page.locator(\u0027body\u0027).innerText();\n  assert(txt.length \u003e 50, \u0027Không tải được màn hình Cấu hình cửa hàng SCM\u0027);\n});\n\nawait step(\u0027Mở màn hình Cấu hình phụ trách theo chức danh SCM (/scm/config/employee)\u0027, async () =\u003e {\n  await page.goto(\u0027https://tasks.zuizui.io/scm/config/employee\u0027, { waitUntil: \u0027domcontentloaded\u0027 });\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 25000 }).catch(() =\u003e {});\n  const txt = await page.locator(\u0027body\u0027).innerText();\n  assert(txt.length \u003e 50, \u0027Không tải được màn hình Cấu hình phụ trách SCM\u0027);\n});\n\nawait step(\u0027Mở màn hình Cấu hình Đơn vị tạo phiếu SCM (/scm/config/unit)\u0027, async () =\u003e {\n  await page.goto(\u0027https://tasks.zuizui.io/scm/config/unit\u0027, { waitUntil: \u0027domcontentloaded\u0027 });\n  await page.waitForLoadState(\u0027networkidle\u0027, { timeout: 25000 }).catch(() =\u003e {});\n  const txt = await page.locator(\u0027body\u0027).innerText();\n  assert(txt.length \u003e 50, \u0027Không tải được màn hình Đơn vị tạo phiếu SCM\u0027);\n  ctx.log(\u0027Đã kiểm tra các màn hình cấu hình phụ trách và đơn vị của SCM.\u0027);\n});"
+}

@@ -30,15 +30,22 @@ export async function startRealtime({ baseUrl, cookie, onEvent, onState }) {
   conn.onreconnected(() => { onState?.('connected'); onEvent('reconnected', []); });
   conn.onclose(() => onState?.('disconnected'));
 
+  let lastErrLogged = '';
   const connect = async () => {
     try {
       await conn.start();
+      lastErrLogged = '';
       console.log('[haraworks-live] SignalR đã kết nối');
       onState?.('connected');
     } catch (err) {
-      console.warn('[haraworks-live] SignalR không kết nối được, dùng poll. Lý do:', err.message);
+      const msg = String(err?.message || err || '');
+      const is401 = /401|unauthor/i.test(msg);
+      if (lastErrLogged !== msg) {
+        console.warn('[haraworks-live] SignalR không kết nối được, dùng poll. Lý do:', msg);
+        lastErrLogged = msg;
+      }
       onState?.('disconnected');
-      setTimeout(connect, 60000);
+      setTimeout(connect, is401 ? 10 * 60000 : 60000);
     }
   };
   connect();

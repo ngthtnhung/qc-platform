@@ -1,0 +1,46 @@
+{
+  "name": "Danh sách phiếu: chuyển tab, tìm kiếm và xuất dữ liệu (MAINT/SCM/IOT)",
+  "module": "DV5S",
+  "flow": "DS",
+  "description": "Mở danh sách phiếu (/create/list hoặc /doing/list), kiểm tra chuyển đổi các tab (Tôi phụ trách/Hỗ trợ, Chưa hoàn tất, Tất cả), tìm kiếm phiếu theo từ khóa và kiểm tra nút Xuất dữ liệu.",
+  "start_url": "https://tasks.zuizui.io/maintenance/create/list",
+  "required_roles": [],
+  "writes": false,
+  "rule_ids": [
+    "DV5S-003",
+    "DV5S-004",
+    "DV5S-006",
+    "DV5S-007",
+    "DV5S-018",
+    "DV5S-054"
+  ],
+  "source": {
+    "explore_date": "2026-11-21",
+    "note": "Sinh từ Playwright codegen thao tác thực tế trên module MAINT (dùng chung cho SCM/IOT/DV5S)."
+  },
+  "steps": [
+    "Mở trang danh sách phiếu phân hệ {{phan_he}} (mặc định maintenance; có thể nhập scm hoặc iot)",
+    "Kiểm tra và bấm chuyển qua các tab: Tôi phụ trách/Hỗ trợ, Chưa hoàn tất, Tất cả",
+    "Nhập từ khóa {{tu_khoa}} vào ô 'Nhập tên phiếu để tìm' và bấm icon tìm kiếm",
+    "Bấm nút 'Xuất dữ liệu' và kiểm tra thông báo/hộp thoại xuất dữ liệu"
+  ],
+  "params": [
+    {
+      "key": "phan_he",
+      "label": "Phân hệ (maintenance, scm, iot)",
+      "value": "maintenance",
+      "type": "text",
+      "auto": true,
+      "fallback": "first"
+    },
+    {
+      "key": "tu_khoa",
+      "label": "Từ khóa tìm kiếm tên phiếu",
+      "value": "test",
+      "type": "text",
+      "auto": true,
+      "fallback": "first"
+    }
+  ],
+  "script": "const phanHe = ctx.val('phan_he', 'maintenance').trim().toLowerCase() || 'maintenance';\nconst targetUrl = `https://tasks.zuizui.io/${phanHe}/create/list`;\nconst keyword = ctx.val('tu_khoa', 'test').trim();\n\nawait step('Mở danh sách phiếu ' + phanHe, async () => {\n  if (!page.url().includes(`/${phanHe}/`)) {\n    await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });\n  }\n  await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});\n  await page.getByRole('textbox', { name: 'Nhập tên phiếu để tìm' }).waitFor({ timeout: 20000 });\n});\n\nawait step('Chuyển đổi các tab danh sách', async () => {\n  const tabAssigned = page.getByText(/Tôi phụ trách\\/Hỗ trợ/).first();\n  if (await tabAssigned.isVisible().catch(() => false)) {\n    await tabAssigned.click();\n    await page.waitForTimeout(500);\n  }\n  const tabPending = page.getByText('Chưa hoàn tất', { exact: true }).first();\n  if (await tabPending.isVisible().catch(() => false)) {\n    await tabPending.click();\n    await page.waitForTimeout(500);\n  }\n  const tabAll = page.getByText('Tất cả', { exact: true }).first();\n  await tabAll.waitFor({ timeout: 10000 });\n  await tabAll.click();\n  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});\n});\n\nawait step('Tìm kiếm phiếu theo từ khóa', async () => {\n  const searchBox = page.getByRole('textbox', { name: 'Nhập tên phiếu để tìm' });\n  await searchBox.click();\n  await searchBox.fill(keyword);\n  const searchBtn = page.locator('.hrv-next-input-add-on.hrv-next-input__add-on--after > span > svg').first();\n  if (await searchBtn.isVisible().catch(() => false)) {\n    await searchBtn.click();\n  } else {\n    await searchBox.press('Enter');\n  }\n  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});\n  ctx.log('Đã tìm kiếm với từ khóa: ' + keyword);\n});\n\nawait step('Kiểm tra nút Xuất dữ liệu', async () => {\n  const exportBtn = page.getByRole('button', { name: 'Xuất dữ liệu' });\n  await exportBtn.waitFor({ timeout: 10000 });\n  await exportBtn.click();\n  const waitingMsg = page.getByText(/Vui lòng đợi trong giây lát|Xuất dữ liệu/i).first();\n  await waitingMsg.waitFor({ timeout: 10000 });\n  ctx.log('Đã kích hoạt Xuất dữ liệu thành công.');\n});"
+}

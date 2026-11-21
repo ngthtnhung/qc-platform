@@ -109,7 +109,7 @@ Gõ mô tả, sau khoảng 2 giây ngừng gõ hệ thống hiện mục **AI ph
 Tạo phiếu, tiếp nhận, chuyển trạng thái, hoàn tất, đánh giá là các tác vụ riêng, mỗi tác vụ bắt đầu từ một phiếu có sẵn (tham số nêu tên phiếu; trống là phiếu `[AI TEST]` mới nhất). Các thao tác cùng một màn hình chỉ khác đích đến gộp thành một tác vụ có tham số chọn đích, ví dụ **Chuyển trạng thái phiếu bảo trì** có ô Trạng thái (trống hoặc Tiếp nhận, Hoàn tất xử lý, hoặc tên một trạng thái khác). Chọn sai thì báo lỗi kèm danh sách lựa chọn, không tự chọn thay.
 
 ## Đưa rule và tác vụ từ Explore lên platform
-Sau mỗi lần Explore, skill tự xuất rule từ Kho vào `database/kb-snapshot/` rồi chạy `node scripts/qa-sync.mjs --no-bugs`. Lệnh này đẩy rule (kèm nhãn Chưa xác nhận) và mọi tác vụ trong `database/automation-drafts/` lên server nhóm; mọi người nhận bản mới trong vòng 1 phút, không cần thao tác thêm.
+Sau mỗi lần Explore, skill tự xuất rule từ Kho vào `database/kb-snapshot/` rồi chạy `node scripts/qa-sync.mjs --no-bugs`. Lệnh này đẩy rule và mọi tác vụ trong `database/automation-drafts/` lên server nhóm; rule được nhóm theo module trên platform. Mọi người nhận bản mới trong vòng 1 phút, không cần thao tác thêm.
 
 Cài đặt **một lần** trên máy chạy skill (token do quản trị platform cấp, cần quyền `rules` và `automation_push`):
 ```

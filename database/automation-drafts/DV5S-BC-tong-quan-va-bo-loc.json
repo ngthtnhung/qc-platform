@@ -1,0 +1,42 @@
+{
+  "name": "Báo cáo Tổng Quan: bộ lọc, KPI cards và chuyển đổi biểu đồ/bảng (MAINT/SCM/IOT)",
+  "module": "DV5S",
+  "flow": "BC",
+  "description": "Mở Báo cáo -> Tổng Quan, kiểm tra bộ lọc Phân loại phiếu và Vùng miền, xác nhận 4 thẻ KPI (Phiếu chưa hoàn tất, Không đạt SLAs, Đã hoàn tất hôm nay, Đã hoàn tất tuần này) và 5 biểu đồ (theo trạng thái, nhân viên chưa hoàn tất, theo thời gian, theo vùng miền, theo phân loại) cùng nút chuyển view chart/table.",
+  "start_url": "https://tasks.zuizui.io/maintenance/dashboard",
+  "required_roles": [],
+  "writes": false,
+  "rule_ids": [
+    "DV5S-112",
+    "DV5S-062"
+  ],
+  "source": {
+    "explore_date": "2026-11-21",
+    "note": "Sinh từ Playwright codegen thao tác thực tế trên module MAINT (dùng chung cho SCM/IOT/DV5S)."
+  },
+  "steps": [
+    "Mở trang Báo cáo Tổng Quan phân hệ {{phan_he}}",
+    "Kiểm tra bộ lọc Phân loại phiếu và Vùng miền ({{vung_mien}})",
+    "Kiểm tra 4 chỉ số KPI: Phiếu chưa hoàn tất, Không đạt SLAs, Đã hoàn tất hôm nay, Đã hoàn tất tuần này",
+    "Kiểm tra các biểu đồ chi tiết và thử chuyển đổi chế độ xem biểu đồ / bảng"
+  ],
+  "params": [
+    {
+      "key": "phan_he",
+      "label": "Phân hệ (maintenance, scm, iot)",
+      "value": "maintenance",
+      "type": "text",
+      "auto": true,
+      "fallback": "first"
+    },
+    {
+      "key": "vung_mien",
+      "label": "Vùng miền lọc trên Tổng quan (VD: Cả nước, Miền trung)",
+      "value": "Cả nước",
+      "type": "text",
+      "auto": true,
+      "fallback": "first"
+    }
+  ],
+  "script": "const phanHe = ctx.val('phan_he', 'maintenance').trim().toLowerCase() || 'maintenance';\nconst targetUrl = `https://tasks.zuizui.io/${phanHe}/dashboard`;\n\nawait step('Mở màn hình Báo cáo Tổng Quan', async () => {\n  if (!page.url().includes(`/${phanHe}/dashboard`)) {\n    await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });\n  }\n  await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});\n  await page.getByText('Phiếu chưa hoàn tất', { exact: true }).first().waitFor({ timeout: 20000 });\n});\n\nawait step('Kiểm tra bộ lọc Phân loại phiếu và Vùng miền', async () => {\n  const catFilter = page.getByText('Chọn Phân loại phiếu').first();\n  if (await catFilter.isVisible().catch(() => false)) {\n    await catFilter.click();\n    const selectAll = page.getByText('Chọn tất cả').first();\n    if (await selectAll.isVisible().catch(() => false)) await selectAll.click();\n    await page.keyboard.press('Escape').catch(() => {});\n  }\n  const regionFilter = page.getByText('Chọn vùng miền').first();\n  if (await regionFilter.isVisible().catch(() => false)) {\n    await regionFilter.click();\n    const vung = ctx.val('vung_mien', 'Cả nước');\n    const opt = page.getByText(vung, { exact: true }).first();\n    if (await opt.isVisible().catch(() => false)) await opt.click();\n    await page.keyboard.press('Escape').catch(() => {});\n  }\n});\n\nawait step('Kiểm tra các thẻ KPI và biểu đồ trên Tổng Quan', async () => {\n  const txt = await page.locator('body').innerText();\n  for (const label of [\n    'Phiếu chưa hoàn tất',\n    'Không đạt SLAs',\n    'Đã hoàn tất hôm nay',\n    'Đã hoàn tất tuần này'\n  ]) {\n    assert(txt.includes(label), 'Thiếu thẻ KPI trên Tổng Quan: ' + label);\n  }\n  const chartBtns = page.locator('.wrapp-box-chart-maintenance-btn-view-icon > div:nth-child(2)');\n  if (await chartBtns.count()) {\n    await chartBtns.first().click();\n    await page.waitForTimeout(400);\n    await page.locator('.wrapp-box-chart-maintenance-btn-view-icon > div').first().click();\n  }\n  ctx.log('Báo cáo Tổng Quan hiển thị đầy đủ KPI và biểu đồ.');\n});"
+}

@@ -20,7 +20,7 @@ export function buildBundle(snap) {
     title: r.title, description: r.description, user_roles: r.user_roles || [],
     setting_type: r.setting_type || 'unknown', setting_label: r.setting_label || '', config_path: r.config_path || '',
     classification: r.classification || '', analysis: r.analysis ? { verdict: r.analysis.verdict, explanation: r.analysis.explanation } : null, open_questions: r.open_questions || [], source: r.source_reference || {},
-    related_rules: r.related_rules || [], approved_at: r.approved_at || ''
+    related_rules: r.related_rules || [], approved_at: r.approved_at || r.ingested_at || r.extracted_at || '', created_at: r.created_at || r.approved_at || r.ingested_at || r.extracted_at || ''
   })).sort((a, b) => a.rule_id.localeCompare(b.rule_id));
   const mods = modules.map(m => ({ code: m.code, name: m.name, cluster: m.cluster || '', flows: m.flows || [], usage_flow: m.usage_flow || '' }));
   return { artifact_url: ARTIFACT_URL, modules: mods, rules: slim };

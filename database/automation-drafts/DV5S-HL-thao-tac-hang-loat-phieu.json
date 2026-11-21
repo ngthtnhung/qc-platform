@@ -1,0 +1,43 @@
+{
+  "name": "Thao tác hàng loạt trên danh sách phiếu: Trạng thái, Phụ trách, Độ ưu tiên (MAINT/SCM/IOT)",
+  "module": "DV5S",
+  "flow": "HL",
+  "description": "Tick chọn phiếu trên danh sách để mở thanh Thao tác hàng loạt, kiểm tra 3 hành động: Cập nhật trạng thái, Thay đổi người phụ trách, Thay đổi độ ưu tiên (kiểm tra popup và danh sách chọn, không làm hỏng phiếu thật nếu chọn chế độ chỉ kiểm tra).",
+  "start_url": "https://tasks.zuizui.io/maintenance/create/list",
+  "required_roles": [],
+  "writes": true,
+  "rule_ids": [
+    "DV5S-013",
+    "DV5S-032",
+    "DV5S-002"
+  ],
+  "source": {
+    "explore_date": "2026-11-21",
+    "note": "Sinh từ Playwright codegen thao tác thực tế trên module MAINT (dùng chung cho SCM/IOT/DV5S)."
+  },
+  "steps": [
+    "Mở trang danh sách phiếu phân hệ {{phan_he}}, tab Tất cả",
+    "Tick chọn checkbox của phiếu {{phieu}} (mặc định: phiếu [AI TEST] đầu tiên hoặc dòng đầu tiên nếu chỉ kiểm tra dialog)",
+    "Kiểm tra thanh thao tác hàng loạt hiện 3 nút: Cập nhật trạng thái, Thay đổi người phụ trách, Thay đổi độ ưu tiên",
+    "Mở lần lượt từng dialog (Cập nhật trạng thái -> ô Chọn trạng thái; Thay đổi người phụ trách -> ô Chọn nhân viên; Thay đổi độ ưu tiên) và kiểm tra đóng mở an toàn"
+  ],
+  "params": [
+    {
+      "key": "phan_he",
+      "label": "Phân hệ (maintenance, scm, iot)",
+      "value": "maintenance",
+      "type": "text",
+      "auto": true,
+      "fallback": "first"
+    },
+    {
+      "key": "phieu",
+      "label": "Tên phiếu cần chọn (để trống: chọn phiếu [AI TEST] hoặc dòng đầu)",
+      "value": "",
+      "type": "text",
+      "auto": false,
+      "fallback": "first"
+    }
+  ],
+  "script": "const phanHe = ctx.val('phan_he', 'maintenance').trim().toLowerCase() || 'maintenance';\nconst targetUrl = `https://tasks.zuizui.io/${phanHe}/create/list`;\nconst dlg = page.getByRole('dialog');\n\nawait step('Mở danh sách và chọn phiếu bằng checkbox', async () => {\n  if (!page.url().includes(`/${phanHe}/`)) {\n    await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });\n  }\n  await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});\n  const tabAll = page.getByText('Tất cả', { exact: true }).first();\n  if (await tabAll.isVisible().catch(() => false)) await tabAll.click();\n\n  const name = ctx.val('phieu', '').trim() || ctx.testPrefix;\n  const targetRow = page.locator('tr, .table-advance__body__row').filter({ hasText: name }).first();\n  let cb;\n  if (await targetRow.count()) {\n    cb = targetRow.locator('input[type=\"checkbox\"]').first();\n  } else {\n    cb = page.locator('input[type=\"checkbox\"]').nth(1);\n  }\n  await cb.waitFor({ timeout: 15000 });\n  await cb.check({ force: true });\n});\n\nawait step('Kiểm tra dialog Cập nhật trạng thái hàng loạt', async () => {\n  const btn = page.getByRole('button', { name: 'Cập nhật trạng thái' });\n  await btn.waitFor({ timeout: 10000 });\n  await btn.click();\n  await dlg.waitFor({ timeout: 10000 });\n  const statusInput = page.getByRole('textbox', { name: 'Chọn trạng thái' });\n  await statusInput.waitFor({ timeout: 8000 });\n  await statusInput.click();\n  await page.locator('.col-settings-modal-close > svg').first().click().catch(async () => {\n    await page.keyboard.press('Escape');\n  });\n  await dlg.waitFor({ state: 'hidden', timeout: 8000 }).catch(() => {});\n});\n\nawait step('Kiểm tra dialog Thay đổi người phụ trách hàng loạt', async () => {\n  const btn = page.getByRole('button', { name: 'Thay đổi người phụ trách' });\n  await btn.waitFor({ timeout: 10000 });\n  await btn.click();\n  await dlg.waitFor({ timeout: 10000 });\n  const empInput = page.getByRole('textbox', { name: 'Chọn nhân viên' });\n  await empInput.waitFor({ timeout: 8000 });\n  await empInput.click();\n  await page.locator('.col-settings-modal-close > svg').first().click().catch(async () => {\n    await page.keyboard.press('Escape');\n  });\n  await dlg.waitFor({ state: 'hidden', timeout: 8000 }).catch(() => {});\n});\n\nawait step('Kiểm tra dialog Thay đổi độ ưu tiên hàng loạt', async () => {\n  const btn = page.getByRole('button', { name: 'Thay đổi độ ưu tiên' });\n  await btn.waitFor({ timeout: 10000 });\n  await btn.click();\n  await dlg.waitFor({ timeout: 10000 });\n  const prioInput = dlg.locator('.MuiInputBase-root').first();\n  await prioInput.waitFor({ timeout: 8000 });\n  await prioInput.click();\n  await page.locator('.col-settings-modal-close > svg').first().click().catch(async () => {\n    await page.keyboard.press('Escape');\n  });\n  ctx.log('Đã kiểm tra đầy đủ 3 thao tác hàng loạt.');\n});"
+}

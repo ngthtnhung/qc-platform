@@ -89,7 +89,7 @@ Cài đặt một lần trên máy chạy skill Explore (lưu vào `secrets/qa-s
 node scripts/qa-sync.mjs --save-config https://ten-server:3001 qa_token
 ```
 
-Từ đó, sau mỗi lần Explore skill tự xuất artifact vào `database/kb-snapshot/` và chạy `node scripts/qa-sync.mjs --no-bugs`. Lệnh này đẩy rule (gồm cả rule **chờ xác nhận**, hiện trên platform với nhãn "Chưa xác nhận"), bug cũ (bỏ `--no-bugs`) và tác vụ trong `database/automation-drafts/`. Chạy lại nhiều lần không tạo bản trùng. Cũng dùng được biến `QA_SERVER_URL`, `QA_TOKEN` thay cho file cấu hình.
+Từ đó, sau mỗi lần Explore skill tự xuất artifact vào `database/kb-snapshot/` và chạy `node scripts/qa-sync.mjs --no-bugs`. Lệnh này đẩy toàn bộ rule, bug cũ (bỏ `--no-bugs`) và tác vụ trong `database/automation-drafts/`. Rule được nhóm theo module trên platform. Chạy lại nhiều lần không tạo bản trùng. Cũng dùng được biến `QA_SERVER_URL`, `QA_TOKEN` thay cho file cấu hình.
 Token chỉ cần quyền lẻ `rules` và `automation_push`; không dùng token admin. Tác vụ đẩy lên dùng được ngay, không còn bước duyệt.
 Không đẩy được tự động thì dùng nút **Cập nhật rule từ kho** hoặc **Nhập file kho** trên tab Kho Business Rule (xem `automation-tasks.md`).
 

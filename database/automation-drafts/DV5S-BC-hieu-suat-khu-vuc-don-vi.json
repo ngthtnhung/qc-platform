@@ -1,0 +1,34 @@
+{
+  "name": "Báo cáo Hiệu suất làm việc Theo Khu Vực, Đơn vị: lọc, sắp xếp & xuất dữ liệu (MAINT/SCM/IOT)",
+  "module": "DV5S",
+  "flow": "BC",
+  "description": "Điều hướng vào Báo cáo -> Hiệu suất làm việc -> Theo Khu Vực, Đơn vị; kiểm tra bộ lọc (Vùng miền, Khu vực, Đơn vị, Thời gian tạo, Đặt lại, Áp dụng), bảng thống kê có sắp xếp và nút Xuất dữ liệu.",
+  "start_url": "https://tasks.zuizui.io/maintenance/dashboard",
+  "required_roles": [],
+  "writes": false,
+  "rule_ids": [
+    "DV5S-052",
+    "DV5S-062"
+  ],
+  "source": {
+    "explore_date": "2026-11-21",
+    "note": "Sinh từ Playwright codegen thao tác thực tế trên module MAINT (dùng chung cho SCM/IOT/DV5S)."
+  },
+  "steps": [
+    "Mở phân hệ {{phan_he}}, bấm menu Báo cáo -> Hiệu suất làm việc -> Theo Khu Vực, Đơn vị",
+    "Kiểm tra bảng dữ liệu gồm các cột: Đơn vị, Số phiếu phát sinh, Số phiếu hoàn tất xử lý, Số phiếu huỷ/Từ chối xử lý",
+    "Thử sắp xếp cột bằng icon sort (.table-advance__sort)",
+    "Mở bộ lọc (Vùng miền, Khu vực, Đơn vị, Thời gian tạo), bấm Đặt lại / Áp dụng và kiểm tra nút Xuất dữ liệu"
+  ],
+  "params": [
+    {
+      "key": "phan_he",
+      "label": "Phân hệ (maintenance, scm, iot)",
+      "value": "maintenance",
+      "type": "text",
+      "auto": true,
+      "fallback": "first"
+    }
+  ],
+  "script": "const phanHe = ctx.val('phan_he', 'maintenance').trim().toLowerCase() || 'maintenance';\n\nawait step('Điều hướng đến Báo cáo Hiệu suất làm việc -> Theo Khu Vực, Đơn vị', async () => {\n  if (!page.url().includes(`/${phanHe}/`)) {\n    await page.goto(`https://tasks.zuizui.io/${phanHe}/dashboard`, { waitUntil: 'domcontentloaded' });\n  }\n  await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});\n  const reportBtn = page.getByRole('button', { name: 'Báo cáo' });\n  if (await reportBtn.isVisible().catch(() => false)) await reportBtn.click();\n  const perfLink = page.getByRole('link', { name: 'Hiệu suất làm việc' });\n  if (await perfLink.isVisible().catch(() => false)) await perfLink.click();\n  const unitLink = page.getByRole('link', { name: 'Theo Khu Vực, Đơn vị' });\n  await unitLink.waitFor({ timeout: 10000 });\n  await unitLink.click();\n  await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});\n});\n\nawait step('Kiểm tra bảng thống kê và chức năng sắp xếp', async () => {\n  const txt = await page.locator('body').innerText();\n  for (const col of ['Đơn vị', 'Số phiếu phát sinh', 'Số phiếu hoàn tất xử lý']) {\n    assert(txt.includes(col), 'Thiếu cột trên bảng Hiệu suất: ' + col);\n  }\n  const sortIcon = page.locator('.table-advance__sort > svg').first();\n  if (await sortIcon.isVisible().catch(() => false)) {\n    await sortIcon.click();\n    await page.waitForTimeout(300);\n  }\n});\n\nawait step('Kiểm tra bộ lọc và nút Xuất dữ liệu', async () => {\n  const filterBtn = page.locator('.filter__item > svg').first();\n  if (await filterBtn.isVisible().catch(() => false)) {\n    await filterBtn.click();\n    await page.getByRole('button', { name: 'Áp dụng' }).waitFor({ timeout: 8000 });\n    await page.getByRole('button', { name: 'Áp dụng' }).click();\n  }\n  const exportBtn = page.getByRole('button', { name: 'Xuất dữ liệu' });\n  assert(await exportBtn.isVisible().catch(() => false), 'Không thấy nút Xuất dữ liệu');\n  ctx.log('Đã kiểm tra Báo cáo Hiệu suất Theo Khu Vực, Đơn vị.');\n});"
+}

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>QC Platform</title>
-  <link rel="icon" type="image/svg+xml" href="logo.svg">
+  <link id="app-favicon" rel="icon" type="image/svg+xml" href="logo.svg">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -14,51 +14,311 @@
       <div class="sb-brand"><img class="sb-logo" src="logo.svg" alt="QC Platform"><span class="sb-name">QC Platform</span></div>
       <nav class="tabs-header">
         <div class="sb-label">KHÔNG GIAN LÀM VIỆC</div>
-        <button class="tab-button active" data-tab="pane-overview">Tổng quan</button>
-        <button class="tab-button" data-tab="pane-accounts">Tài Khoản &amp; Môi Trường</button>
-        <button class="tab-button" data-tab="pane-bug-analysis">Phân Tích Bug</button>
-        <button class="tab-button" data-tab="pane-bug-history">Tra Cứu Bug</button>
-        <button class="tab-button" data-tab="pane-business-rules">Kho Business Rule</button>
-        <button class="tab-button" data-tab="pane-automation">Tác Vụ Tự Động</button>
-        <div class="sb-label" id="sb-admin-label" style="display:none;">QUẢN TRỊ</div>
-        <button class="tab-button" data-tab="pane-users" id="tab-users-btn" style="display:none;">Phân Quyền</button>
+        <button class="tab-button active" data-tab="pane-overview" title="Tổng quan KPI, Kanban Board, Gantt Chart & Biểu đồ công việc cá nhân">Dashboard</button>
+        <button class="tab-button" data-tab="pane-accounts" title="Quản lý danh sách tài khoản test và các môi trường Staging/Production">Tài Khoản &amp; Môi Trường</button>
+        <button class="tab-button" data-tab="pane-bug-analysis" title="Phân tích mô tả bug, đối chiếu Business Rule và sinh Test Plan bằng AI">Phân Tích Bug</button>
+        <button class="tab-button" data-tab="pane-bug-history" title="Tra cứu danh sách Bug realtime và lịch sử bug theo module, dự án, người thực hiện"><span>Tra Cứu Bug</span><span class="sb-new-badge" id="sb-bug-badge" hidden></span></button>
+        <button class="tab-button" data-tab="pane-function-tasks" title="Tra cứu Task Function từ 4 dự án team và các task con QC">Tra Cứu Task Function</button>
+        <button class="tab-button" data-tab="pane-builds" title="Theo dõi các đợt Build App Mobile và Build Task Function Release">Theo Dõi Build</button>
+        <button class="tab-button" data-tab="pane-business-rules" title="Tra cứu và chỉnh sửa kho quy tắc nghiệp vụ (Business Rules) theo từng module">Kho Business Rule</button>
+        <button class="tab-button" data-tab="pane-automation" title="Quản lý và chạy kịch bản kiểm thử tự động trên Staging">Tác Vụ Tự Động</button>
+        <div class="sb-label">HỆ THỐNG</div>
+        <button class="tab-button" data-tab="pane-settings" id="tab-settings-btn" title="Cài đặt Tài khoản, Module, Trạng thái, Pet cá nhân và Phân quyền">Cài Đặt</button>
       </nav>
       <div class="sb-user">
-        <span class="sb-avatar" id="sb-avatar">QC</span>
-        <span class="sb-user-text"><strong id="current-user-name">QC Tester</strong><span id="current-user-role" class="sb-role">QC Lead</span></span>
+        <span class="sb-avatar" id="sb-avatar" title="Nhấn vào để đổi Avatar" style="cursor:pointer;overflow:hidden;">QC</span>
+        <span class="sb-user-text" style="flex:1;">
+          <strong id="current-user-name">QC Tester</strong>
+          <span id="current-user-role" class="sb-role">QC Lead</span>
+          <span id="current-user-code-badge" class="badge badge-subtle" style="font-size:10px;margin-top:2px;display:none;"></span>
+        </span>
+        <button type="button" class="btn btn-outline" id="btn-user-settings" title="Mở Cài đặt Tài khoản & Token" style="padding:3px 7px;font-size:12px;">⚙</button>
+        <button type="button" class="btn btn-outline" id="btn-logout" title="Đăng xuất" style="padding:3px 8px;font-size:11px;display:none;">Thoát</button>
       </div>
     </aside>
     <div class="app-main">
       <header class="navbar topbar">
-        <div class="crumb"><button class="sb-toggle" id="sb-toggle" type="button" aria-label="Mở menu">☰</button><span class="crumb-root">QC Platform</span><span class="crumb-sep">/</span><span class="crumb-page" id="crumb-page">Tổng quan</span><span class="crumb-sep" id="crumb-sep2" style="display:none;">/</span><span class="crumb-sub" id="crumb-sub" style="display:none;"></span></div>
+        <div class="crumb"><button class="sb-toggle" id="sb-toggle" type="button" aria-label="Mở menu">☰</button><span class="crumb-root">QC Platform</span><span class="crumb-sep">/</span><span class="crumb-page" id="crumb-page">Dashboard</span><span class="crumb-sep" id="crumb-sep2" style="display:none;">/</span><span class="crumb-sub" id="crumb-sub" style="display:none;"></span></div>
         <div class="top-right">
-          <span class="srv-status" id="api-status-badge"><i class="srv-dot"></i><span>Server Online</span></span>
-          <button class="help-btn" id="btn-theme" type="button" aria-label="Đổi giao diện"></button>
+          <span class="srv-status" id="api-status-badge" style="cursor:pointer;" title="Nhấn để xem chi tiết trạng thái đồng bộ"><i class="srv-dot"></i><span>Server Online</span></span>
+          <button type="button" class="btn btn-outline" id="btn-global-sync" title="Đồng bộ toàn bộ dữ liệu (Dashboard, Bug, Task Function, Build & Thông báo) từ Haraworks" style="padding:3px 10px;font-size:12px;display:inline-flex;align-items:center;gap:5px;"><span class="global-sync-icon">⟳</span><span>Đồng bộ</span></button>
+          <div class="noti-wrap" id="noti-wrap">
+            <button class="noti-btn" id="btn-noti" type="button" title="Thông báo Haraworks" aria-label="Thông báo Haraworks" aria-expanded="false">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+              <span class="noti-badge" id="noti-badge" hidden>0</span>
+            </button>
+            <div class="noti-panel" id="noti-panel" hidden>
+              <div class="noti-head">
+                <strong>Thông báo Haraworks</strong>
+                <span style="display:flex;gap:6px;align-items:center;">
+                  <button type="button" class="linkbtn" id="noti-mark-seen" style="font-size:11px;">Đã xem</button>
+                  <button type="button" class="btn btn-outline" id="noti-refresh" title="Làm mới" style="padding:2px 7px;font-size:11px;">⟳</button>
+                </span>
+              </div>
+              <div class="noti-list" id="noti-list"><div class="noti-empty">Đang tải thông báo...</div></div>
+            </div>
+          </div>
+          <button class="help-btn" id="btn-theme-toggle" type="button" title="Chuyển chế độ Sáng / Tối (Dark View)" aria-label="Đổi giao diện Sáng Tối">🌙</button>
           <button class="help-btn" id="btn-help" type="button" title="Hướng dẫn cài đặt và sử dụng" aria-label="Hướng dẫn">?</button>
           <span id="current-user-label" class="top-user"></span>
         </div>
       </header>
       <main class="container">
 
-    <!-- TỔNG QUAN -->
+    <!-- TỔNG QUAN / DASHBOARD CÁ NHÂN (JIRA KANBAN, GANTT & CHARTS) -->
     <section class="tab-pane active" id="pane-overview">
-      <div class="page-head"><h1 id="ov-greeting">Tổng quan</h1><p>Tình hình dữ liệu và hoạt động của nền tảng QC hôm nay.</p></div>
-      <div class="stat-grid">
-        <div class="stat-card"><span>Bug đã lưu</span><b id="ov-bugs">-</b><small id="ov-bugs-sub"></small></div>
-        <div class="stat-card"><span>Business rule</span><b id="ov-rules">-</b><small id="ov-rules-sub"></small></div>
-        <div class="stat-card"><span>Tác vụ tự động</span><b id="ov-tasks">-</b><small id="ov-tasks-sub"></small></div>
-        <div class="stat-card"><span>Tài khoản test</span><b id="ov-accounts">-</b><small id="ov-accounts-sub"></small></div>
+      <div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+        <div>
+          <h1 id="ov-greeting">Dashboard Cá Nhân</h1>
+          <p id="ov-subheading">Theo dõi tiến độ Kanban, Gantt chart, hạn chót và tính hợp lệ thông tin của các task được gán cho bạn.</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <div class="view-switch-group">
+            <button type="button" class="view-tab-btn active" id="btn-view-kanban" data-view="kanban" title="Xem bảng công việc theo 4 trạng thái: Mới, Đang làm, Tạm ngưng, Hoàn thành">Kanban Board</button>
+            <button type="button" class="view-tab-btn" id="btn-view-gantt" data-view="gantt" title="Xem dòng thời gian (timeline) của Bug, Task Function và Release Function">Gantt Chart</button>
+            <button type="button" class="view-tab-btn" id="btn-view-analytics" data-view="analytics" title="Xem biểu đồ thống kê trạng thái, độ ưu tiên, loại task và tỉ lệ đủ thông tin">Biểu Đồ &amp; Phân Tích</button>
+            <button type="button" class="view-tab-btn" id="btn-view-personal" data-view="personal" title="Quản lý To-do list và Note cá nhân gắn với Task Bug, Task Function, Task Build">To-do &amp; Note cá nhân</button>
+          </div>
+        </div>
       </div>
-      <div class="ov-grid">
-        <div class="card"><div class="card-header"><span class="card-title">Truy cập nhanh</span></div>
-          <div class="quick-list">
-            <button class="quick" data-go="pane-bug-analysis"><b>Phân tích bug mới</b><span>Tìm rule và bug cũ liên quan, gợi ý nguyên nhân</span></button>
-            <button class="quick" data-go="pane-bug-history"><b>Tra cứu bug</b><span>Lọc theo module, trạng thái, người thực hiện</span></button>
-            <button class="quick" data-go="pane-automation"><b>Chạy tác vụ tự động</b><span>Chọn tác vụ, chỉnh trường thông tin rồi chạy</span></button>
-            <button class="quick" data-go="pane-business-rules"><b>Kho Business Rule</b><span>Xem, thêm, sửa rule; cập nhật từ kho</span></button>
-          </div></div>
-        <div class="card"><div class="card-header"><span class="card-title">Trạng thái hệ thống</span></div>
-          <div id="ov-status" class="quick-list"></div></div>
+
+      <!-- Unified Filter Bar (Search + Period + Project + Type + Status, single row) -->
+      <div class="card" style="padding:10px 14px;margin-bottom:14px;">
+        <div class="filter-bar db-unified-filter" style="margin-bottom:0;align-items:center;display:flex;gap:8px;flex-wrap:wrap;">
+          <input class="form-control" id="kb-filter-q" type="search" placeholder="Lọc task theo tên, mã module, khách hàng..." style="flex:2;min-width:180px;" title="Tìm kiếm nhanh theo tên task, mã module hoặc khách hàng" />
+          <select class="form-control" id="db-filter-period" style="flex:0 0 auto;width:auto;min-width:130px;font-weight:600;" title="Lọc theo khoảng thời gian tạo task">
+            <option value="week" selected>Tuần này</option>
+            <option value="month">Tháng này</option>
+            <option value="30d">30 ngày gần đây</option>
+            <option value="all">Tất cả</option>
+          </select>
+          <select class="form-control" id="db-filter-project" style="flex:0 0 auto;width:auto;min-width:140px;" title="Lọc theo dự án / team trên Haraworks">
+            <option value="">Tất cả dự án</option>
+          </select>
+          <select class="form-control" id="kb-filter-type" style="flex:0 0 auto;width:auto;min-width:140px;" title="Lọc theo loại công việc (Bug, Task Function, Release Function)">
+            <option value="">Tất cả loại</option>
+            <option value="bug">Chỉ Bug</option>
+            <option value="function">Chỉ Task Function</option>
+            <option value="release">Chỉ Release Function</option>
+          </select>
+          <select class="form-control" id="kb-filter-status" style="flex:0 0 auto;width:auto;min-width:140px;" title="Lọc nhanh theo trạng thái cảnh báo">
+            <option value="">Tất cả</option>
+            <option value="overdue">Chỉ task trễ hạn</option>
+            <option value="dueToday">Hết hạn hôm nay</option>
+            <option value="missing">Bug thiếu thông tin</option>
+            <option value="new24h">Gán mới trong 24h</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Quick KPI Counters (Clickable to view list) -->
+      <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));">
+        <div class="stat-card kpi-clickable" data-kpi="total" style="border-left:4px solid var(--primary);" title="Tổng task cần làm hôm nay: Bug bạn thực hiện / Bug bạn duyệt đang trong timeline / Task Function (QC) & Release (đã gán ngày) trong timeline / Task trễ hạn. Bấm để xem danh sách.">
+          <span>Tổng task cần làm</span><b id="db-total">-</b><small id="db-total-sub">Trong hôm nay</small>
+        </div>
+        <div class="stat-card kpi-clickable" data-kpi="overdue" style="border-left:4px solid #ef4444;" title="Các task chưa đóng có hạn chót (plan_end_at) trước ngày hôm nay. Bấm để xem danh sách.">
+          <span style="color:#ef4444;font-weight:600;">Trễ hạn</span><b id="db-overdue" style="color:#ef4444;">-</b><small id="db-overdue-sub">Cần xử lý gấp</small>
+        </div>
+        <div class="stat-card kpi-clickable" data-kpi="dueToday" style="border-left:4px solid #f59e0b;" title="Các task chưa đóng có hạn chót đúng vào ngày hôm nay. Bấm để xem danh sách.">
+          <span style="color:#d97706;font-weight:600;">Hết hạn hôm nay</span><b id="db-due-today" style="color:#d97706;">-</b><small>Trước 16:30</small>
+        </div>
+        <div class="stat-card kpi-clickable" data-kpi="missing" style="border-left:4px solid #8b5cf6;" title="Các Bug thiếu ít nhất 1 trong 5 trường: Khách hàng, Ứng dụng, Nền tảng, Phân loại, Độ nghiêm trọng. Bấm để xem danh sách.">
+          <span style="color:#7c3aed;font-weight:600;">Bug chưa đủ thông tin</span><b id="db-missing" style="color:#7c3aed;">-</b><small>Cần bổ sung trường</small>
+        </div>
+        <div class="stat-card kpi-clickable" data-kpi="assigned24h" style="border-left:4px solid #06b6d4;" title="Các Bug mới được tạo và gán bạn làm Người thực hiện trong 24 giờ gần nhất. Bấm để xem danh sách.">
+          <span style="color:#0891b2;font-weight:600;">Gán mới trong 24h</span><b id="db-assigned-24h" style="color:#0891b2;">-</b><small>Chưa xử lý</small>
+        </div>
+      </div>
+
+      <!-- User Mapping Warning Alert (if employee_code is not set) -->
+      <div id="db-code-warning" class="alert-box alert-amber" style="display:none;margin-bottom:14px;">
+        <div style="flex:1;">
+          <strong>Chưa cài đặt Mã nhân viên Haraworks!</strong>
+          <div style="font-size:12px;margin-top:2px;">
+            Hệ thống đang dò tạm theo tên hiển thị của bạn. Để tracking chính xác 100% các task được gán, hãy nhấn 
+            <button type="button" class="linkbtn" id="db-btn-set-code" style="font-weight:bold;text-decoration:underline;">Cài đặt mã nhân viên</button> ngay.
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 1: KANBAN BOARD -->
+      <div id="view-kanban-container" class="dashboard-view-pane active">
+        <!-- Jira-like Kanban 4 columns -->
+        <div class="jira-board" id="jira-board">
+          <div class="jira-column col-todo">
+            <div class="jira-col-header" title="Các task ở trạng thái Mới có thời gian từ hôm nay đến tương lai (không giới hạn bộ lọc thời gian)">
+              <span class="jira-col-title">TO DO · MỚI</span>
+              <span class="jira-col-count" id="kb-count-todo">0</span>
+            </div>
+            <div class="jira-col-cards" id="kb-cards-todo"></div>
+          </div>
+
+          <div class="jira-column col-inprogress">
+            <div class="jira-col-header" title="Các task đang ở trạng thái Đang thực hiện theo bộ lọc hiện tại">
+              <span class="jira-col-title">IN PROGRESS · ĐANG THỰC HIỆN</span>
+              <span class="jira-col-count" id="kb-count-inprogress">0</span>
+            </div>
+            <div class="jira-col-cards" id="kb-cards-inprogress"></div>
+          </div>
+
+          <div class="jira-column col-review">
+            <div class="jira-col-header" title="Các task đang ở trạng thái Tạm ngưng, Chờ duyệt, Cần duyệt hoặc Từ chối">
+              <span class="jira-col-title">TẠM NGƯNG</span>
+              <span class="jira-col-count" id="kb-count-review">0</span>
+            </div>
+            <div class="jira-col-cards" id="kb-cards-review"></div>
+          </div>
+
+          <div class="jira-column col-done">
+            <div class="jira-col-header" title="Các task đã Hoàn thành trong khoảng thời gian đã lọc">
+              <span class="jira-col-title">HOÀN THÀNH</span>
+              <span class="jira-col-count" id="kb-count-done">0</span>
+            </div>
+            <div class="jira-col-cards" id="kb-cards-done"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 2: GANTT CHART (BUG & FUNCTION SEPARATED) -->
+      <div id="view-gantt-container" class="dashboard-view-pane" style="display:none;">
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-header">
+            <span class="card-title">Gantt Chart — Bug</span>
+            <div style="display:flex;gap:12px;font-size:12px;align-items:center;flex-wrap:wrap;">
+              <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:#64748b;border-radius:2px;"></span> Mới</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:#3b82f6;border-radius:2px;"></span> Đang thực hiện</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:#f59e0b;border-radius:2px;"></span> Tạm ngưng</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:#e11d48;border-radius:2px;"></span> Từ chối</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:#10b981;border-radius:2px;"></span> Hoàn thành</span>
+            </div>
+          </div>
+          <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:10px;">Nhấn trực tiếp vào thanh công việc trên biểu đồ để mở chi tiết task trên Haraworks.</p>
+
+          <div style="font-size:12px;font-weight:700;color:var(--text-main);margin:8px 0 6px;">Tôi duyệt</div>
+          <div style="overflow-x:auto;padding-bottom:10px;margin-bottom:12px;">
+            <div id="gantt-bug-approver-body" style="min-width:700px;"></div>
+          </div>
+
+          <div style="font-size:12px;font-weight:700;color:var(--text-main);margin:8px 0 6px;">Tôi thực hiện</div>
+          <div style="overflow-x:auto;padding-bottom:10px;">
+            <div id="gantt-bug-assignee-body" style="min-width:700px;"></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-header">
+            <span class="card-title">Gantt Chart — Task Function (QC)</span>
+            <div style="display:flex;gap:12px;font-size:12px;align-items:center;flex-wrap:wrap;">
+              <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:#64748b;border-radius:2px;"></span> Mới</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:#3b82f6;border-radius:2px;"></span> Đang thực hiện</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:#f59e0b;border-radius:2px;"></span> Tạm ngưng</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:#e11d48;border-radius:2px;"></span> Từ chối</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:#10b981;border-radius:2px;"></span> Hoàn thành</span>
+            </div>
+          </div>
+          <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:10px;">Theo dõi các task con có tiền tố QC được gán từ 4 dự án Function. Nhấn trực tiếp vào thanh để mở chi tiết.</p>
+          <div style="overflow-x:auto;padding-bottom:10px;">
+            <div id="gantt-fn-body" style="min-width:700px;"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Gantt Chart — Task Release Function</span>
+            <div style="display:flex;gap:12px;font-size:12px;align-items:center;flex-wrap:wrap;">
+              <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:#64748b;border-radius:2px;"></span> Mới</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:#3b82f6;border-radius:2px;"></span> Đang thực hiện</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:#f59e0b;border-radius:2px;"></span> Tạm ngưng</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:#e11d48;border-radius:2px;"></span> Từ chối</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:#10b981;border-radius:2px;"></span> Hoàn thành</span>
+            </div>
+          </div>
+          <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:10px;">Theo dõi task Release Function bạn là người thực hiện (luôn hiện task tương lai, quá khứ theo bộ lọc). Nhấn trực tiếp vào thanh để mở chi tiết.</p>
+          <div style="overflow-x:auto;padding-bottom:10px;">
+            <div id="gantt-release-body" style="min-width:700px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 3: ANALYTICS & CHARTS -->
+      <div id="view-analytics-container" class="dashboard-view-pane" style="display:none;">
+        <div class="ov-grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr));">
+          <div class="card">
+            <div class="card-header"><span class="card-title">Phân Bổ Theo Trạng Thái</span></div>
+            <div id="chart-status-bars" style="margin-top:10px;"></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">Phân Bổ Theo Độ Ưu Tiên</span></div>
+            <div id="chart-priority-bars" style="margin-top:10px;"></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">Phân Bổ Loại Công Việc</span></div>
+            <div id="chart-type-bars" style="margin-top:10px;"></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">Chất Lượng Điền Thông Tin Bug</span></div>
+            <div id="chart-quality-box" style="margin-top:10px;"></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">Task Release Function</span></div>
+            <div id="chart-release-bars" style="margin-top:10px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 4: TO-DO LIST & NOTE CÁ NHÂN -->
+      <div id="view-personal-container" class="dashboard-view-pane" style="display:none;">
+        <div class="ov-grid" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr));align-items:start;">
+          <!-- Cột Trái: To-do List cá nhân -->
+          <div class="card">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="card-title">To-do List Cá Nhân</span>
+              <span class="badge badge-subtle" id="pw-todo-count">0 việc</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0 12px;padding-bottom:12px;border-bottom:1px solid var(--border);">
+              <input class="form-control" id="pw-todo-text" maxlength="300" placeholder="Nhập việc cần làm của bạn..." />
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <input type="date" class="form-control" id="pw-todo-date" style="width:140px;" title="Ngày dự kiến (tùy chọn)" />
+                <button type="button" class="btn btn-outline" id="pw-todo-link-btn" style="font-size:12px;">+ Gắn Task (Bug / Function / Build)</button>
+                <button type="button" class="btn btn-primary" id="pw-todo-add" style="margin-left:auto;">Thêm To-do</button>
+              </div>
+              <div id="pw-todo-pending-links" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+            </div>
+            <div id="pw-todo-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+          </div>
+
+          <!-- Cột Phải: Note cá nhân -->
+          <div class="card">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="card-title">Note / Ghi Chú Cá Nhân</span>
+              <span class="badge badge-subtle" id="pw-note-count">0 ghi chú</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0 12px;padding-bottom:12px;border-bottom:1px solid var(--border);">
+              <input type="hidden" id="pw-note-edit-id" />
+              <input class="form-control" id="pw-note-title" maxlength="120" placeholder="Tiêu đề ghi chú..." />
+              <textarea class="form-control" id="pw-note-content" rows="3" placeholder="Nội dung ghi chú, checklist, lưu ý test..."></textarea>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <button type="button" class="btn btn-outline" id="pw-note-link-btn" style="font-size:12px;">+ Gắn Task (Bug / Function / Build)</button>
+                <button type="button" class="linkbtn" id="pw-note-cancel" style="display:none;font-size:12px;">Hủy sửa</button>
+                <button type="button" class="btn btn-primary" id="pw-note-save" style="margin-left:auto;">Lưu Note</button>
+              </div>
+              <div id="pw-note-pending-links" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+            </div>
+            <div id="pw-note-list" style="display:flex;flex-direction:column;gap:10px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal chọn Task liên quan (Bug / Function / Build) -->
+      <div class="modal-overlay" id="modal-pw-task-picker">
+        <div class="modal-content" style="max-width:640px;max-height:85vh;display:flex;flex-direction:column;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <strong style="font-size:14px;">Chọn Task liên quan (Bug / Task Function / Build)</strong>
+            <button type="button" class="btn btn-outline" style="padding:2px 8px;" onclick="closeModals()">✕</button>
+          </div>
+          <input class="form-control" id="pw-picker-q" type="search" placeholder="Tìm theo tên hoặc mã task..." style="margin-bottom:10px;" />
+          <div id="pw-picker-results" style="overflow-y:auto;max-height:400px;display:flex;flex-direction:column;gap:6px;"></div>
+        </div>
       </div>
     </section>
 
@@ -73,44 +333,28 @@
         <select class="form-control" id="at-module"><option value="">Tất cả module</option></select>
       </div>
       <div class="card">
-        <div class="card-header">
-          <span class="card-title">Tác vụ có thể tự động hóa (ghi lại khi khám phá module)</span>
-          <button class="btn btn-outline" id="at-reload" title="Lấy tác vụ mới nhất từ server, giữ nguyên kết quả đang hiển thị">↻ Làm mới</button>
-        </div>
         <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:8px;">
           Mỗi tác vụ có code Playwright. Code sinh ra dùng được ngay, người có quyền sửa được code ngay trong nút <b>Sửa</b>. Chỉ chạy trên Staging, tự chọn tài khoản theo vai trò, dữ liệu tạo ra có tiền tố <code>[AI TEST]</code>. Cần QA Launcher đang chạy trên máy bạn.
         </p>
         <div id="at-notice"></div>
-        <details id="at-lib" class="card" style="padding:8px 12px;margin-bottom:10px;">
-          <summary style="cursor:pointer;font-weight:600;font-size:12.5px;">Kho file test <span class="badge badge-blue" id="at-lib-count">0</span></summary>
-          <p style="font-size:11.5px;color:var(--text-subtle);margin:6px 0;">Tải file lên đây một lần (ảnh, PDF, Word, Excel, PowerPoint, txt, csv, zip; mỗi file tối đa 10 MB). Khi tác vụ cần đính kèm, bấm <b>Chọn file</b> trong mô tả bước rồi tick tên file là xong.</p>
-          <label class="btn btn-outline" style="cursor:pointer;display:inline-block;">Tải file lên kho<input type="file" id="at-lib-input" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.rtf,.zip" hidden></label>
-          <span id="at-lib-msg" style="font-size:11.5px;margin-left:8px;"></span>
-          <div id="at-lib-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;"></div>
-        </details>
         <div id="at-list"></div>
       </div>
     </section>
 
     <!-- TAB 4: KHO BUSINESS RULE -->
     <section class="tab-pane" id="pane-business-rules">
-      <div class="page-head"><h1>Kho Business Rule</h1><p>Rule nghiệp vụ đã trích xuất kèm trạng thái xác nhận.</p></div>
+      <div class="page-head"><h1>Kho Business Rule</h1><p>Rule nghiệp vụ được nhóm theo module.</p></div>
       <div class="card">
         <div class="card-header">
-          <span class="card-title">Kho Business Rule Haraworks</span>
           <span style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-primary" id="br-add" style="display:none;">+ Thêm rule</button>
-          <button class="btn btn-outline" id="br-refresh" style="display:none;" title="Nạp lại từ thư mục kb-snapshot trên máy chạy server (nơi Explore xuất rule)">⟳ Cập nhật rule từ kho</button>
-          <label class="btn btn-outline" id="br-import-l" style="display:none;cursor:pointer;" title="Chọn file gói rule do lệnh sync-business-rules --export tạo">Nhập file kho<input type="file" id="br-import" accept=".json,application/json" hidden></label>
           <a class="btn btn-outline" id="br-open-kb" href="#" target="_blank" rel="noopener">↗ Mở Kho Business Rule</a></span>
         </div>
         <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:8px;">
           Rule đồng bộ từ Kho Business Rule, kèm rule thêm hoặc sửa trực tiếp trên platform. AI dùng các rule này làm nguồn trích dẫn khi phân tích bug. <span id="br-synced"></span>
         </p>
-        <div id="br-refresh-msg" style="font-size:11.5px;margin-bottom:6px;"></div>
         <div class="filter-bar filter-toolbar br-toolbar">
           <input class="form-control" id="br-q" type="search" placeholder="Tìm theo mã, tên, nội dung..." />
           <select class="form-control" id="br-module"><option value="">Tất cả module</option></select>
-          <label class="filter-check"><input type="checkbox" id="br-confirmed" /> Chỉ hiện rule đã xác nhận</label>
         </div>
         <div id="br-count" style="font-size:11.5px;margin-bottom:6px;"></div>
         <div id="br-list"></div>
@@ -123,17 +367,13 @@
     <section class="tab-pane" id="pane-accounts">
       <div class="page-head"><h1>Tài Khoản &amp; Môi Trường</h1><p>Tài khoản test và môi trường; bấm để mở và tự đăng nhập.</p></div>
       <div class="card">
-        <div class="card-header">
-          <span class="card-title">Cấu Hình Môi Trường & Cổng Kiểm Tra Org Test (Org Confirmation Gate)</span>
-          <div style="display:flex;gap:6px;">
-            <button class="btn btn-outline" id="btn-add-env">+ Thêm Môi Trường</button>
-            <button class="btn btn-outline" id="btn-edit-env">✎ Sửa Link Môi Trường</button>
-          </div>
-        </div>
-
         <div class="form-group">
-          <label class="form-label">Chọn Môi Trường Kiểm Thử:</label>
-          <select class="form-control" id="select-env" style="font-weight:600;font-size:13px;"></select>
+          <label class="form-label" for="select-env">Chọn Môi Trường Kiểm Thử:</label>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <select class="form-control" id="select-env" style="font-weight:600;font-size:13px;flex:1;min-width:220px;"></select>
+            <button class="btn btn-outline" id="btn-add-env" style="white-space:nowrap;">+ Thêm Môi Trường</button>
+            <button class="btn btn-outline" id="btn-edit-env" style="white-space:nowrap;">✎ Sửa Link Môi Trường</button>
+          </div>
         </div>
 
         <!-- Ghi chú Production: hệ thống đã chặn bot -->
@@ -165,10 +405,8 @@
       <div class="page-head"><h1>Phân Tích Bug</h1><p>Mô tả bug, hệ thống tìm rule và bug cũ liên quan rồi gợi ý nguyên nhân.</p></div>
       <div class="card">
         <div class="card-header">
-          <span class="card-title">Phân Tích Bug: tự tìm rule và bug cũ liên quan</span>
           <span class="ba-head-actions">
             <button class="btn btn-primary" id="btn-pick-live-bug">Nạp từ bug realtime</button>
-            <button class="btn btn-outline" id="btn-load-sample-bug">📥 Nạp ví dụ</button>
           </span>
         </div>
         <div class="ba-picker" id="ba-picker" hidden>
@@ -212,6 +450,10 @@
             <div class="card-header"><span class="card-title">Bug cũ tương tự</span><span class="badge badge-amber" id="ba-bugs-count">0</span></div>
             <div id="ba-bugs"></div>
           </div>
+          <div class="card" style="margin-bottom:0;">
+            <div class="card-header"><span class="card-title">Task Function liên quan</span><span class="badge badge-blue" id="ba-functions-count">0</span></div>
+            <div id="ba-functions"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -223,24 +465,29 @@
       <div class="page-head"><h1>Tra Cứu Bug</h1><p>Tìm kiếm và xem lịch sử bug trên toàn bộ hệ thống.</p></div>
       <div class="card">
         <div class="card-header">
-          <span class="card-title">Tra cứu bug</span>
           <span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="badge badge-blue" id="bh-total"></span>
             <span class="badge badge-amber" id="bh-live" style="cursor:help;"></span>
-            <button class="btn btn-outline" id="bh-refresh" title="Lấy ngay từ Haraworks" style="padding:2px 8px;">⟳</button>
+            <span id="bh-refresh-status" class="bh-refresh-status" role="status" aria-live="polite"></span>
           </span>
         </div>
         <div class="bh-top">
           <input class="form-control" id="bh-q" type="search" placeholder="Tìm trong tiêu đề bug..." />
-          <button type="button" class="btn btn-outline" id="bh-filter-btn" aria-expanded="false" aria-controls="bh-filters">Bộ lọc <span class="badge badge-blue" id="bh-filter-n" hidden></span></button>
-          <select class="form-control" id="bh-sort" aria-label="Sắp xếp" title="Sắp xếp">
-            <option value="created">Mới tạo nhất</option>
-            <option value="updated">Cập nhật gần nhất</option>
-            <option value="priority">Ưu tiên cao trước</option>
-          </select>
+          <label class="bh-sort-control" title="Sắp xếp">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v18m0 0-4-4m4 4 4-4M16 21V3m0 0-4 4m4-4 4 4"></path></svg>
+            <select id="bh-sort" aria-label="Sắp xếp" title="Sắp xếp">
+              <option value="created">Mới nhất</option>
+              <option value="priority">Độ ưu tiên</option>
+            </select>
+          </label>
+          <button type="button" class="btn btn-outline" id="bh-filter-btn" aria-label="Bộ lọc" title="Bộ lọc" aria-expanded="false" aria-controls="bh-filters">
+            <svg class="bh-filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16l-6.5 7.5v5L10.5 20v-7.5L4 5z"></path></svg>
+            <span class="badge badge-blue bh-filter-count" id="bh-filter-n" hidden></span>
+          </button>
         </div>
         <div class="bh-filters-panel" id="bh-filters" aria-label="Bộ lọc bug" hidden>
           <div class="bhf-head"><b>Bộ lọc</b><button type="button" class="linkbtn" id="bh-filter-clear">Xóa bộ lọc</button></div>
+          <label class="filter-field"><span class="form-label">Dự án</span><select class="form-control" id="bh-project"><option value="">Tất cả dự án</option></select></label>
           <label class="filter-field"><span class="form-label">Module</span><select class="form-control" id="bh-module"><option value="">Tất cả module</option></select></label>
           <label class="filter-field"><span class="form-label">Trạng thái</span><select class="form-control" id="bh-st"><option value="">Mọi trạng thái</option></select></label>
           <label class="filter-field"><span class="form-label">Mở / đóng</span><select class="form-control" id="bh-cl"><option value="">Đang mở và đã đóng</option><option value="open">Đang mở</option><option value="closed">Đã đóng</option></select></label>
@@ -254,7 +501,10 @@
           <div class="bh-results">
             <div id="bh-count" style="font-size:11.5px;margin-bottom:6px;"></div>
             <div id="bh-list"></div>
-            <button class="btn btn-outline" id="bh-more" style="display:none;margin-top:8px;">Xem thêm 50 bug</button>
+            <div class="bh-pagination" id="bh-pagination">
+              <span id="bh-page-info" aria-live="polite"></span>
+              <div class="bh-page-nav" id="bh-page-nav"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -264,20 +514,316 @@
       </aside>
     </section>
 
-<!-- ===== TAB 6: PHÂN QUYỀN (chỉ quản trị viên) ===== -->
-    <section class="tab-pane" id="pane-users">
-      <div class="page-head"><h1>Phân Quyền</h1><p>Quản lý người dùng và quyền truy cập.</p></div>
+    <!-- ======================================================== -->
+    <!-- TAB 3B: TRA CỨU TASK FUNCTION (Realtime từ Haraworks)    -->
+    <!-- ======================================================== -->
+    <section class="tab-pane" id="pane-function-tasks">
+      <div class="page-head"><h1>Tra Cứu Task Function</h1><p>Tra cứu realtime toàn bộ task Function từ 01/01/2024 đến hiện tại của Super Team, Winx Team, Integrity Team và Team 1.</p></div>
       <div class="card">
         <div class="card-header">
-          <span class="card-title">Phân quyền người dùng</span>
-          <button class="btn btn-primary" id="u-add">+ Thêm người dùng</button>
+          <span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span class="badge badge-blue" id="fn-total"></span>
+            <span class="badge badge-amber" id="fn-live" style="cursor:help;"></span>
+            <span id="fn-refresh-status" class="bh-refresh-status" role="status" aria-live="polite"></span>
+          </span>
         </div>
-        <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:8px;">
-          Quản trị viên có mọi quyền. Thành viên chỉ làm được phần được cấp ở các ô bên dưới. Thay đổi có hiệu lực ngay, không cần khởi động lại server.
-          Token chỉ hiện <b>một lần</b> lúc tạo hoặc cấp mới; hãy gửi riêng cho người đó.
-        </p>
-        <div id="u-msg" style="font-size:12px;margin-bottom:6px;"></div>
-        <div style="overflow-x:auto;"><table class="qa-table" id="u-table"><thead><tr id="u-head"></tr></thead><tbody id="u-body"></tbody></table></div>
+        <div class="bh-top">
+          <input class="form-control" id="fn-q" type="search" placeholder="Tìm trong tiêu đề task Function..." />
+          <label class="bh-sort-control" title="Sắp xếp">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v18m0 0-4-4m4 4 4-4M16 21V3m0 0-4 4m4-4 4 4"></path></svg>
+            <select id="fn-sort" aria-label="Sắp xếp" title="Sắp xếp">
+              <option value="created">Mới nhất</option>
+              <option value="priority">Độ ưu tiên</option>
+              <option value="updated">Cập nhật gần nhất</option>
+            </select>
+          </label>
+          <button type="button" class="btn btn-outline" id="fn-filter-btn" aria-label="Bộ lọc" title="Bộ lọc" aria-expanded="false" aria-controls="fn-filters">
+            <svg class="bh-filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16l-6.5 7.5v5L10.5 20v-7.5L4 5z"></path></svg>
+            <span class="badge badge-blue bh-filter-count" id="fn-filter-n" hidden></span>
+          </button>
+        </div>
+        <div class="bh-filters-panel" id="fn-filters" aria-label="Bộ lọc task Function" hidden>
+          <div class="bhf-head"><b>Bộ lọc</b><button type="button" class="linkbtn" id="fn-filter-clear">Xóa bộ lọc</button></div>
+          <label class="filter-field"><span class="form-label">Team / Dự án</span><select class="form-control" id="fn-team"><option value="">Tất cả</option><option value="Super Team">Super Team</option><option value="Winx Team">Winx Team</option><option value="Integrity Team">Integrity Team</option><option value="Team 1">Team 1</option></select></label>
+          <label class="filter-field"><span class="form-label">Module</span><select class="form-control" id="fn-module"><option value="">Tất cả</option></select></label>
+          <label class="filter-field"><span class="form-label">Trạng thái</span><select class="form-control" id="fn-st"><option value="">Tất cả</option></select></label>
+          <label class="filter-field"><span class="form-label">Mở / đóng</span><select class="form-control" id="fn-cl"><option value="">Tất cả</option><option value="open">Đang mở</option><option value="closed">Đã đóng</option></select></label>
+          <label class="filter-field"><span class="form-label">Người thực hiện</span><select class="form-control" id="fn-as"><option value="">Tất cả</option></select></label>
+          <label class="filter-field"><span class="form-label">Thời gian tạo</span><select class="form-control" id="fn-age"><option value="week" selected>Tuần này</option><option value="month">Tháng này</option><option value="year_2026">Năm 2026</option><option value="year_2025">Năm 2025</option><option value="year_2024">Năm 2024</option><option value="">Tất cả</option></select></label>
+        </div>
+        <div class="bh-body">
+          <div class="bh-results">
+            <div id="fn-count" style="font-size:11.5px;margin-bottom:6px;"></div>
+            <div id="fn-list"></div>
+            <div class="bh-pagination" id="fn-pagination">
+              <span id="fn-page-info" aria-live="polite"></span>
+              <div class="bh-page-nav" id="fn-page-nav"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <aside id="fn-drawer" class="bh-drawer-panel" aria-label="Chi tiết task Function">
+        <div style="display:flex;justify-content:flex-end;padding:8px 10px;"><button class="btn btn-outline" id="fn-drawer-close">Đóng ✕</button></div>
+        <div id="fn-drawer-body" class="bh-drawer-content"></div>
+      </aside>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- TAB 3C: THEO DÕI BUILD / RELEASE (App Mobile & Function) -->
+    <!-- ======================================================== -->
+    <section class="tab-pane" id="pane-builds">
+      <div class="page-head"><h1>Theo Dõi Build / Release</h1><p>Danh sách realtime các đợt Build App Mobile (HRWs APP - RELEASE) và Build Task Function (HRWs - RELEASE CHECKLIST).</p></div>
+      <div class="card">
+        <div class="card-header">
+          <span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span class="badge badge-blue" id="bd-total"></span>
+            <span class="badge badge-amber" id="bd-live" style="cursor:help;"></span>
+            <span id="bd-refresh-status" class="bh-refresh-status" role="status" aria-live="polite"></span>
+          </span>
+        </div>
+        <div class="bh-top">
+          <input class="form-control" id="bd-q" type="search" placeholder="Tìm tên đợt build, mã build hoặc bug/function bên trong..." />
+          <label class="bh-sort-control" title="Sắp xếp">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v18m0 0-4-4m4 4 4-4M16 21V3m0 0-4 4m4-4 4 4"></path></svg>
+            <select id="bd-sort" aria-label="Sắp xếp" title="Sắp xếp">
+              <option value="created">Mới nhất</option>
+              <option value="priority">Độ ưu tiên</option>
+              <option value="updated">Cập nhật gần nhất</option>
+            </select>
+          </label>
+          <button type="button" class="btn btn-outline" id="bd-filter-btn" aria-label="Bộ lọc" title="Bộ lọc" aria-expanded="false" aria-controls="bd-filters">
+            <svg class="bh-filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16l-6.5 7.5v5L10.5 20v-7.5L4 5z"></path></svg>
+            <span class="badge badge-blue bh-filter-count" id="bd-filter-n" hidden></span>
+          </button>
+        </div>
+        <div class="bh-filters-panel" id="bd-filters" aria-label="Bộ lọc đợt build" hidden>
+          <div class="bhf-head"><b>Bộ lọc</b><button type="button" class="linkbtn" id="bd-filter-clear">Xóa bộ lọc</button></div>
+          <label class="filter-field"><span class="form-label">Dự án</span><select class="form-control" id="bd-project"><option value="">Tất cả dự án</option></select></label>
+          <label class="filter-field"><span class="form-label">Loại Build</span><select class="form-control" id="bd-kind"><option value="">Tất cả</option><option value="app">Build App Mobile</option><option value="function">Build Task Function</option></select></label>
+          <label class="filter-field"><span class="form-label">Trạng thái</span><select class="form-control" id="bd-st"><option value="">Tất cả</option></select></label>
+          <label class="filter-field"><span class="form-label">Mở / đóng</span><select class="form-control" id="bd-cl"><option value="">Tất cả</option><option value="open">Đang mở</option><option value="closed">Đã đóng</option></select></label>
+          <label class="filter-field"><span class="form-label">Người thực hiện</span><select class="form-control" id="bd-as"><option value="">Tất cả</option></select></label>
+          <label class="filter-field"><span class="form-label">Năm</span><select class="form-control" id="bd-year"><option value="">Tất cả</option></select></label>
+        </div>
+        <div class="bh-body">
+          <div class="bh-results">
+            <div id="bd-count" style="font-size:11.5px;margin-bottom:6px;"></div>
+            <div id="bd-list"></div>
+            <div class="bh-pagination" id="bd-pagination">
+              <span id="bd-page-info" aria-live="polite"></span>
+              <div class="bh-page-nav" id="bd-page-nav"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <aside id="bd-drawer" class="bh-drawer-panel" aria-label="Chi tiết đợt build">
+        <div style="display:flex;justify-content:flex-end;padding:8px 10px;"><button class="btn btn-outline" id="bd-drawer-close">Đóng ✕</button></div>
+        <div id="bd-drawer-body" class="bh-drawer-content"></div>
+      </aside>
+    </section>
+
+<!-- ===== TAB CÀI ĐẶT TỔNG HỢP ===== -->
+    <section class="tab-pane" id="pane-settings">
+      <div class="page-head">
+        <h1>Cài Đặt Hệ Thống &amp; Cá Nhân</h1>
+        <p>Quản lý tài khoản cá nhân, cấu hình chung (Module &amp; Trạng thái), Pet trợ lý và Phân quyền quản trị.</p>
+      </div>
+      <div class="settings-layout">
+        <div class="settings-nav" role="tablist" aria-label="Menu Cài Đặt">
+          <button type="button" class="settings-nav-btn active" data-st-tab="st-sub-account" title="Cài đặt Avatar, Tên, Biệt danh, Vai trò, Ngày tham gia, Mã nhân viên, Token Haraworks & Mật khẩu">Tài khoản</button>
+          <button type="button" class="settings-nav-btn" data-st-tab="st-sub-general" title="Thêm, sửa, xóa và đổi màu cho Module, Trạng thái & Dự án">Chung (Module, Trạng thái &amp; Dự án)</button>
+          <button type="button" class="settings-nav-btn" data-st-tab="st-sub-pet" title="Bật/tắt Pet, chỉnh màu, thời gian đổi hành động và nhiều mốc giờ nhắc nhở">Pet</button>
+          <button type="button" class="settings-nav-btn" data-st-tab="st-sub-permissions" id="st-nav-permissions" style="display:none;" title="Quản lý danh sách thành viên, mật khẩu và phân quyền (chỉ Admin)">Phân quyền</button>
+        </div>
+        <div>
+          <!-- 1. TÀI KHOẢN CÁ NHÂN -->
+          <div class="settings-subpane active" id="st-sub-account">
+            <div class="card">
+              <div class="card-header"><span class="card-title">Thông tin Tài khoản Cá nhân</span></div>
+              <div class="st-avatar-box">
+                <label class="st-avatar-preview" id="st-avatar-preview" for="st-avatar-file" title="Nhấn vào hình tròn để chọn & lưu Avatar mới" style="cursor:pointer;">QC</label>
+                <input type="file" id="st-avatar-file" accept="image/*" style="display:none;" />
+                <div>
+                  <div style="font-size:12.5px;font-weight:600;">Nhấn trực tiếp vào hình tròn để đổi Avatar</div>
+                  <div style="font-size:11px;color:var(--text-subtle);margin-top:2px;">Lưu riêng cho tài khoản của bạn. <button type="button" class="linkbtn" id="st-avatar-clear" style="font-size:11px;">Xóa ảnh</button></div>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+                <div class="form-group">
+                  <label class="form-label" for="st-display-name">Tên hiển thị (trên Haraworks):</label>
+                  <input class="form-control" id="st-display-name" maxlength="80" placeholder="VD: Nguyễn Thị Tuyết Nhung" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="st-nickname">Biệt danh:</label>
+                  <input class="form-control" id="st-nickname" maxlength="60" placeholder="VD: Nhung QC" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="st-job-title">Vai trò / Chức danh:</label>
+                  <input class="form-control" id="st-job-title" maxlength="80" placeholder="VD: QC Lead / QC Engineer" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="st-joined-at">Ngày tham gia:</label>
+                  <input type="date" class="form-control" id="st-joined-at" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="st-employee-code">Mã nhân viên Haraworks <span style="color:var(--primary);">*</span>:</label>
+                  <input class="form-control" id="st-employee-code" maxlength="60" placeholder="VD: SC021943" style="font-weight:600;" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="st-new-password">Đổi mật khẩu mới (bỏ trống nếu không đổi):</label>
+                  <div class="pw-wrap">
+                    <input type="password" class="form-control" id="st-new-password" placeholder="Nhập mật khẩu mới từ 4 ký tự..." autocomplete="new-password" />
+                    <button type="button" class="pw-eye-btn" id="st-toggle-pw" title="Hiện / Ẩn mật khẩu">👁</button>
+                  </div>
+                </div>
+              </div>
+              <div class="form-group" id="st-token-group" style="margin-top:6px;">
+                <label class="form-label" for="st-haraworks-token">Token / Cookie Haraworks (Realtime):</label>
+                <div class="pw-wrap">
+                  <input type="password" class="form-control" id="st-haraworks-token" placeholder="Dán cookie/token Haraworks vào đây..." autocomplete="off" />
+                  <button type="button" class="pw-eye-btn" id="st-toggle-token" title="Hiện / Ẩn token">👁</button>
+                </div>
+                <small style="color:var(--text-subtle);font-size:11px;display:block;margin-top:3px;">
+                  Dùng để tự động đồng bộ Bug, Task Function, Release và Thông báo realtime. Token được ẩn hoàn toàn và không lưu vào Git hay cơ sở dữ liệu.
+                </small>
+              </div>
+              <div id="st-account-msg" style="font-size:12px;margin:8px 0;"></div>
+              <button type="button" class="btn btn-primary" id="st-account-save">Lưu thông tin Tài khoản</button>
+            </div>
+          </div>
+
+          <!-- 2. CHUNG: MODULE & TRẠNG THÁI -->
+          <div class="settings-subpane" id="st-sub-general">
+            <div class="card">
+              <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                <span class="card-title">Quản lý Module (Thêm, Sửa, Xóa &amp; Màu sắc)</span>
+                <button type="button" class="btn btn-primary" id="st-general-save">Lưu cấu hình Chung</button>
+              </div>
+              <div id="st-general-msg" style="font-size:12px;margin-bottom:8px;"></div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end;">
+                <div>
+                  <label class="form-label">Mã viết tắt</label>
+                  <input class="form-control" id="st-new-mod-code" placeholder="VD: CORE" style="width:110px;text-transform:uppercase;" />
+                </div>
+                <div style="flex:1;min-width:160px;">
+                  <label class="form-label">Tên Module</label>
+                  <input class="form-control" id="st-new-mod-name" placeholder="VD: CORE" />
+                </div>
+                <div>
+                  <label class="form-label">Màu nhãn</label>
+                  <input type="color" id="st-new-mod-color" value="#3b82f6" style="width:42px;height:34px;padding:2px;border:1px solid var(--border);border-radius:6px;" />
+                </div>
+                <button type="button" class="btn btn-outline" id="st-add-mod-btn">+ Thêm Module</button>
+              </div>
+              <div style="max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:8px;">
+                <table class="st-table">
+                  <thead><tr><th style="width:110px;">Mã</th><th>Tên hiển thị</th><th style="width:76px;">Màu</th><th style="width:70px;">Xóa</th></tr></thead>
+                  <tbody id="st-mod-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card" style="margin-top:14px;">
+              <div class="card-header"><span class="card-title">Quản lý Trạng thái (Thêm, Sửa, Xóa &amp; Màu sắc)</span></div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end;">
+                <div>
+                  <label class="form-label">Mã số / ID</label>
+                  <input class="form-control" id="st-new-st-code" placeholder="VD: 12" style="width:100px;" />
+                </div>
+                <div style="flex:1;min-width:160px;">
+                  <label class="form-label">Tên trạng thái</label>
+                  <input class="form-control" id="st-new-st-name" placeholder="VD: Đang kiểm thử" />
+                </div>
+                <div>
+                  <label class="form-label">Màu nhãn</label>
+                  <input type="color" id="st-new-st-color" value="#2563eb" style="width:42px;height:34px;padding:2px;border:1px solid var(--border);border-radius:6px;" />
+                </div>
+                <button type="button" class="btn btn-outline" id="st-add-st-btn">+ Thêm Trạng thái</button>
+              </div>
+              <div style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:8px;">
+                <table class="st-table">
+                  <thead><tr><th style="width:100px;">Mã</th><th>Tên trạng thái</th><th style="width:76px;">Màu</th><th style="width:70px;">Xóa</th></tr></thead>
+                  <tbody id="st-status-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card" style="margin-top:14px;">
+              <div class="card-header"><span class="card-title">Quản lý màu Dự án / Team (đồng bộ mọi tab)</span></div>
+              <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:8px;">Màu dòng task trong Tra Cứu Bug, Tra Cứu Task Function và Theo Dõi Build sẽ dùng chung bảng màu dự án dưới đây.</p>
+              <div style="max-height:260px;overflow:auto;border:1px solid var(--border);border-radius:8px;">
+                <table class="st-table">
+                  <thead><tr><th>Tên Dự án / Team</th><th style="width:76px;">Màu dòng</th></tr></thead>
+                  <tbody id="st-project-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. PET CÁ NHÂN -->
+          <div class="settings-subpane" id="st-sub-pet">
+            <div class="card">
+              <div class="card-header"><span class="card-title">🐾 Cấu hình Pet trợ lý cá nhân</span></div>
+              <p style="font-size:12px;color:var(--text-subtle);margin-bottom:12px;">Cấu hình riêng cho tài khoản của bạn. Tắt hiển thị tại nút ✕ trên con Pet và bật lại bất cứ lúc nào tại đây.</p>
+              <div class="form-group">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:13px;">
+                  <input type="checkbox" id="st-pet-visible" checked />
+                  <span>Hiển thị con Pet trên màn hình</span>
+                </label>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;">
+                <div class="form-group">
+                  <label class="form-label" for="st-pet-color">Màu lông của Pet:</label>
+                  <div style="display:flex;gap:8px;align-items:center;">
+                    <select class="form-control" id="st-pet-color" style="flex:1;">
+                      <option value="amber">Vàng cam (Mặc định)</option>
+                      <option value="gray">Xám khói</option>
+                      <option value="white">Trắng tuyết</option>
+                      <option value="black">Đen than</option>
+                      <option value="pink">Hồng pastel</option>
+                      <option value="mint">Xanh mint</option>
+                      <option value="purple">Tím lavender</option>
+                      <option value="custom">Tự chọn màu...</option>
+                    </select>
+                    <input type="color" id="st-pet-color-hex" value="#fde68a" style="width:36px;height:34px;padding:2px;border:1px solid var(--border);border-radius:6px;cursor:pointer;display:none;" />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="st-pet-interval">Tự động đổi hành động sau (giây):</label>
+                  <input type="number" class="form-control" id="st-pet-interval" min="0" max="3600" step="5" value="45" placeholder="45 (0 = tắt)" />
+                </div>
+              </div>
+              <div class="form-group" style="margin-top:8px;">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:12.5px;margin-bottom:8px;">
+                  <input type="checkbox" id="st-pet-reminder-enabled" checked />
+                  <span>Bật nhắc nhở tự động trong ngày</span>
+                </label>
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+                  <input type="time" class="form-control" id="st-pet-add-time" value="16:30" style="width:120px;" />
+                  <button type="button" class="btn btn-outline" id="st-pet-add-time-btn">+ Thêm mốc giờ nhắc nhở</button>
+                </div>
+                <div id="st-pet-times-list" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+              </div>
+              <div id="st-pet-msg" style="font-size:12px;margin:8px 0;"></div>
+              <button type="button" class="btn btn-primary" id="st-pet-save">Lưu cấu hình Pet</button>
+            </div>
+          </div>
+
+          <!-- 4. PHÂN QUYỀN (CHỈ QUẢN TRỊ VIÊN) -->
+          <div class="settings-subpane" id="st-sub-permissions">
+            <div class="card">
+              <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+                <span class="card-title">Quản lý Tài khoản &amp; Phân Quyền</span>
+                <button class="btn btn-primary" id="u-add">+ Thêm người dùng</button>
+              </div>
+              <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:8px;">
+                Quản trị viên có mọi quyền. Thành viên chỉ làm được phần được cấp ở các ô bên dưới. Người dùng đăng nhập bằng <b>Tài khoản</b> và <b>Mật khẩu</b>.
+              </p>
+              <div id="u-msg" style="font-size:12px;margin-bottom:6px;"></div>
+              <div style="overflow-x:auto;"><table class="qa-table" id="u-table"><thead><tr id="u-head"></tr></thead><tbody id="u-body"></tbody></table></div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -338,8 +884,8 @@
         <button class="btn btn-outline" style="padding:2px 8px;" onclick="closeModals()">✕</button>
       </div>
       <div class="form-group">
-        <label class="form-label">Tên người dùng / Chủ tài khoản:</label>
-        <input type="text" class="form-control" id="acc-name-input" placeholder="VD: Lê Vĩnh Ngọc Châu (Kỹ thuật)" required />
+        <label class="form-label">Tên người dùng / Chủ tài khoản (để trống sẽ dùng Username):</label>
+        <input type="text" class="form-control" id="acc-name-input" placeholder="VD: Lê Vĩnh Ngọc Châu" />
       </div>
       <div class="form-group">
         <label class="form-label">Vai trò (Role):</label>
@@ -365,38 +911,29 @@
     </div>
   </div>
 
-  <!-- Modal: Đặt mật khẩu cho tài khoản -->
-  <div class="modal-overlay" id="modal-secret">
-    <div class="modal-content" style="max-width:420px;">
+  <!-- Modal: Sửa tài khoản, link và mật khẩu -->
+  <div class="modal-overlay" id="modal-account-edit">
+    <div class="modal-content" style="max-width:680px;max-height:92vh;overflow:auto;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <strong style="font-size:14px;" id="secret-title">Đặt mật khẩu</strong>
+        <strong style="font-size:14px;">Sửa tài khoản</strong>
         <button class="btn btn-outline" style="padding:2px 8px;" onclick="closeModals()">✕</button>
       </div>
-      <input type="hidden" id="secret-account-id" />
-      <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:8px;">Mật khẩu được mã hóa (AES-256-GCM, khóa bọc bằng Windows DPAPI) và chỉ dùng cho đăng nhập tự động. Không hiển thị lại được, chỉ ghi đè hoặc xóa.</p>
-      <div class="form-group"><label class="form-label">Mật khẩu mới:</label>
-        <input type="password" class="form-control" id="secret-input" autocomplete="new-password" /></div>
-      <div style="display:flex;gap:8px;">
-        <button class="btn btn-primary" id="btn-save-secret" style="flex:1;">Lưu mật khẩu</button>
-        <button class="btn btn-outline" id="btn-delete-secret" style="color:var(--danger);">Xóa mật khẩu đã lưu</button>
+      <input type="hidden" id="account-edit-id" />
+      <div class="form-group"><label class="form-label" for="account-edit-name">Tên người dùng</label><input class="form-control" id="account-edit-name" /></div>
+      <div class="filter-bar" style="grid-template-columns:1fr 1fr;">
+        <div class="form-group"><label class="form-label" for="account-edit-role">Vai trò</label><input class="form-control" id="account-edit-role" /></div>
+        <div class="form-group"><label class="form-label" for="account-edit-username">Username</label><input class="form-control" id="account-edit-username" /></div>
       </div>
-      <div id="secret-msg" style="font-size:11.5px;margin-top:8px;"></div>
-    </div>
-  </div>
-
-
-  <!-- Modal: Sửa link (route) của tài khoản -->
-  <div class="modal-overlay" id="modal-routes">
-    <div class="modal-content" style="max-width:640px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <strong style="font-size:14px;" id="routes-title">Sửa link</strong>
-        <button class="btn btn-outline" style="padding:2px 8px;" onclick="closeModals()">✕</button>
+      <div class="form-group"><label class="form-label" for="account-edit-routes">Danh sách link (mỗi dòng: Tên | https://...)</label>
+        <textarea class="form-control" id="account-edit-routes" rows="5" style="font-family:monospace;font-size:12px;"></textarea></div>
+      <div id="account-edit-secret-group">
+        <p id="account-edit-secret-status" style="font-size:11.5px;color:var(--text-subtle);margin-bottom:6px;"></p>
+        <div class="form-group"><label class="form-label" for="account-edit-password">Mật khẩu mới (để trống để giữ nguyên)</label>
+          <input type="password" class="form-control" id="account-edit-password" autocomplete="new-password" /></div>
+        <label style="display:flex;align-items:center;gap:7px;font-size:12px;"><input type="checkbox" id="account-edit-clear-secret" /> Xóa mật khẩu đã lưu</label>
       </div>
-      <input type="hidden" id="routes-account-id" />
-      <p style="font-size:11.5px;color:var(--text-subtle);margin-bottom:8px;">Mỗi dòng một link, dạng <code>Tên | https://...</code> (tên có thể bỏ trống, hoặc chỉ ghi đường dẫn bắt đầu bằng <code>/</code>). Link phải là https và cùng tên miền với môi trường. Link đầu tiên là mặc định.</p>
-      <textarea class="form-control" id="routes-text" rows="8" style="font-family:monospace;font-size:12px;"></textarea>
-      <button class="btn btn-primary" id="btn-save-routes" style="width:100%;margin-top:10px;">Lưu danh sách link</button>
-      <div id="routes-msg" style="font-size:11.5px;margin-top:8px;color:var(--danger);"></div>
+      <button class="btn btn-primary" id="btn-save-account-edit" style="width:100%;margin-top:12px;">Lưu thay đổi</button>
+      <div id="account-edit-message" role="status" style="font-size:11.5px;margin-top:8px;"></div>
     </div>
   </div>
 
@@ -460,6 +997,99 @@
     </div>
   </div>
 
+  <!-- ===== MODAL: DANH SÁCH TASK THEO THẺ KPI ===== -->
+  <div class="modal-overlay" id="modal-kpi-tasks">
+    <div class="modal-content" style="max-width:760px;max-height:85vh;display:flex;flex-direction:column;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <strong style="font-size:15px;" id="kpi-modal-title">Danh sách công việc</strong>
+        <button class="btn btn-outline" style="padding:2px 8px;" onclick="closeModals()">✕</button>
+      </div>
+      <div id="kpi-modal-body" style="overflow-y:auto;flex:1;padding-right:4px;"></div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: CÀI ĐẶT TÀI KHOẢN CÁ NHÂN ===== -->
+  <div class="modal-overlay" id="modal-user-settings">
+    <div class="modal-content" style="max-width:480px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <strong style="font-size:15px;">⚙ Cài Đặt Tài Khoản Cá Nhân</strong>
+        <button class="btn btn-outline" style="padding:2px 8px;" onclick="closeModals()">✕</button>
+      </div>
+      <p style="font-size:12px;color:var(--text-subtle);margin-bottom:12px;">
+        Nhập tách riêng <b>Tên</b> và <b>Mã nhân viên</b> trên Haraworks để hệ thống tự động lọc toàn bộ Task/Bug của bạn vào Dashboard Kanban, Gantt chart và nhắc báo cáo đúng 16:30.
+      </p>
+      <div class="form-group">
+        <label class="form-label" for="us-display-name">Tên (hiển thị / tên trên Haraworks):</label>
+        <input class="form-control" id="us-display-name" maxlength="80" placeholder="VD: Nguyễn Thị Tuyết Nhung" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="us-employee-code">
+          Mã nhân viên: <span style="color:var(--primary);font-weight:600;">*</span>
+        </label>
+        <input class="form-control" id="us-employee-code" maxlength="60" placeholder="VD: SC021943" style="font-weight:600;" />
+        <small style="color:var(--text-subtle);font-size:11px;display:block;margin-top:3px;">Dùng để đối soát chính xác Mã nhân viên (hr_Id) của Người thực hiện trên Haraworks.</small>
+      </div>
+      <div class="form-group" id="us-token-group">
+        <label class="form-label" for="us-haraworks-token">
+          Token / Cookie Haraworks (Realtime):
+        </label>
+        <div class="pw-wrap">
+          <input type="password" class="form-control" id="us-haraworks-token" placeholder="Dán cookie/token Haraworks vào đây..." autocomplete="off" style="padding-right:38px;" />
+          <button type="button" class="pw-eye-btn" id="us-toggle-token" title="Hiện / Ẩn token" aria-label="Hiện hoặc ẩn token">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        <small id="us-token-hint" style="color:var(--text-subtle);font-size:11px;display:block;margin-top:3px;">
+          Dùng để tự động đồng bộ Bug, Task Function, Release và Thông báo realtime. Token được ẩn hoàn toàn và không lưu vào Git hay cơ sở dữ liệu.
+        </small>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="us-new-password">Đổi mật khẩu mới (bỏ trống nếu không đổi):</label>
+        <input type="password" class="form-control" id="us-new-password" placeholder="Nhập mật khẩu mới từ 4 ký tự..." autocomplete="new-password" />
+      </div>
+      <div id="us-pet-section" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        <div style="font-weight:700;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+          <span>🐾 Cấu hình Pet cá nhân</span>
+          <span style="font-weight:400;font-size:11px;color:var(--text-subtle);">(lưu riêng theo từng tài khoản)</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div class="form-group" style="margin-bottom:6px;">
+            <label class="form-label" for="us-pet-color">Màu của Pet:</label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <select class="form-control" id="us-pet-color" style="flex:1;">
+                <option value="amber">Vàng cam (Mặc định)</option>
+                <option value="gray">Xám khói</option>
+                <option value="white">Trắng tuyết</option>
+                <option value="black">Đen than</option>
+                <option value="pink">Hồng pastel</option>
+                <option value="mint">Xanh mint</option>
+                <option value="purple">Tím lavender</option>
+                <option value="custom">Tự chọn màu...</option>
+              </select>
+              <input type="color" id="us-pet-color-hex" value="#fde68a" title="Chọn màu lông tùy chỉnh" style="width:34px;height:32px;padding:2px;border:1px solid var(--border);border-radius:6px;cursor:pointer;display:none;" />
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:6px;">
+            <label class="form-label" for="us-pet-interval">Đổi hành động sau (giây):</label>
+            <input type="number" class="form-control" id="us-pet-interval" min="0" max="3600" step="5" value="45" placeholder="45 (0 = tắt)" />
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:4px;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+            <input type="checkbox" id="us-pet-reminder-enabled" checked />
+            <span>Nhắc nhở hằng ngày lúc:</span>
+          </label>
+          <input type="time" class="form-control" id="us-pet-reminder-time" value="16:30" style="width:110px;padding:4px 8px;" />
+        </div>
+      </div>
+      <div id="us-msg" style="font-size:12px;margin:6px 0;"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="btn btn-primary" id="us-save" style="flex:1;">Lưu thiết lập</button>
+        <button class="btn btn-outline" onclick="closeModals()">Đóng</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== MODAL: THÊM NGƯỜI DÙNG ===== -->
   <div class="modal-overlay" id="modal-newuser">
     <div class="modal-content" style="max-width:520px;">
@@ -467,24 +1097,35 @@
         <strong style="font-size:14px;">Thêm người dùng</strong>
         <button class="btn btn-outline" style="padding:2px 8px;" onclick="closeModals()">✕</button>
       </div>
-      <div class="form-group"><label class="form-label">Tên hiển thị:</label><input class="form-control" id="nu-name" maxlength="80" /></div>
+      <div class="form-group"><label class="form-label">Tên hiển thị:</label><input class="form-control" id="nu-name" maxlength="80" placeholder="VD: Nhung" /></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="form-group"><label class="form-label">Tài khoản đăng nhập (Username):</label><input class="form-control" id="nu-username" maxlength="50" placeholder="VD: nhung (để trống tự lấy theo tên)" /></div>
+        <div class="form-group"><label class="form-label">Mật khẩu:</label><input type="password" class="form-control" id="nu-password" maxlength="80" placeholder="Mặc định: 123456" /></div>
+      </div>
+      <div class="form-group"><label class="form-label">Mã nhân viên:</label><input class="form-control" id="nu-emp-code" maxlength="60" placeholder="VD: SC021943" /></div>
       <div class="form-group"><label class="form-label">Vai trò:</label>
         <select class="form-control" id="nu-role"><option value="member">Thành viên</option><option value="admin">Quản trị viên (mọi quyền)</option></select></div>
       <div class="form-group" id="nu-perms"></div>
-      <button class="btn btn-primary" id="nu-save" style="width:100%;">Tạo và lấy token</button>
+      <button class="btn btn-primary" id="nu-save" style="width:100%;">Tạo tài khoản</button>
       <div id="nu-msg" style="font-size:12px;margin-top:8px;color:var(--danger);"></div>
     </div>
   </div>
 
-  <!-- ===== MODAL: HIỂN THỊ TOKEN (một lần) ===== -->
+  <!-- ===== MODAL: ĐỔI MẬT KHẨU NGƯỜI DÙNG ===== -->
   <div class="modal-overlay" id="modal-token">
-    <div class="modal-content" style="max-width:520px;">
-      <strong style="font-size:14px;" id="tk-title">Token</strong>
-      <p style="font-size:12px;margin:8px 0;">Token chỉ hiện <b>một lần</b>. Sao chép và gửi riêng cho người đó, đừng dán vào nơi công khai. Không lưu lại được: nếu mất phải cấp token mới.</p>
-      <input class="form-control" id="tk-value" readonly style="font-family:monospace;" />
+    <div class="modal-content" style="max-width:460px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <strong style="font-size:14px;" id="tk-title">Đổi mật khẩu</strong>
+        <button class="btn btn-outline" style="padding:2px 8px;" onclick="closeModals()">✕</button>
+      </div>
+      <input type="hidden" id="pw-uid" />
+      <div class="form-group"><label class="form-label">Tài khoản đăng nhập (Username):</label><input class="form-control" id="pw-username" maxlength="50" /></div>
+      <div class="form-group"><label class="form-label">Mã nhân viên:</label><input class="form-control" id="pw-emp-code" maxlength="60" placeholder="VD: SC021943" /></div>
+      <div class="form-group"><label class="form-label">Mật khẩu mới (tối thiểu 4 ký tự):</label><input type="password" class="form-control" id="tk-value" placeholder="Nhập mật khẩu mới..." /></div>
+      <div id="pw-msg" style="font-size:12px;color:var(--danger);margin-bottom:8px;"></div>
       <div style="display:flex;gap:8px;margin-top:10px;">
-        <button class="btn btn-primary" id="tk-copy" style="flex:1;">Sao chép token</button>
-        <button class="btn btn-outline" onclick="closeModals()">Đã lưu, đóng</button>
+        <button class="btn btn-primary" id="tk-copy" style="flex:1;">Lưu mật khẩu mới</button>
+        <button class="btn btn-outline" onclick="closeModals()">Hủy</button>
       </div>
     </div>
   </div>
@@ -512,6 +1153,73 @@
 
   <script src="help-content.js"></script>
   <script src="app.js"></script>
+  <button type="button" id="btn-scroll-top" class="scroll-top-btn" title="Lên đầu trang" aria-label="Lên đầu trang" hidden>↑</button>
+  <button type="button" id="qa-pet-restore" class="qa-pet-restore" title="Gọi bé Pet ra" aria-label="Hiện Pet" hidden>🐾</button>
+  <div id="qa-pet-widget" class="qa-pet-widget mode-typing" hidden>
+    <div class="qa-pet-bubble" id="qa-pet-bubble" hidden>
+      <div class="qa-pet-bubble-text" id="qa-pet-bubble-text"></div>
+      <div class="qa-pet-bubble-actions">
+        <button type="button" class="linkbtn" id="qa-pet-bubble-open">Xem ngay</button>
+        <button type="button" class="linkbtn" id="qa-pet-bubble-close" style="color:var(--text-subtle);">Đóng</button>
+      </div>
+    </div>
+    <div class="qa-pet-toolbar">
+      <button type="button" id="qa-pet-smaller" title="Thu nhỏ">−</button>
+      <button type="button" id="qa-pet-larger" title="Phóng to">+</button>
+      <button type="button" id="qa-pet-hide" title="Tắt hiển thị Pet (vào Cài Đặt → Pet để mở lại)">✕</button>
+    </div>
+    <div class="qa-pet-stage" id="qa-pet-stage" title="Kéo để di chuyển · Bấm để đổi hành động">
+      <div class="qa-pet-fx qa-pet-notes" aria-hidden="true"><span>♪</span><span>♫</span><span>♩</span></div>
+      <div class="qa-pet-fx qa-pet-stars" aria-hidden="true"><span>✦</span><span>★</span><span>✧</span></div>
+      <svg class="qa-pet-svg" viewBox="0 0 120 110" width="96" height="88" aria-hidden="true">
+        <ellipse class="pet-shadow" cx="60" cy="100" rx="34" ry="6" fill="rgba(49,92,140,0.16)"/>
+        <g class="pet-body-group">
+          <!-- Đuôi -->
+          <path class="pet-tail" d="M84 78 Q104 68 98 52 Q95 45 90 52" fill="none" stroke="var(--pet-tail, #f59e0b)" stroke-width="6" stroke-linecap="round"/>
+          <!-- Thân -->
+          <ellipse cx="60" cy="72" rx="25" ry="22" fill="var(--pet-fur, #fde68a)" stroke="var(--pet-stroke, #d97706)" stroke-width="2.5"/>
+          <ellipse cx="60" cy="76" rx="15" ry="13" fill="var(--pet-belly, #fffbeb)"/>
+          <!-- Tai -->
+          <path d="M36 42 L31 18 L50 32 Z" fill="var(--pet-fur, #fde68a)" stroke="var(--pet-stroke, #d97706)" stroke-width="2.5" stroke-linejoin="round"/>
+          <path d="M84 42 L89 18 L70 32 Z" fill="var(--pet-fur, #fde68a)" stroke="var(--pet-stroke, #d97706)" stroke-width="2.5" stroke-linejoin="round"/>
+          <path d="M37 37 L35 24 L46 32 Z" fill="var(--pet-ear-in, #fda4af)"/>
+          <path d="M83 37 L85 24 L74 32 Z" fill="var(--pet-ear-in, #fda4af)"/>
+          <!-- Đầu -->
+          <ellipse cx="60" cy="45" rx="26" ry="21" fill="var(--pet-head, #fef3c7)" stroke="var(--pet-stroke, #d97706)" stroke-width="2.5"/>
+          <!-- Má hồng -->
+          <ellipse cx="43" cy="50" rx="4.5" ry="2.6" fill="#fda4af" opacity="0.8"/>
+          <ellipse cx="77" cy="50" rx="4.5" ry="2.6" fill="#fda4af" opacity="0.8"/>
+          <!-- Mắt bình thường / vui -->
+          <g class="pet-eyes-normal">
+            <circle cx="49" cy="44" r="3.4" fill="#1e293b"/>
+            <circle cx="50.2" cy="42.8" r="1.1" fill="#fff"/>
+            <circle cx="71" cy="44" r="3.4" fill="#1e293b"/>
+            <circle cx="72.2" cy="42.8" r="1.1" fill="#fff"/>
+          </g>
+          <!-- Mắt nhắm phiêu (khi hát) -->
+          <g class="pet-eyes-happy">
+            <path d="M45 44 Q49 39 53 44" fill="none" stroke="#1e293b" stroke-width="2.2" stroke-linecap="round"/>
+            <path d="M67 44 Q71 39 75 44" fill="none" stroke="#1e293b" stroke-width="2.2" stroke-linecap="round"/>
+          </g>
+          <!-- Miệng -->
+          <path class="pet-mouth-normal" d="M56 50 Q60 54 64 50" fill="none" stroke="var(--pet-stroke, #92400e)" stroke-width="2" stroke-linecap="round"/>
+          <ellipse class="pet-mouth-sing" cx="60" cy="52" rx="4" ry="5" fill="#fb7185" stroke="#9f1239" stroke-width="1.5"/>
+          <!-- Mũi -->
+          <polygon points="58,47 62,47 60,49.5" fill="#f43f5e"/>
+          <!-- Tay trái & phải -->
+          <ellipse class="pet-arm-l" cx="38" cy="70" rx="7" ry="11" transform="rotate(20 38 70)" fill="var(--pet-fur, #fde68a)" stroke="var(--pet-stroke, #d97706)" stroke-width="2.2"/>
+          <ellipse class="pet-arm-r" cx="82" cy="70" rx="7" ry="11" transform="rotate(-20 82 70)" fill="var(--pet-fur, #fde68a)" stroke="var(--pet-stroke, #d97706)" stroke-width="2.2"/>
+        </g>
+        <!-- Laptop mini (hiện khi ngồi bấm máy tính) -->
+        <g class="pet-laptop">
+          <rect x="36" y="79" width="48" height="22" rx="3" fill="#334155" stroke="#1e293b" stroke-width="2"/>
+          <rect x="40" y="82" width="40" height="14" rx="1.5" fill="#bae6fd"/>
+          <circle class="pet-screen-glow" cx="60" cy="89" r="3" fill="#0284c7" opacity="0.6"/>
+          <rect x="30" y="99" width="60" height="4" rx="2" fill="#64748b"/>
+        </g>
+      </svg>
+    </div>
+  </div>
   <div id="bh-lightbox" class="bh-lightbox" hidden><img alt="Xem ảnh"></div>
 </body>
 </html>

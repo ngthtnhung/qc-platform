@@ -46,7 +46,7 @@ class DatabaseClient {
     // Load existing database state if exists
     if (fs.existsSync(DB_FILE_PATH)) {
       try {
-        const raw = fs.readFileSync(DB_FILE_PATH, 'utf-8');
+        const raw = fs.readFileSync(DB_FILE_PATH, 'utf-8').replace(/^\uFEFF/, '');
         const data = JSON.parse(raw);
         this.tables = { ...this.tables, ...data };
         console.log('[DB] Loaded existing data from storage.');
