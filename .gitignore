@@ -37,3 +37,15 @@ database/kb-drafts/
 *.lnk
 start-qa-ngrok.bat
 database/bugs-enrich.json
+
+# Modernization (Phase 1/2)
+apps/api/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+apps/frontend/node_modules/
+apps/frontend/.next/
+.data/
+*.sqlite
+*.tsbuildinfo

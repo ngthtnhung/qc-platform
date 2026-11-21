@@ -1,0 +1,85 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: apps/api } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: apps/api/pyproject.toml }
+      - run: pip install -e ".[dev]"
+      - run: ruff check app tests
+      - run: pytest -q   # chạy trên SQLite + qua migration thật
+
+  api-postgres:
+    # Kiểm chứng phần chỉ có ở PostgreSQL: extension pgvector, trigger audit append-only, partial index, CHECK constraints
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: apps/api } }
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env: { POSTGRES_DB: qc, POSTGRES_USER: qc, POSTGRES_PASSWORD: ci-only-password }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U qc -d qc" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://qc:ci-only-password@localhost:5432/qc
+      JWT_SIGNING_KEY: ci-only-signing-key-ci-only-signing-key-0000
+      SECRET_KEK: S0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0s=
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e ".[dev]"
+      - run: alembic upgrade head
+      - run: alembic downgrade base
+      - run: alembic upgrade head
+      - name: audit_logs là append-only
+        run: |
+          python - <<'PY'
+          import os, sys, psycopg
+          with psycopg.connect(os.environ["DATABASE_URL"].replace("+psycopg", "")) as c:
+              c.execute("INSERT INTO audit_logs (id, at, actor_type, action, resource_type, resource_id, decision, reason, correlation_id, ip, source) VALUES (gen_random_uuid(), now(), 'SYSTEM', 'T', '', '', 'ALLOW', '', '', '', 'app')")
+              try:
+                  c.execute("UPDATE audit_logs SET reason = 'x'")
+              except psycopg.errors.RaiseException:
+                  print("OK: UPDATE bị chặn"); sys.exit(0)
+              sys.exit("LỖI: UPDATE audit_logs không bị chặn")
+          PY
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: apps/frontend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: apps/frontend/package-lock.json }
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit
+      - run: npx vitest run
+      - run: npm run build
+
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+
+  compose-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          POSTGRES_DB=a POSTGRES_USER=b POSTGRES_PASSWORD=c \
+          JWT_SIGNING_KEY=kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk SECRET_KEK=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+          docker compose -f infra/compose/compose.yaml config -q
