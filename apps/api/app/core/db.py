@@ -50,6 +50,8 @@ _SessionLocal: sessionmaker[Session] | None = None
 def get_engine():
     global _engine, _SessionLocal
     if _engine is None:
+        import app.models  # noqa: F401  (đăng ký mọi model trước khi dùng session)
+
         url = get_settings().database_url
         kwargs: dict = {"pool_pre_ping": True}
         if url.startswith("sqlite"):

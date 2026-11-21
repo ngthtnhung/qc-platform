@@ -1,7 +1,7 @@
 # Trạng thái triển khai (Implementation Status)
 
-> Cập nhật 2026-11-21 · nhánh `modernization/phase-0-audit` · **chưa commit**.
-> Phạm vi đã làm: **Phase 1 (hạ tầng) + phần lõi Phase 2 (Core Platform)**, kèm quyết định duyệt chỉ-QC (APPROVAL_MODEL.md).
+> Cập nhật 2026-11-22 · nhánh `feature/new-platform`.
+> Phạm vi đã làm: **Phase 1 (hạ tầng) + lõi Phase 2 (Core) + Reference Library và nhập bug (Phase 3, chưa có đồng bộ realtime)**, theo quyết định duyệt chỉ-QC (APPROVAL_MODEL.md).
 > Bản Node cũ (`services/`, `apps/web`, `apps/launcher`, `packages/`, `database/`, `scripts/`) **giữ nguyên, vẫn là hệ thống đang dùng**; chưa chuyển trang nào.
 
 ## Lệch có chủ đích so với kế hoạch Phase 0
@@ -34,7 +34,31 @@
 | **Chạy thật end-to-end** (API + Next, SQLite): đăng nhập trên trình duyệt, bấm Duyệt đề xuất AI ⇒ DB: `approval APPROVED, decided_by qcdemo`, `suggestion ACCEPTED`, audit đủ | Thực hiện một lần trong phiên này |
 | Compose: cú pháp hợp lệ (`docker compose config`) | lệnh chạy được; **chưa dựng container** |
 
-Tổng: **41 test backend** (`pytest`), **4 test frontend**, `ruff` và `tsc` sạch.
+### Cập nhật 2026-11-22: Reference Library, nhập rule/bug, giao diện
+
+| Hạng mục | Bằng chứng |
+|---|---|
+| Reference Library: `modules`, `sources`/`source_versions`, `references` (locator, quote, stance), `reference_links` (refines/conflicts_with/supersedes/depends_on), `annotations`, `business_rules` + `business_rule_versions` bất biến | migration `0002`, `tests/test_library.py` (12 test) |
+| Rule vào Thư viện luôn `UNREVIEWED`; duyệt ở Kho ngoài chỉ ghi vào `legacy_approval` (tham khảo); chỉ QC mới `VALIDATED`; mỗi rule có `validated_by` là người (CHECK ở CSDL) | test + kiểm tay trên trình duyệt |
+| QC viết/sửa rule ⇒ version mới + yêu cầu duyệt (không ghi đè); AI đề xuất rule chỉ thành rule khi QC chấp nhận (do chính QC đó xác nhận) | `test_library.py` |
+| Xung đột: `conflicts_with` đặt cả hai bên `DISPUTED`, không thể duyệt tới khi giải quyết; không bao giờ gộp âm thầm | `test_library.py` |
+| Duyệt hàng loạt `POST /approvals/bulk-decision`: từng mục vẫn phải kèm đúng `payload_hash`, lỗi một mục không ảnh hưởng mục khác | `test_library.py` |
+| Nhập kb-snapshot (`import-kb-snapshot`): đọc `kb-snapshot/rules` đầy đủ trường (không dùng `business_rules.json` đã lược), chạy khô mặc định, idempotent, không ghi đè khi cùng version nhưng khác nội dung (báo xung đột) | test + **chạy trên dữ liệu thật** (xem dưới) |
+| Bug: `bug_sources`, `projects`, `bugs`, `bug_snapshots` (lịch sử theo băm nội dung — bản Node không có); tìm kiếm tiếng Việt không dấu; module của bug Haraworks suy từ thẻ trong tiêu đề, **không đoán khi không khớp** | `tests/test_bugs.py` (7 test) |
+| Nhập bug (`import-bugs`): bug cũ và bug Haraworks giữ riêng theo nguồn, không gộp tự động; `c` của bug cũ là `classification`, **không** suy ra trạng thái | test + chạy thật |
+| Giao diện: Thư viện tham chiếu (chi tiết, nguồn gốc, ghi chú duyệt ở Kho), Tra cứu bug, Môi trường & tài khoản (mật khẩu chỉ ghi), duyệt hàng loạt | `tsc`, `vitest`, `next build`, kiểm tay trên trình duyệt |
+
+**Chạy thật trên dữ liệu của bạn (chỉ đọc nguồn, ghi vào DB tạm SQLite, đã xóa sau khi xong):**
+
+| Nguồn | Kết quả |
+|---|---|
+| `kb-snapshot` | 37 module, 195 rule / 200 phiên bản, 217 tham chiếu, 34 nguồn, 194 yêu cầu duyệt (6 bản `archived` giữ làm lịch sử, không xếp hàng duyệt); 0 lỗi, 0 xung đột; chạy lại: 200 bỏ qua, 0 tạo mới |
+| `bugs.json` | 6059 bug, 0 lỗi; chạy lại: 6059 bỏ qua |
+| `bugs-live.json` | 714 bug, 5 dự án, 0 lỗi; module suy ra được cho 570/714 (còn lại thẻ không khớp module nào, để trống) |
+
+Lỗi tìm thấy nhờ chạy thật và đã sửa: CLI không nạp model `files` (khóa ngoại không phân giải) ⇒ gom nạp model vào `app/models.py`; bug Haraworks không có module ⇒ thêm suy luận từ thẻ tiêu đề.
+
+Tổng: **60 test backend** (`pytest`), **4 test frontend**, `ruff` và `tsc` sạch.
 
 ## Chưa làm / chưa kiểm chứng (nói rõ, không coi là xong)
 
@@ -44,9 +68,11 @@ Tổng: **41 test backend** (`pytest`), **4 test frontend**, `ruff` và `tsc` s�
 | Dựng toàn bộ stack bằng `docker compose up` (build image, healthcheck, worker, beat) | **Chưa**. Dockerfile và compose viết xong, chưa build |
 | Redis/Celery: worker chỉ có tác vụ `system.ping`; `/health` báo Redis lỗi khi không có Redis (đúng hành vi, đã thấy) | Chưa chạy với Redis thật |
 | `S3Storage` | Có mã, **chưa kiểm thử** (không có MinIO); `boto3` không nằm trong phụ thuộc mặc định |
-| Giao diện quản lý Môi trường/Tài khoản/Bí mật | API có và có test; **chưa có trang UI** |
 | Nhập dữ liệu thật từ bản Node: môi trường, tài khoản, vault (cần giải mã DPAPI trên máy gốc), file, bug, rule, tác vụ | **Chưa**. Chỉ có importer người dùng; **chưa chạy với dữ liệu thật** (chỉ test trên dữ liệu giả) |
-| Phase 3–5: bug sync + lịch sử, AI analysis, Reference Library, Flow Recorder, Runner Agent, pgvector retrieval | **Chưa bắt đầu** |
+| Đồng bộ bug realtime từ Haraworks (Celery beat), phân tích AI, bình luận/ảnh/video của bug | **Chưa làm** — cần cookie/quyền Haraworks của bạn (xem mục "Cần bạn xác nhận") |
+| Phase 4–5: Flow Recorder, Runner Agent, tác vụ automation có duyệt, pgvector retrieval | **Chưa bắt đầu** |
+| Nhập dữ liệu thật vào DB thật (hiện chỉ chạy thử vào DB tạm) | **Chưa** — cần PostgreSQL chạy (xem bên dưới) |
+| Giả định múi giờ: ngày `d` của bug cũ coi là giờ Việt Nam (+07), nguồn không ghi | Cần bạn xác nhận |
 | Bản Node vẫn tự duyệt tác vụ (`autoApprove`) | **Không sửa** cho tới khi chuyển trang Tác Vụ Tự Động (Phase 4); xem APPROVAL_MODEL §6 |
 | CSP dùng `script-src 'unsafe-inline'` (yêu cầu của Next App Router chưa có nonce) | Nợ kỹ thuật, ghi ở SECURITY_REVIEW S-06 |
 | `npm audit`: 2 cảnh báo (postcss ≤ 8.5.22 nằm trong Next, XSS khi stringify CSS) | Không có bản Next 15.x vá hơn (15.5.29 là mới nhất); chỉ ảnh hưởng thời điểm build, không xử lý CSS do người dùng nhập. Theo dõi nâng cấp |
@@ -69,9 +95,21 @@ cd apps/frontend ; npm ci ; $env:API_INTERNAL_URL="http://127.0.0.1:8000" ; npm 
 Với Docker (khi daemon chạy): sao chép `.env.example` → `.env`, điền giá trị, rồi
 `docker compose -f infra/compose/compose.yaml --env-file .env up -d --build`.
 
+## Cần bạn xác nhận hoặc cấp quyền hạ tầng
+
+| # | Việc | Vì sao cần bạn | Hiện tại |
+|---|---|---|---|
+| 1 | **Bật Docker Desktop** (daemon đang tắt) | Tôi không tự khởi chạy ứng dụng trên máy bạn. Cần để chạy `docker compose up`, PostgreSQL + pgvector, Redis, worker/beat và kiểm chứng migration 0001–0002 trên PostgreSQL thật | Chưa kiểm chứng |
+| 2 | **Cho phép tôi mở Pull Request** `feature/new-platform` → `main` để chạy CI (có job PostgreSQL) | Mở PR là hành động công khai trên GitHub của bạn; CI chạy trên PR chứ không chạy khi push nhánh | Chưa mở |
+| 3 | **Cookie phiên Haraworks (chỉ đọc)** cho đồng bộ bug realtime | Là thông tin đăng nhập của bạn; tôi không tự lấy. Bạn đưa vào `secrets` theo hướng dẫn README cũ hoặc nhập qua giao diện khi tôi làm xong chỗ nhập bí mật. Tôi chỉ gọi các truy vấn đọc | Chưa làm |
+| 4 | **Khóa AI** (`GEMINI_API_KEY` hoặc `ANTHROPIC_API_KEY`) | Cho phân tích bug bằng AI qua luồng đề xuất chờ QC duyệt; đặt trong `.env`, không gửi cho tôi | Chưa làm |
+| 5 | **Quyết định**: máy chủ nhóm chạy Docker trên Windows hay Linux; HTTPS dùng mkcert hay CA nội bộ/ACME | Ảnh hưởng profile `team` và cách thành viên cài Runner | Chưa chốt |
+| 6 | **Giải mã vault DPAPI** trên máy Windows gốc để nhập mật khẩu tài khoản test (M-03) | Chỉ đúng người dùng Windows tạo `secrets/vault.key` giải mã được; cần bạn có mặt và chấp thuận | Chưa làm |
+| 7 | **S-01**: chuỗi giống mật khẩu trong `database/db.js` (đã nằm trong lịch sử Git) | Nếu là mật khẩu thật, cần bạn đổi trên Staging/Production DEMO | Chưa xác nhận |
+
 ## Bước tiếp theo đề xuất
 
-1. Chạy CI trên GitHub (hoặc dựng Postgres cục bộ) để kiểm chứng phần PostgreSQL; sửa nếu có lỗi.
-2. `docker compose up --build` trên máy có Docker chạy; kiểm tra health, worker, beat.
-3. Trang UI Môi trường/Tài khoản/Bí mật; nhập môi trường + tài khoản + vault từ bản Node (M-02…M-05) sau bước giải mã DPAPI.
-4. Phase 3: đồng bộ bug Haraworks bằng Celery beat, lịch sử bug, phân tích AI qua `create_ai_suggestion`.
+1. Có Docker (mục 1) hoặc PR (mục 2) ⇒ kiểm chứng PostgreSQL + compose; sửa nếu có lỗi.
+2. Nhập dữ liệu thật vào PostgreSQL bằng `import-kb-snapshot`, `import-bugs`, `import-legacy-users` (chạy khô trước).
+3. Đồng bộ Haraworks bằng Celery beat (cần mục 3); phân tích AI qua `create_ai_suggestion` (cần mục 4).
+4. Phase 4: tác vụ automation + code version có duyệt, Runner Agent.

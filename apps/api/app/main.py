@@ -12,10 +12,24 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.errors import install_error_handlers
+from app.domains.bugs.router import router as bugs_router
 from app.domains.files.router import router as files_router
+from app.domains.knowledge.router import router as library_router
 from app.domains.platform.router import router as platform_router
 
-SCHEMA_HEAD = "0001"  # revision Alembic mong đợi; /health so sánh với DB
+
+def _schema_head() -> str:
+    """Revision Alembic mới nhất trong mã; /health so sánh với DB."""
+    from pathlib import Path
+
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    root = Path(__file__).resolve().parents[1]
+    cfg = Config(str(root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(root / "alembic"))
+    return ScriptDirectory.from_config(cfg).get_current_head() or ""
+
 
 
 def create_app() -> FastAPI:
@@ -46,7 +60,7 @@ def create_app() -> FastAPI:
             checks["database"] = "ok"
             try:
                 rev = session.execute(text("SELECT version_num FROM alembic_version")).scalar()
-                checks["schema"] = "ok" if rev == SCHEMA_HEAD else f"mismatch:{rev}"
+                checks["schema"] = "ok" if rev == _schema_head() else f"mismatch:{rev}"
             except Exception:  # noqa: BLE001
                 session.rollback()
                 checks["schema"] = "missing"
@@ -72,4 +86,6 @@ def create_app() -> FastAPI:
 
     app.include_router(platform_router, prefix="/api/v1")
     app.include_router(files_router, prefix="/api/v1")
+    app.include_router(library_router, prefix="/api/v1")
+    app.include_router(bugs_router, prefix="/api/v1")
     return app

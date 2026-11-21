@@ -7,6 +7,9 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 
 const NAV = [
   { href: "/approvals", label: "Duyệt" },
+  { href: "/library", label: "Thư viện tham chiếu" },
+  { href: "/bugs", label: "Tra cứu bug" },
+  { href: "/environments", label: "Môi trường & tài khoản" },
   { href: "/users", label: "Người dùng QC" },
   { href: "/audit", label: "Nhật ký" },
   { href: "/account", label: "Tài khoản của tôi" },

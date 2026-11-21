@@ -112,3 +112,24 @@ export type AuditRow = {
   decision: string;
   reason: string;
 };
+
+export type RuleItem = {
+  rule_id: string; rule_key: string; module_code: string; origin: string; version_id: string; version_no: number;
+  state: string; title: string; validation_status: "UNREVIEWED" | "VALIDATED" | "REJECTED" | "DISPUTED"; has_legacy_approval: boolean;
+};
+export type RuleList = { total: number; items: RuleItem[] };
+export type RuleDetail = {
+  rule_key: string; module_code: string; origin: string;
+  versions: {
+    version_id: string; version_no: number; state: string; title: string; description: string; user_roles: string[]; setting_type: string;
+    config_path: string; open_questions: unknown[]; extra: Record<string, unknown>; legacy_approval: Record<string, unknown> | null;
+    validation_status: string; validated_by: string | null; created_by_type: string;
+  }[];
+  references: { id: string; quote: string; stance: string; locator: Record<string, string>; validation_status: string; source_title: string; source_version: string }[];
+};
+export type BugItem = {
+  id: string; external_id: string; source: string; title: string; status: number | null; status_label: string; priority_label: string;
+  classification: string; module_code: string; created_at_ext: string | null; assignee: string; approver: string; url: string;
+};
+export type Environment = { id: string; code: string; name: string; type: string; base_url: string; org_identifier: string; requires_org_confirmation: boolean; is_active: boolean };
+export type Account = { id: string; environment_id: string; name: string; role_label: string; username_ref: string; has_secret: boolean };

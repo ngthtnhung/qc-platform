@@ -5,8 +5,7 @@ from sqlalchemy import create_engine, pool
 
 from app.core.config import get_settings
 from app.core.db import Base
-from app.domains.files import models as _files  # noqa: F401
-from app.domains.platform import models as _platform  # noqa: F401
+import app.models  # noqa: F401,E402
 
 config = context.config
 if config.config_file_name:

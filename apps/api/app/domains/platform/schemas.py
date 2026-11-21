@@ -164,3 +164,21 @@ class FileOut(ORM):
     mime: str
     original_name: str
     created_at: dt.datetime
+
+
+class BulkItem(BaseModel):
+    id: uuid.UUID
+    payload_hash: str = Field(min_length=64, max_length=64)
+
+
+class BulkDecisionIn(BaseModel):
+    decision: Literal["approve", "reject"]
+    items: list[BulkItem] = Field(min_length=1, max_length=200)
+    note: str = ""
+
+
+class BulkResult(BaseModel):
+    id: uuid.UUID
+    ok: bool
+    status: str | None = None
+    error: str | None = None

@@ -32,6 +32,8 @@ from app.domains.platform.schemas import (
     AiSuggestionOut,
     ApprovalOut,
     AuditOut,
+    BulkDecisionIn,
+    BulkResult,
     ChangePasswordIn,
     DecisionIn,
     EnvironmentIn,
@@ -157,6 +159,26 @@ def decide(approval_id: uuid.UUID, body: DecisionIn, request: Request, principal
     return approval_service.decide(session, actor=principal, request_id=approval_id, approve=body.decision == "approve",
                                    payload_hash=body.payload_hash, note=body.note,
                                    correlation_id=correlation_id(request), ip=client_ip(request))
+
+
+@router.post("/approvals/bulk-decision", response_model=list[BulkResult], tags=["approvals"])
+def bulk_decide(body: BulkDecisionIn, request: Request, principal: Principal = Depends(require(Perm.APPROVE)),
+                session: Session = Depends(get_session)):
+    """Duyệt/từ chối nhiều mục (ví dụ rule nhập từ Kho). Mỗi mục vẫn phải kèm đúng payload_hash của bản QC đã đọc;
+    từng mục độc lập: mục lỗi không làm hỏng mục khác."""
+    from app.core.errors import AppError
+
+    out: list[BulkResult] = []
+    for item in body.items:
+        try:
+            with session.begin_nested():
+                req = approval_service.decide(session, actor=principal, request_id=item.id, approve=body.decision == "approve",
+                                              payload_hash=item.payload_hash, note=body.note,
+                                              correlation_id=correlation_id(request), ip=client_ip(request))
+            out.append(BulkResult(id=item.id, ok=True, status=req.status))
+        except AppError as exc:
+            out.append(BulkResult(id=item.id, ok=False, error=exc.message))
+    return out
 
 
 @router.get("/ai-suggestions", response_model=list[AiSuggestionOut], tags=["approvals"])

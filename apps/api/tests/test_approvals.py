@@ -11,7 +11,7 @@ from tests.conftest import make_qc, principal
 
 
 def _ai_request(session, title="Rule gợi ý"):
-    sug, req = approvals.create_ai_suggestion(session, producer=AI_PRINCIPAL, kind="rule", title=title,
+    sug, req = approvals.create_ai_suggestion(session, producer=AI_PRINCIPAL, kind="document", title=title,
                                               payload={"text": "Độ ưu tiên mặc định là Trung bình"}, model="test-model")
     session.commit()
     return sug, req

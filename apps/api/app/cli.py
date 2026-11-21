@@ -81,6 +81,33 @@ def cmd_import_users(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_import_kb(args: argparse.Namespace) -> int:
+    from app.domains.knowledge import importer
+
+    with session_scope() as s:
+        rep = importer.run(s, Path(args.source), apply=args.apply)
+    print(("[ÁP DỤNG] " if args.apply else "[CHẠY KHÔ] ") + json.dumps(rep.summary(), ensure_ascii=False))
+    for line in (rep.conflicts + rep.errors)[:20]:
+        print("  !", line)
+    return 0 if not rep.errors else 2
+
+
+def cmd_import_bugs(args: argparse.Namespace) -> int:
+    from app.domains.bugs import service as bugs
+
+    reports = []
+    with session_scope() as s:
+        if args.legacy:
+            reports.append(bugs.import_legacy_kb(s, Path(args.legacy), apply=args.apply))
+        if args.live:
+            reports.append(bugs.import_live(s, Path(args.live), apply=args.apply))
+    for rep in reports:
+        print(("[ÁP DỤNG] " if args.apply else "[CHẠY KHÔ] ") + json.dumps(rep.summary(), ensure_ascii=False))
+        for line in rep.errors[:10]:
+            print("  !", line)
+    return 0 if all(not r.errors for r in reports) else 2
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):  # console Windows mặc định cp1252 sẽ lỗi với tiếng Việt
         if hasattr(stream, "reconfigure"):
@@ -96,6 +123,15 @@ def main(argv: list[str] | None = None) -> int:
     i.add_argument("--source", required=True)
     i.add_argument("--apply", action="store_true")
     i.set_defaults(fn=cmd_import_users)
+    k = sub.add_parser("import-kb-snapshot")
+    k.add_argument("--source", required=True)
+    k.add_argument("--apply", action="store_true")
+    k.set_defaults(fn=cmd_import_kb)
+    g = sub.add_parser("import-bugs")
+    g.add_argument("--legacy")
+    g.add_argument("--live")
+    g.add_argument("--apply", action="store_true")
+    g.set_defaults(fn=cmd_import_bugs)
     args = ap.parse_args(argv)
     return args.fn(args)
 
