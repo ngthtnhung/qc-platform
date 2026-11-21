@@ -1,0 +1,7 @@
+# Cấu hình gitleaks: mở rộng bộ luật mặc định, chỉ bỏ qua file mẫu (giá trị luôn để trống)
+[extend]
+useDefault = true
+
+[allowlist]
+description = "File mẫu cấu hình: chỉ có khóa trống, không có giá trị bí mật"
+paths = ['''^\.env\.example$''']
