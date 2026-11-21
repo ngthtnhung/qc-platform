@@ -27,7 +27,9 @@ export const playwrightBrowser: BrowserFactory = async (job, cfg, password) => {
   fs.mkdirSync(userDataDir, { recursive: true });
   let ctx: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined;
   let last: unknown;
-  for (const channel of ["chrome", "msedge"]) {
+  // Headless (Docker/Linux): ưu tiên Chromium đi kèm Playwright; có giao diện: Chrome/Edge thật của người dùng, rồi mới tới Chromium đi kèm
+  const channels: (string | undefined)[] = cfg.headless ? [undefined, "chrome", "msedge"] : ["chrome", "msedge", undefined];
+  for (const channel of channels) {
     try {
       ctx = await chromium.launchPersistentContext(userDataDir, { channel, headless: cfg.headless, viewport: cfg.headless ? { width: 1366, height: 800 } : null });
       break;
@@ -35,7 +37,7 @@ export const playwrightBrowser: BrowserFactory = async (job, cfg, password) => {
       last = e;
     }
   }
-  if (!ctx) throw new Error(`Không mở được Chrome/Edge: ${String((last as Error)?.message).split("\n")[0]}`);
+  if (!ctx) throw new Error(`Không mở được trình duyệt (Chrome/Edge/Chromium): ${String((last as Error)?.message).split("\n")[0]}`);
   const page = ctx.pages()[0] ?? (await ctx.newPage());
   if (!cfg.skipLogin) {
     const status = await runLogin(page, { loginUrl: job.environment.login_url, orgCode: job.account.expected_org, username: job.account.username, password });

@@ -81,12 +81,32 @@ Lỗi tìm thấy nhờ test và đã sửa: `claim` truy vấn hàng đợi tr�
 
 Tổng: **76 test backend**, **4 test frontend**, **15 test runner-agent**; `ruff`, `tsc` sạch.
 
+### Cập nhật 2026-11-22 (3): chạy thật bằng Docker Compose (Docker Desktop do bạn bật)
+
+Đã dựng **api, web, worker, beat, migrate, PostgreSQL 16 + pgvector, Redis** bằng `docker compose` (project `qc-platform`, cổng 127.0.0.1; không đụng container/image cũ của bạn):
+
+| Kiểm tra | Kết quả |
+|---|---|
+| `migrate` (Alembic 0001→0003) trên PostgreSQL thật | Thoát 0; `alembic_version=0003` |
+| `/health` | `{"database":"ok","schema":"ok","redis":"ok","storage":"ok"}` (schema so với revision trong mã) |
+| Worker | Kết nối Redis, nhận `system.ping`; **một tác vụ Celery thật** chạy qua worker trả `pong`; healthcheck `celery inspect ping` đạt |
+| Web (Next.js standalone) | `healthz` 200; proxy `/api` tới API đạt |
+| Extension | `vector`, `pg_trgm`, `unaccent` |
+| Trigger | `UPDATE`/`DELETE` trên `audit_logs` bị chặn (`audit_logs is append-only`) |
+| Ràng buộc | Chèn user vai trò `admin` bị `ck_users_role_qc_only` từ chối |
+| Tìm kiếm | Chỉ mục trigram `ix_bugs_title_fold_trgm` được dùng |
+| **Nhập dữ liệu thật vào PostgreSQL** (nguồn mount chỉ đọc) | Giống hệt lần chạy SQLite: rule 195/200 phiên bản, 217 tham chiếu, bug 6059 + 714, 43 tác vụ; **0 lỗi; chạy lại: 0 tạo mới**. Sau nhập: 237 yêu cầu duyệt chờ QC (194 rule + 43 code) |
+
+Lỗi chỉ lộ khi chạy trong Docker và đã sửa: (1) `kombu` cần `packaging` nhưng không khai báo ⇒ worker/beat khởi động lại liên tục ⇒ thêm vào `pyproject.toml`; (2) beat thừa hưởng healthcheck HTTP của image API ⇒ thêm healthcheck riêng; (3) agent trong container Playwright không có Chrome ⇒ rơi về Chromium đi kèm khi headless; (4) compose bắt biến `RUNNER_TOKEN` ngay cả khi profile tắt.
+
+**Vấn đề hạ tầng cần bạn xử lý:** ổ C: chỉ còn ~0,3 GB trống sau các lần build ⇒ Docker Desktop không phản hồi. Việc build image Docker Runner (Playwright ≈ 2 GB) chưa hoàn tất nên Docker Runner **chưa được chạy thử**.
+
 ## Chưa làm / chưa kiểm chứng (nói rõ, không coi là xong)
 
 | Hạng mục | Tình trạng |
 |---|---|
-| PostgreSQL thật (pgvector, trigger audit chỉ-thêm, partial index, trigram) | **Đã kiểm chứng trên CI** (job `api-postgres`: `alembic upgrade head` → `downgrade base` → `upgrade head` qua migration 0001–0003, và trigger chặn `UPDATE audit_logs`). **Chưa** chạy ứng dụng đầy đủ trên PostgreSQL cục bộ (Docker Desktop đang tắt) |
-| Dựng toàn bộ stack bằng `docker compose up` (build image, healthcheck, worker, beat, Docker Runner) | **Chưa**. Dockerfile và compose hợp lệ về cú pháp (CI `compose-config`), chưa build image, chưa chạy worker/beat với Redis thật |
+| PostgreSQL thật | **Đã kiểm chứng** trong stack Docker và trên CI (xem mục "Cập nhật (3)") |
+| Docker Runner (build image Playwright ~2 GB, chạy thật trong container) | **Chưa**: build làm đầy ổ C: (còn 0,3 GB) và Docker Desktop bị treo; cần bạn giải phóng dung lượng (xem dưới) |
 | Redis/Celery: worker chỉ có tác vụ `system.ping`; `/health` báo Redis lỗi khi không có Redis (đúng hành vi, đã thấy) | Chưa chạy với Redis thật |
 | `S3Storage` | Có mã, **chưa kiểm thử** (không có MinIO); `boto3` không nằm trong phụ thuộc mặc định |
 | Nhập dữ liệu thật từ bản Node: môi trường, tài khoản, vault (cần giải mã DPAPI trên máy gốc), file, bug, rule, tác vụ | **Chưa**. Chỉ có importer người dùng; **chưa chạy với dữ liệu thật** (chỉ test trên dữ liệu giả) |
