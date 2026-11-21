@@ -133,3 +133,15 @@ export type BugItem = {
 };
 export type Environment = { id: string; code: string; name: string; type: string; base_url: string; org_identifier: string; requires_org_confirmation: boolean; is_active: boolean };
 export type Account = { id: string; environment_id: string; name: string; role_label: string; username_ref: string; has_secret: boolean };
+
+export type TaskParam = { key: string; label: string; type: string; value: string; auto: boolean };
+export type AutoTask = {
+  id: string; name: string; module_code: string; flow: string; description: string; start_url: string; writes: boolean; steps: string[];
+  params: TaskParam[]; runnable: boolean; approved_version: number | null;
+  versions: { id: string; version_no: number; status: string; origin: string; sha256: string }[];
+};
+export type Execution = {
+  id: string; task_id: string; status: string; attempt: number; runner_id: string | null; error: string; duration_ms: number | null;
+  batch_id: string; queued_at: string; finished_at: string | null;
+};
+export type RunnerRow = { id: string; name: string; type: string; capabilities: string[]; status: string; last_heartbeat_at: string | null; revoked: boolean; token?: string };

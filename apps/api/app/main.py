@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.errors import install_error_handlers
+from app.domains.automation.router import router as automation_router
+from app.domains.automation.router import runner_router
 from app.domains.bugs.router import router as bugs_router
 from app.domains.files.router import router as files_router
 from app.domains.knowledge.router import router as library_router
@@ -88,4 +90,6 @@ def create_app() -> FastAPI:
     app.include_router(files_router, prefix="/api/v1")
     app.include_router(library_router, prefix="/api/v1")
     app.include_router(bugs_router, prefix="/api/v1")
+    app.include_router(automation_router, prefix="/api/v1")
+    app.include_router(runner_router, prefix="/api/v1")
     return app

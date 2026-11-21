@@ -109,6 +109,22 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  runner-docker:
+    profiles: ["runner"]
+    build:
+      context: ../..
+      dockerfile: apps/runner-agent/Dockerfile
+    environment:
+      QC_SERVER_URL: http://api:8000
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+    # Chromium trong Docker cần --ipc=host hoặc shm lớn hơn; không mount docker.sock, không privileged
+    shm_size: "1gb"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      api: { condition: service_healthy }
+    restart: unless-stopped
+
   proxy:
     image: caddy:2
     profiles: ["team"]

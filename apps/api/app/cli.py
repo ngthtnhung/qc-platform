@@ -108,6 +108,17 @@ def cmd_import_bugs(args: argparse.Namespace) -> int:
     return 0 if all(not r.errors for r in reports) else 2
 
 
+def cmd_import_automation(args: argparse.Namespace) -> int:
+    from app.domains.automation import importer
+
+    with session_scope() as s:
+        rep = importer.run(s, Path(args.drafts), legacy_db=Path(args.legacy_db) if args.legacy_db else None, apply=args.apply)
+    print(("[ÁP DỤNG] " if args.apply else "[CHẠY KHÔ] ") + json.dumps(rep.summary(), ensure_ascii=False))
+    for line in (rep.errors + rep.notes)[:20]:
+        print("  !", line)
+    return 0 if not rep.errors else 2
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):  # console Windows mặc định cp1252 sẽ lỗi với tiếng Việt
         if hasattr(stream, "reconfigure"):
@@ -132,6 +143,11 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--live")
     g.add_argument("--apply", action="store_true")
     g.set_defaults(fn=cmd_import_bugs)
+    a = sub.add_parser("import-automation")
+    a.add_argument("--drafts", required=True)
+    a.add_argument("--legacy-db")
+    a.add_argument("--apply", action="store_true")
+    a.set_defaults(fn=cmd_import_automation)
     args = ap.parse_args(argv)
     return args.fn(args)
 

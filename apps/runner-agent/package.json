@@ -1,0 +1,21 @@
+{
+  "name": "@qc/runner-agent",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "bin": { "qc-runner": "dist/index.js" },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": { "playwright-core": "1.52.0" },
+  "devDependencies": {
+    "@types/node": "22.10.7",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3",
+    "vitest": "2.1.8"
+  }
+}

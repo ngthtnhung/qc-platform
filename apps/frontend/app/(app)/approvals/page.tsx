@@ -113,6 +113,7 @@ export default function ApprovalsPage() {
           <option value="rule_version">Rule</option>
           <option value="ai_suggestion">Đề xuất AI</option>
           <option value="reference">Tham chiếu</option>
+          <option value="automation_code_version">Code automation</option>
         </select>
         <button onClick={() => void load()}>Làm mới</button>
       </div>

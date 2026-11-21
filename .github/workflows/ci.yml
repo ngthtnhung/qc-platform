@@ -67,6 +67,19 @@ jobs:
       - run: npx vitest run
       - run: npm run build
 
+  runner-agent:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: apps/runner-agent } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: apps/runner-agent/package-lock.json }
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit
+      - run: npx playwright-core install --with-deps chromium  # test tích hợp dùng Chrome thật
+      - run: npx vitest run
+      - run: npm run build
+
   secrets-scan:
     runs-on: ubuntu-latest
     steps:

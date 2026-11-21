@@ -49,3 +49,5 @@ apps/frontend/.next/
 .data/
 *.sqlite
 *.tsbuildinfo
+node_modules/
+dist/

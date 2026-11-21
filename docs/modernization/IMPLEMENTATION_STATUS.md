@@ -1,7 +1,7 @@
 # Trạng thái triển khai (Implementation Status)
 
 > Cập nhật 2026-11-22 · nhánh `feature/new-platform`.
-> Phạm vi đã làm: **Phase 1 (hạ tầng) + lõi Phase 2 (Core) + Reference Library và nhập bug (Phase 3, chưa có đồng bộ realtime)**, theo quyết định duyệt chỉ-QC (APPROVAL_MODEL.md).
+> Phạm vi đã làm: **Phase 1 (hạ tầng) + lõi Phase 2 (Core) + Reference Library và nhập bug (Phase 3, chưa có đồng bộ realtime) + Automation và Runner Agent (Phase 4, phần lõi)**, theo quyết định duyệt chỉ-QC (APPROVAL_MODEL.md).
 > Bản Node cũ (`services/`, `apps/web`, `apps/launcher`, `packages/`, `database/`, `scripts/`) **giữ nguyên, vẫn là hệ thống đang dùng**; chưa chuyển trang nào.
 
 ## Lệch có chủ đích so với kế hoạch Phase 0
@@ -60,6 +60,27 @@ Lỗi tìm thấy nhờ chạy thật và đã sửa: CLI không nạp model `fi
 
 Tổng: **60 test backend** (`pytest`), **4 test frontend**, `ruff` và `tsc` sạch.
 
+### Cập nhật 2026-11-22 (2): Automation và Runner Agent
+
+| Hạng mục | Bằng chứng |
+|---|---|
+| Tác vụ, tham số, **code version bất biến** (`sha256` ghim); mọi version mới (người/AI/nhập) ở `PENDING` + yêu cầu duyệt; chỉ QC mới `APPROVED` (CHECK ở CSDL: APPROVED phải có người duyệt) | migration `0003`, `tests/test_automation.py` (16 test) |
+| Chạy chỉ khi có version `APPROVED`; version mới chưa duyệt không thay thế bản đang chạy; chỉ môi trường STAGING; PolicyEngine kiểm tra `AUTOMATE`; giới hạn 120 lượt/10 phút (đếm trong DB, bền); chạy nhiều lần ≤ 50 | test |
+| Hàng đợi `executions`: nhận việc bằng cập nhật có điều kiện (không nhận trùng), lease 5 phút, hết lease ⇒ xếp lại, hết lượt thử ⇒ FAILED; code bị thu hồi giữa chừng ⇒ không chạy; QC hủy được | test |
+| Runner: QC tạo (token `rn_…` chỉ hiện một lần, lưu băm), heartbeat, claim, mật khẩu cấp **một lần** cho mỗi lần nhận việc (audit `SECRET_READ` actor RUNNER), báo kết quả phải kèm đúng `sha256` đã duyệt, upload artifact; token runner và token QC không dùng lẫn; thu hồi có hiệu lực ngay | test |
+| Nhập tác vụ (`import-automation`): từ `automation-drafts` **và** DB đang chạy của bản Node; `approved_by:"auto"` KHÔNG được coi là duyệt; script khác ⇒ version mới, không ghi đè | test + **chạy thật** (xem dưới) |
+| **Runner Agent** (`apps/runner-agent`, TypeScript + Playwright): kit chạy script (port `task-runner.js`: `step/assert/pickOption/attachFiles/ctx`), tự băm lại và từ chối khi lệch sha, vòng lặp claim → mật khẩu → chạy → báo, ảnh chụp khi lỗi, đăng nhập (port `playwright-login.js`) | 15 test `vitest`, gồm **chạy script thật trên Chrome** |
+| UI: Tác vụ tự động (tham số, xếp hàng, lần chạy, hủy), Runner (tạo, token một lần, thu hồi), duyệt code automation | `tsc`, `next build` |
+| Docker Runner: Dockerfile (image Playwright, user không root) + service compose profile `runner` (`cap_drop ALL`, `no-new-privileges`) | cú pháp compose hợp lệ; **chưa build image** |
+
+**Đầu-cuối thật (API thật + Runner Agent thật + Chrome, DB tạm đã xóa):** tạo tác vụ → chạy khi chưa duyệt bị chặn (`409 NOT_APPROVED`) → QC duyệt → xếp hàng → Runner nhận việc, chạy 3 bước trên Chrome, báo `PASSED`, runner `ONLINE`. Nhánh lỗi: bước tìm phần tử không có ⇒ `FAILED` với dòng "waiting for locator", ảnh chụp lỗi tải lên và tải về được (PNG). Chế độ `RUNNER_SKIP_LOGIN=1` (chỉ dev, có cảnh báo) được dùng vì chưa có Staging thật để đăng nhập.
+
+**Chạy thật nhập tác vụ (chỉ đọc nguồn, DB tạm):** 30 mục trong `automation-drafts` + 13 tác vụ chỉ có trong DB đang chạy của bản Node ⇒ **43 tác vụ, 43 code version `PENDING`, 43 yêu cầu duyệt chờ QC**, 0 lỗi; chạy lại: 0 tạo mới. Phát hiện: tác vụ `at_359a4a7e53707e8c` dùng khóa tham số `Tab_kiem_tra` (chữ hoa) — bản Node cũ đã lưu được nên quy tắc khóa được nới cho phép chữ hoa (đổi tên sẽ làm lệch sha của script đã duyệt).
+
+Lỗi tìm thấy nhờ test và đã sửa: `claim` truy vấn hàng đợi trước khi ghi việc tái xếp hàng (session tắt autoflush) ⇒ việc hết lease không được nhận lại.
+
+Tổng: **76 test backend**, **4 test frontend**, **15 test runner-agent**; `ruff`, `tsc` sạch.
+
 ## Chưa làm / chưa kiểm chứng (nói rõ, không coi là xong)
 
 | Hạng mục | Tình trạng |
@@ -70,7 +91,11 @@ Tổng: **60 test backend** (`pytest`), **4 test frontend**, `ruff` và `tsc` s�
 | `S3Storage` | Có mã, **chưa kiểm thử** (không có MinIO); `boto3` không nằm trong phụ thuộc mặc định |
 | Nhập dữ liệu thật từ bản Node: môi trường, tài khoản, vault (cần giải mã DPAPI trên máy gốc), file, bug, rule, tác vụ | **Chưa**. Chỉ có importer người dùng; **chưa chạy với dữ liệu thật** (chỉ test trên dữ liệu giả) |
 | Đồng bộ bug realtime từ Haraworks (Celery beat), phân tích AI, bình luận/ảnh/video của bug | **Chưa làm** — cần cookie/quyền Haraworks của bạn (xem mục "Cần bạn xác nhận") |
-| Phase 4–5: Flow Recorder, Runner Agent, tác vụ automation có duyệt, pgvector retrieval | **Chưa bắt đầu** |
+| Đăng nhập thật bằng Runner vào Staging/Production OrgID DEMO | **Chưa kiểm chứng** — logic port từ bản Node, cần tài khoản test của bạn (xem mục dưới) |
+| Tham số kiểu `file` (đính kèm ảnh/PDF): Runner chưa tải được file đính kèm | **Chưa làm** — cần endpoint tải file cho runner; `attachFiles` trả `false` khi không có file |
+| Isolate script: Host Runner vẫn dùng `vm` (không phải ranh giới bảo mật); chỉ Docker Runner có cách ly container | Đã nêu trong mã; chưa có sandbox mạnh hơn cho Host Runner |
+| Lịch chạy định kỳ (`execution_schedules`), retry theo chính sách ngoài lease, Hybrid/API adapter | **Chưa làm** |
+| Flow Recorder → Flow Spec → Test Case, pgvector retrieval, AI sửa code (`repair`) qua luồng duyệt | **Chưa bắt đầu** (Phase 4 còn lại, Phase 5) |
 | Nhập dữ liệu thật vào DB thật (hiện chỉ chạy thử vào DB tạm) | **Chưa** — cần PostgreSQL chạy (xem bên dưới) |
 | Giả định múi giờ: ngày `d` của bug cũ coi là giờ Việt Nam (+07), nguồn không ghi | Cần bạn xác nhận |
 | Bản Node vẫn tự duyệt tác vụ (`autoApprove`) | **Không sửa** cho tới khi chuyển trang Tác Vụ Tự Động (Phase 4); xem APPROVAL_MODEL §6 |
@@ -105,6 +130,7 @@ Với Docker (khi daemon chạy): sao chép `.env.example` → `.env`, điền g
 | 4 | **Khóa AI** (`GEMINI_API_KEY` hoặc `ANTHROPIC_API_KEY`) | Cho phân tích bug bằng AI qua luồng đề xuất chờ QC duyệt; đặt trong `.env`, không gửi cho tôi | Chưa làm |
 | 5 | **Quyết định**: máy chủ nhóm chạy Docker trên Windows hay Linux; HTTPS dùng mkcert hay CA nội bộ/ACME | Ảnh hưởng profile `team` và cách thành viên cài Runner | Chưa chốt |
 | 6 | **Giải mã vault DPAPI** trên máy Windows gốc để nhập mật khẩu tài khoản test (M-03) | Chỉ đúng người dùng Windows tạo `secrets/vault.key` giải mã được; cần bạn có mặt và chấp thuận | Chưa làm |
+| 8 | **Một tài khoản Staging test + máy Windows chạy Runner** để kiểm chứng đăng nhập thật và chạy 1–2 tác vụ trong 43 tác vụ đã nhập | Tôi không có thông tin đăng nhập; chỉ bạn quyết định tài khoản nào được dùng và chấp thuận chạy trên Staging. Tác vụ ghi dữ liệu dùng tiền tố `[AI TEST]` | Chưa làm |
 | 7 | **S-01**: chuỗi giống mật khẩu trong `database/db.js` (đã nằm trong lịch sử Git) | Nếu là mật khẩu thật, cần bạn đổi trên Staging/Production DEMO | Chưa xác nhận |
 
 ## Bước tiếp theo đề xuất
