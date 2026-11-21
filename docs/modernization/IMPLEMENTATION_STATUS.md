@@ -85,8 +85,8 @@ Tổng: **76 test backend**, **4 test frontend**, **15 test runner-agent**; `ruf
 
 | Hạng mục | Tình trạng |
 |---|---|
-| Chạy trên **PostgreSQL thật**: extension `pgvector`, trigger audit append-only, partial index | **Chưa chạy**: máy này không có Postgres và Docker daemon không chạy. Có job CI `api-postgres` để kiểm chứng; **chưa chạy CI** |
-| Dựng toàn bộ stack bằng `docker compose up` (build image, healthcheck, worker, beat) | **Chưa**. Dockerfile và compose viết xong, chưa build |
+| PostgreSQL thật (pgvector, trigger audit chỉ-thêm, partial index, trigram) | **Đã kiểm chứng trên CI** (job `api-postgres`: `alembic upgrade head` → `downgrade base` → `upgrade head` qua migration 0001–0003, và trigger chặn `UPDATE audit_logs`). **Chưa** chạy ứng dụng đầy đủ trên PostgreSQL cục bộ (Docker Desktop đang tắt) |
+| Dựng toàn bộ stack bằng `docker compose up` (build image, healthcheck, worker, beat, Docker Runner) | **Chưa**. Dockerfile và compose hợp lệ về cú pháp (CI `compose-config`), chưa build image, chưa chạy worker/beat với Redis thật |
 | Redis/Celery: worker chỉ có tác vụ `system.ping`; `/health` báo Redis lỗi khi không có Redis (đúng hành vi, đã thấy) | Chưa chạy với Redis thật |
 | `S3Storage` | Có mã, **chưa kiểm thử** (không có MinIO); `boto3` không nằm trong phụ thuộc mặc định |
 | Nhập dữ liệu thật từ bản Node: môi trường, tài khoản, vault (cần giải mã DPAPI trên máy gốc), file, bug, rule, tác vụ | **Chưa**. Chỉ có importer người dùng; **chưa chạy với dữ liệu thật** (chỉ test trên dữ liệu giả) |
