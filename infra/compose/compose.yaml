@@ -59,6 +59,7 @@ services:
 
   api:
     image: qc-platform-api:dev
+    pull_policy: never  # image build cục bộ bởi service migrate; tránh thông báo 'pull access denied' gây nhầm
     environment: *api-env
     volumes: ["storage-data:/data/storage"]
     ports: ["127.0.0.1:${API_PORT:-8000}:8000"]
@@ -69,6 +70,7 @@ services:
 
   worker:
     image: qc-platform-api:dev
+    pull_policy: never  # image build cục bộ bởi service migrate; tránh thông báo 'pull access denied' gây nhầm
     command: ["celery", "-A", "app.worker.celery_app", "worker", "-Q", "default,ai,sync,indexing,automation_post", "--loglevel=INFO"]
     environment: *api-env
     volumes: ["storage-data:/data/storage"]
@@ -85,6 +87,7 @@ services:
 
   beat:
     image: qc-platform-api:dev
+    pull_policy: never  # image build cục bộ bởi service migrate; tránh thông báo 'pull access denied' gây nhầm
     command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=INFO", "--schedule=/tmp/celerybeat-schedule"]
     # beat không có endpoint HTTP: PID 1 còn sống là tín hiệu duy nhất (không kế thừa healthcheck HTTP của image API)
     healthcheck:

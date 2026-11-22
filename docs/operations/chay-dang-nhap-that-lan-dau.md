@@ -10,10 +10,12 @@ Mục tiêu: kiểm chứng Runner đăng nhập được vào Staging bằng t�
 
 ## 1. Dựng platform (máy của bạn hoặc máy chủ nhóm)
 ```powershell
-Copy-Item .env.example .env        # điền POSTGRES_*, JWT_SIGNING_KEY, SECRET_KEK (xem chú thích trong file)
+.\scripts\init-env.ps1            # tạo .env và điền giá trị ngẫu nhiên hợp lệ (không ghi đè giá trị đã có; tự đổi cổng PostgreSQL nếu 5432 bị chặn)
 docker compose -f infra/compose/compose.yaml --env-file .env up -d --build
 docker compose -f infra/compose/compose.yaml --env-file .env exec api python -m app.cli bootstrap --username <tên> --display-name "<Tên>"
 ```
+Nếu script báo `SECRET_KEK` không hợp lệ và bạn **chưa lưu mật khẩu nào** vào vault: xóa giá trị sau `SECRET_KEK=` trong `.env` rồi chạy lại script.
+
 Mở http://localhost:3000, đăng nhập, đổi mật khẩu nếu được yêu cầu. Giữ bản sao `SECRET_KEK` ngoài máy: mất khóa là mất mọi bí mật trong vault.
 
 ## 2. Môi trường và tài khoản (trang "Môi trường & tài khoản")
