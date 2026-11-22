@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { handleJob, type AgentConfig, type BrowserFactory } from "../src/agent.js";
 import { ApiError, ServerApi, type Job } from "../src/api.js";
@@ -17,6 +18,8 @@ const fakeApi = () => {
   const api = {
     credentials: vi.fn(async () => (calls.push("credentials"), { username: "nv", password: "pw" })),
     start: vi.fn(async () => void calls.push("start")),
+    files: vi.fn(async () => [] as { key: string; file_id: string; name: string; size: number; mime: string }[]),
+    downloadFile: vi.fn(async () => new Uint8Array([1, 2, 3])),
     report: vi.fn(async (_id: string, _body: unknown) => (calls.push("report"), { status: "PASSED" })),
     artifact: vi.fn(async (_id: string, _kind: string, _n: string, _d: Uint8Array, _m: string) => (calls.push("artifact"), { file_id: "f" })),
   };
@@ -63,6 +66,32 @@ describe("handleJob", () => {
     const { api, calls } = fakeApi();
     await handleJob(api, mkJob("await step('a', async () => {});"), { ...cfg, skipLogin: true }, fakeBrowser(), () => {});
     expect(calls).not.toContain("credentials");
+  });
+});
+
+describe("file đính kèm", () => {
+  it("tải về thư mục tạm, truyền cho attachFiles rồi xóa ngay sau khi chạy", async () => {
+    const { api, mocks } = fakeApi();
+    mocks.files.mockResolvedValue([{ key: "anh", file_id: "11111111-1111-1111-1111-111111111111", name: "../../anh mô tả.png", size: 3, mime: "image/png" }]);
+    const attached: string[][] = [];
+    const page = { input: { setInputFiles: async (p: string[]) => void attached.push(p) } };
+    const script = "assert(await attachFiles(page.input, 'anh') === true);";
+    const job = { ...mkJob(script), params: { anh: "11111111-1111-1111-1111-111111111111" } };
+    const r = await handleJob(api, job, cfg, async () => ({ page, screenshot: async () => null, close: async () => {} }), () => {});
+    expect(r?.status).toBe("PASSED");
+    const p = attached[0][0];
+    expect(p).toContain("qc-runner");
+    expect(path.dirname(p).replace(/\\/g, "/").endsWith("qc-runner/e1")).toBe(true); // tên file được làm sạch: luôn nằm trực tiếp trong thư mục tạm của lần chạy
+    expect(path.basename(p)).not.toMatch(/[\\/]/);
+    expect(fs.existsSync(p)).toBe(false); // đã xóa sau khi chạy
+  });
+
+  it("không tải được file ⇒ báo lỗi, không chạy script", async () => {
+    const { api, mocks } = fakeApi();
+    mocks.files.mockResolvedValue([{ key: "anh", file_id: "11111111-1111-1111-1111-111111111111", name: "a.png", size: 1, mime: "image/png" }]);
+    mocks.downloadFile.mockRejectedValue(new Error("mạng lỗi"));
+    await handleJob(api, mkJob("await step('a', async () => {});"), cfg, fakeBrowser(), () => {});
+    expect(mocks.report.mock.calls[0][1]).toMatchObject({ status: "FAILED", error: "mạng lỗi" });
   });
 });
 

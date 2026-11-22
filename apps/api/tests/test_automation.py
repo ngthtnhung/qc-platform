@@ -331,3 +331,23 @@ def test_approval_payload_carries_previous_approved_script_for_diff(qc, staging)
     assert pend["payload"]["note"] == "đổi selector"
     detail = qc.get(f"/api/v1/automation/tasks/{t['id']}").json()
     assert detail["script_by_version"]["1"] == SCRIPT and detail["script_by_version"]["2"] == new_script
+
+
+def test_runner_downloads_only_files_listed_in_execution_params(qc, staging, session):
+    png = b"\x89PNG\r\n\x1a\n" + b"7" * 64
+    fid = qc.post("/api/v1/files", files={"file": ("anh.png", png, "image/png")}).json()["id"]
+    other = qc.post("/api/v1/files", files={"file": ("khac.png", png + b"x", "image/png")}).json()["id"]
+    t = qc.post("/api/v1/automation/tasks", json=_task_body(params=[{"key": "anh_mo_ta", "label": "Ảnh", "type": "file", "value": fid}])).json()
+    _approve(qc, t["id"])
+    ex_id = qc.post(f"/api/v1/automation/tasks/{t['id']}/run", json={}).json()["executions"][0]["id"]
+    _, rc = _runner(qc, "rfiles")
+    assert rc.get(f"/api/v1/runner/executions/{ex_id}/files").status_code == 404  # chưa nhận việc ⇒ không phải việc của runner này
+    assert rc.post("/api/v1/runner/claim").json()["job"]["execution_id"] == ex_id
+    listed = rc.get(f"/api/v1/runner/executions/{ex_id}/files").json()
+    assert listed == [{"key": "anh_mo_ta", "file_id": fid, "name": "anh.png", "size": len(png), "mime": "image/png"}]
+    ok = rc.get(f"/api/v1/runner/executions/{ex_id}/files/{fid}")
+    assert ok.status_code == 200 and ok.content == png
+    assert rc.get(f"/api/v1/runner/executions/{ex_id}/files/{other}").status_code == 404  # file có thật nhưng không thuộc tham số lần chạy
+    _, stranger = _runner(qc, "rother")
+    assert stranger.get(f"/api/v1/runner/executions/{ex_id}/files/{fid}").status_code == 404  # runner khác không lấy được
+    assert session.scalars(select(AuditLog).where(AuditLog.action == "RUNNER_FILE_DOWNLOAD")).all()

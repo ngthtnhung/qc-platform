@@ -250,6 +250,26 @@ def runner_credentials(execution_id: uuid.UUID, runner: Runner = Depends(current
     return service.serve_credentials(session, runner, execution_id)
 
 
+@runner_router.get("/executions/{execution_id}/files")
+def runner_files(execution_id: uuid.UUID, runner: Runner = Depends(current_runner), session: Session = Depends(get_session)):
+    return service.execution_files(session, runner, execution_id)
+
+
+@runner_router.get("/executions/{execution_id}/files/{file_id}")
+def runner_file(execution_id: uuid.UUID, file_id: uuid.UUID, runner: Runner = Depends(current_runner), session: Session = Depends(get_session),
+                storage: StorageBackend = Depends(lambda: get_storage())):
+    from fastapi.responses import Response
+
+    allowed = {f["file_id"]: f for f in service.execution_files(session, runner, execution_id)}
+    meta = allowed.get(str(file_id))
+    if meta is None:
+        raise NotFound("File không thuộc tham số của lần chạy này")
+    rec = file_service.get_file(session, file_id)
+    log_audit(session, Principal(type=__import__("app.core.principal", fromlist=["PrincipalType"]).PrincipalType.RUNNER, id=runner.id, username=runner.name),
+              "RUNNER_FILE_DOWNLOAD", resource_type="execution", resource_id=str(execution_id), after={"file": str(file_id)})
+    return Response(storage.get(rec.storage_key), media_type=rec.mime, headers={"X-Content-Type-Options": "nosniff"})
+
+
 @runner_router.post("/executions/{execution_id}/start", status_code=204)
 def runner_start(execution_id: uuid.UUID, runner: Runner = Depends(current_runner), session: Session = Depends(get_session)):
     service.mark_running(session, runner, execution_id)

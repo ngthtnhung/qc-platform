@@ -46,6 +46,12 @@ export class ServerApi {
   heartbeat = (status: "ONLINE" | "BUSY" = "ONLINE") => this.call<void>("/heartbeat", { body: { status } });
   claim = async () => (await this.call<{ job: Job | null }>("/claim")).job;
   credentials = (id: string) => this.call<{ username: string; password: string | null }>(`/executions/${id}/credentials`);
+  files = (id: string) => this.call<{ key: string; file_id: string; name: string; size: number; mime: string }[]>(`/executions/${id}/files`, { method: "GET" });
+  async downloadFile(id: string, fileId: string): Promise<Uint8Array> {
+    const res = await this.f(`${this.base}/api/v1/runner/executions/${id}/files/${fileId}`, { headers: { Authorization: `Bearer ${this.token}` } });
+    if (!res.ok) throw new ApiError(res.status, `HTTP_${res.status}`, `Không tải được file đính kèm (HTTP ${res.status})`);
+    return new Uint8Array(await res.arrayBuffer());
+  }
   start = (id: string) => this.call<void>(`/executions/${id}/start`);
   report = (id: string, body: ReportBody) => this.call<{ status: string }>(`/executions/${id}/report`, { body });
   async artifact(id: string, kind: string, name: string, data: Uint8Array, mime: string) {

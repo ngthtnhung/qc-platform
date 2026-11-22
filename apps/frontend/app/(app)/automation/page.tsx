@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, type Account, type AutoTask, type Environment, type Execution } from "@/lib/api";
+import { api, apiForm, ApiError, type Account, type AutoTask, type Environment, type Execution } from "@/lib/api";
 
 const VSTATUS: Record<string, { label: string; cls: string }> = {
   PENDING: { label: "Chờ QC duyệt", cls: "warn" }, APPROVED: { label: "Đã duyệt", cls: "ok" }, REJECTED: { label: "Từ chối", cls: "bad" }, RETIRED: { label: "Ngừng", cls: "" },
@@ -50,6 +50,31 @@ function AiCode({ t, onDone }: { t: AutoTask; onDone: () => void }) {
         </div>
       )}
       {msg && <div role={msg.ok ? "status" : "alert"} className={msg.ok ? "muted" : "err"}>{msg.text}</div>}
+    </div>
+  );
+}
+
+function FileParam({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
+  const [err, setErr] = useState("");
+  const ids = value.split(",").map((s) => s.trim()).filter(Boolean);
+  async function upload(f: File) {
+    setErr("");
+    try {
+      const form = new FormData();
+      form.append("file", f);
+      const r = await apiForm<{ id: string }>("/files", form);
+      onChange([...ids, r.id].join(","));
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "Không tải lên được");
+    }
+  }
+  return (
+    <div>
+      <div className="row">
+        <input type="file" aria-label={`Tải file cho ${label}`} onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ""; }} style={{ maxWidth: 320 }} />
+        {ids.map((id) => <span key={id} className="badge">{id.slice(0, 8)}… <button style={{ padding: "0 6px" }} onClick={() => onChange(ids.filter((x) => x !== id).join(","))} aria-label="Gỡ file">×</button></span>)}
+      </div>
+      {err && <div className="err" role="alert">{err}</div>}
     </div>
   );
 }
@@ -183,7 +208,9 @@ function TaskCard({ t, onChange, accounts }: { t: AutoTask; onChange: () => void
           {t.params.map((p) => (
             <div key={p.key}>
               <label htmlFor={`${t.id}-${p.key}`}>{p.label || p.key}</label>
-              {p.type === "multiline" ? (
+              {p.type === "file" ? (
+                <FileParam label={p.label || p.key} value={values[p.key] ?? ""} onChange={(v) => setValues({ ...values, [p.key]: v })} />
+              ) : p.type === "multiline" ? (
                 <textarea id={`${t.id}-${p.key}`} rows={3} value={values[p.key] ?? ""} onChange={(e) => setValues({ ...values, [p.key]: e.target.value })} />
               ) : (
                 <input id={`${t.id}-${p.key}`} value={values[p.key] ?? ""} onChange={(e) => setValues({ ...values, [p.key]: e.target.value })} />

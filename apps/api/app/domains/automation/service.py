@@ -300,6 +300,27 @@ def serve_credentials(session: Session, runner: Runner, execution_id: uuid.UUID)
     return {"username": acc.username_ref, "password": pw}
 
 
+def execution_files(session: Session, runner: Runner, execution_id: uuid.UUID) -> list[dict]:
+    """Các file đính kèm của lần chạy (tham số kiểu `file`): chỉ file được liệt kê trong tham số của lần chạy này, chỉ khi runner đang giữ việc."""
+    from app.domains.files.models import StoredFile
+
+    ex = _owned(session, runner, execution_id)
+    if ex.status not in ("CLAIMED", "RUNNING"):
+        raise Conflict(f"Lần chạy ở trạng thái {ex.status}")
+    out = []
+    for p in session.scalars(select(TaskParam).where(TaskParam.task_id == ex.task_id, TaskParam.type == "file")):
+        for raw in str((ex.params or {}).get(p.key, "")).split(","):
+            raw = raw.strip()
+            try:
+                fid = uuid.UUID(raw)
+            except ValueError:
+                continue  # mã file cũ của bản Node (f_xxx) không có trong platform mới: bỏ qua
+            rec = session.get(StoredFile, fid)
+            if rec is not None:
+                out.append({"key": p.key, "file_id": str(rec.id), "name": rec.original_name, "size": rec.size, "mime": rec.mime})
+    return out
+
+
 def mark_running(session: Session, runner: Runner, execution_id: uuid.UUID) -> Execution:
     ex = _owned(session, runner, execution_id)
     if ex.status != "CLAIMED":

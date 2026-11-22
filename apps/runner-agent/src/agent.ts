@@ -74,6 +74,27 @@ export const playwrightBrowser: BrowserFactory = async (job, cfg, password) => {
 
 export type Logger = (msg: string) => void;
 
+const safeName = (s: string) => s.replace(/[^\w.\- ]/g, "_").replace(/^\.+/, "").slice(0, 80) || "tep";
+
+/** Tải file đính kèm của lần chạy về thư mục tạm riêng; trả về key → đường dẫn và hàm dọn dẹp (xóa ngay sau khi chạy). */
+export async function fetchExecutionFiles(api: ServerApi, executionId: string, baseDir = os.tmpdir()): Promise<{ files: Record<string, string[]>; cleanup: () => void }> {
+  const dir = path.join(baseDir, "qc-runner", safeName(executionId));
+  const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
+  const files: Record<string, string[]> = {};
+  try {
+    for (const f of await api.files(executionId)) {
+      fs.mkdirSync(dir, { recursive: true });
+      const dest = path.join(dir, `${f.file_id}_${safeName(f.name)}`);
+      fs.writeFileSync(dest, await api.downloadFile(executionId, f.file_id));
+      (files[f.key] ??= []).push(dest);
+    }
+  } catch (e) {
+    cleanup();
+    throw e;
+  }
+  return { files, cleanup };
+}
+
 /** Xử lý MỘT việc: lấy mật khẩu (một lần) → mở trình duyệt → kiểm tra sha → chạy → báo kết quả (+ ảnh khi lỗi). */
 export async function handleJob(api: ServerApi, job: Job, cfg: AgentConfig, browser: BrowserFactory, log: Logger): Promise<RunResult | null> {
   let session: BrowserSession | null = null;
@@ -82,10 +103,16 @@ export async function handleJob(api: ServerApi, job: Job, cfg: AgentConfig, brow
     session = await browser(job, cfg, password);
     await api.start(job.execution_id);
     const meta = Object.keys(job.params).map((key) => ({ key, value: job.params[key] }));
-    const result = await runScript({
-      script: job.script, expectedSha256: job.sha256, page: session.page, username: job.account.username,
-      startUrl: job.task.start_url, params: job.params, paramMeta: meta,
-    });
+    const attached = await fetchExecutionFiles(api, job.execution_id);
+    let result: RunResult;
+    try {
+      result = await runScript({
+        script: job.script, expectedSha256: job.sha256, page: session.page, username: job.account.username,
+        startUrl: job.task.start_url, params: job.params, paramMeta: meta, files: attached.files,
+      });
+    } finally {
+      attached.cleanup(); // file đính kèm bị xóa ngay sau khi chạy
+    }
     const diag = result.status === "FAILED" ? await session.diagnostics?.().catch(() => undefined) : undefined;
     if (diag) {
       result.log.push(`[chẩn đoán] URL khi lỗi: ${diag.url}`, `[chẩn đoán] Tiêu đề: ${diag.title || "(trống)"}`, `[chẩn đoán] Kích thước DOM: ${diag.html.length} ký tự`);
