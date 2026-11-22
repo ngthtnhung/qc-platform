@@ -136,7 +136,7 @@ export type Account = { id: string; environment_id: string; name: string; role_l
 
 export type TaskParam = { key: string; label: string; type: string; value: string; auto: boolean };
 export type AutoTask = {
-  id: string; name: string; module_code: string; flow: string; description: string; start_url: string; writes: boolean; steps: string[];
+  id: string; name: string; module_code: string; flow: string; description: string; start_url: string; writes: boolean; steps: string[]; required_roles: string[];
   params: TaskParam[]; runnable: boolean; approved_version: number | null;
   versions: { id: string; version_no: number; status: string; origin: string; sha256: string }[];
 };

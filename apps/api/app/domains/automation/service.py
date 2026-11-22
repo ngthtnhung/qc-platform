@@ -158,7 +158,7 @@ def queue_runs(session: Session, *, actor: Principal, task: AutomationTask, acco
     else:
         chosen = rules.choose_account(task.required_roles, pool)
     if chosen is None:
-        raise AppError("Không có tài khoản Staging phù hợp", code="NO_ACCOUNT", status=422)
+        raise AppError(_no_account_reason(task, pool, account_id), code="NO_ACCOUNT", status=422)
     policy.evaluate_action(session, actor=actor, action="AUTOMATE", env=chosen["env"], correlation_id=correlation_id)
 
     params = rules.merge_params(task_params(session, task.id), override)
@@ -172,6 +172,19 @@ def queue_runs(session: Session, *, actor: Principal, task: AutomationTask, acco
     log_audit(session, actor, "AUTOMATION_RUN_QUEUED", resource_type="automation_task", resource_id=str(task.id),
               after={"executions": [str(e.id) for e in out], "code_sha256": cv.sha256, "account": str(chosen["id"])}, correlation_id=correlation_id)
     return out
+
+
+def _no_account_reason(task: AutomationTask, pool: list[dict], account_id: uuid.UUID | None) -> str:
+    """Giải thích RÕ vì sao không chọn được tài khoản để người dùng biết sửa ở đâu."""
+    if account_id:
+        return "Tài khoản đã chọn không thuộc môi trường loại STAGING đang hoạt động (hoặc đã bị vô hiệu)."
+    if not pool:
+        return ("Chưa có tài khoản nào trong môi trường loại STAGING đang hoạt động. Vào \"Môi trường & tài khoản\": "
+                "môi trường phải có loại STAGING và có ít nhất một tài khoản.")
+    have = ", ".join(sorted({a["role_label"] or "(trống)" for a in pool}))
+    need = ", ".join(task.required_roles) or "(không yêu cầu)"
+    return (f"Tác vụ cần vai trò: {need}. Các tài khoản Staging hiện có mang vai trò: {have}. "
+            "Đặt lại \"Vai trò\" của tài khoản cho khớp, hoặc chọn tài khoản thủ công khi xếp hàng chạy.")
 
 
 def cancel_execution(session: Session, *, actor: Principal, execution_id: uuid.UUID) -> Execution:

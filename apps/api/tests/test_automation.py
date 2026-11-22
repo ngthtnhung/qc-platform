@@ -301,3 +301,21 @@ def test_rate_limit_counts_recent_runs(qc, staging, session, monkeypatch):
     r = qc.post(f"/api/v1/automation/tasks/{t['id']}/run", json={"count": 2})
     assert r.status_code == 429 and r.json()["error"]["code"] == "RATE_LIMITED"
 
+
+
+def test_no_account_message_explains_cause_and_manual_pick_works(qc):
+    t = qc.post("/api/v1/automation/tasks", json=_task_body(required_roles=["Quản trị"])).json()
+    _approve(qc, t["id"])
+    msg = qc.post(f"/api/v1/automation/tasks/{t['id']}/run", json={}).json()["error"]["message"]
+    assert "STAGING" in msg  # chưa có môi trường/tài khoản Staging
+    env = qc.post("/api/v1/environments", json={"code": "stg", "name": "S", "type": "STAGING", "base_url": "https://staging.example.com",
+                                                 "allowed_actions": ["AUTOMATE"]}).json()
+    acc = qc.post("/api/v1/accounts", json={"environment_id": env["id"], "name": "NV", "username_ref": "nv@x.com", "role_label": "Nhân viên"}).json()
+    msg2 = qc.post(f"/api/v1/automation/tasks/{t['id']}/run", json={}).json()["error"]["message"]
+    assert "Quản trị" in msg2 and "Nhân viên" in msg2  # nêu vai trò cần và vai trò đang có
+    ok = qc.post(f"/api/v1/automation/tasks/{t['id']}/run", json={"account_id": acc["id"]})
+    assert ok.status_code == 201  # chọn thủ công thì không bắt khớp vai trò
+    prod = qc.post("/api/v1/environments", json={"code": "prod", "name": "P", "type": "PRODUCTION", "base_url": "https://staging.example.com", "allowed_actions": ["*"]}).json()
+    pacc = qc.post("/api/v1/accounts", json={"environment_id": prod["id"], "name": "P", "username_ref": "p@x.com"}).json()
+    r = qc.post(f"/api/v1/automation/tasks/{t['id']}/run", json={"account_id": pacc["id"]})
+    assert r.status_code == 422 and "không thuộc môi trường loại STAGING" in r.json()["error"]["message"]  # không thể chọn Production
