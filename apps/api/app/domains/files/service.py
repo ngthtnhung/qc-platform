@@ -21,7 +21,7 @@ ZIP_TYPES = {
     "zip": "application/zip",
 }
 OLE_TYPES = {"doc": "application/msword", "xls": "application/vnd.ms-excel", "ppt": "application/vnd.ms-powerpoint"}
-TEXT_TYPES = {"txt": "text/plain", "csv": "text/csv", "md": "text/markdown", "log": "text/plain"}
+TEXT_TYPES = {"txt": "text/plain", "csv": "text/csv", "md": "text/markdown", "log": "text/plain", "html": "text/html", "htm": "text/html"}
 
 
 def sniff(data: bytes, name: str = "") -> tuple[str, str] | None:
@@ -60,11 +60,11 @@ def _clean_name(name: str) -> str:
     return re.sub(r"[^\w.\- ]", "_", base)[:100] or "tep"
 
 
-def save_file(session: Session, storage: StorageBackend, *, data: bytes, name: str, owner: Principal) -> StoredFile:
+def save_file(session: Session, storage: StorageBackend, *, data: bytes, name: str, owner: Principal, max_bytes: int | None = None) -> StoredFile:
     s = get_settings()
     if not data:
         raise AppError("File trống", code="FILE_EMPTY")
-    if len(data) > s.max_upload_bytes:
+    if len(data) > (max_bytes or s.max_upload_bytes):
         raise AppError("File vượt quá giới hạn kích thước", code="FILE_TOO_LARGE", status=413)
     kind = sniff(data, name)
     if kind is None:

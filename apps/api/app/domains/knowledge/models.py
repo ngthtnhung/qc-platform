@@ -35,6 +35,10 @@ class Source(Base):
     kind: Mapped[str] = mapped_column(String(40))
     title: Mapped[str] = mapped_column(String(400))
     external_url: Mapped[str] = mapped_column(String(1000), default="")
+    # Nguồn tra cứu trích dẫn: ba_doc | figma | task_function | code_wiki (+ loại cũ của Kho). retired ⇒ không còn được tìm.
+    status: Mapped[str] = mapped_column(String(10), default="active", server_default="active")
+    meta: Mapped[dict | None] = mapped_column(JsonType, nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     created_at: Mapped[dt.datetime] = ts()
 
 

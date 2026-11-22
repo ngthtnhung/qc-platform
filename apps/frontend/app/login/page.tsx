@@ -17,7 +17,7 @@ export default function LoginPage() {
     setError("");
     try {
       await api("/auth/login", { method: "POST", body: { username, password } });
-      router.replace("/approvals");
+      router.replace("/lookup");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Không đăng nhập được");
     } finally {

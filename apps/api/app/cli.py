@@ -119,6 +119,19 @@ def cmd_import_automation(args: argparse.Namespace) -> int:
     return 0 if not rep.errors else 2
 
 
+def cmd_import_functions(args: argparse.Namespace) -> int:
+    from app.domains.sources import ingest
+
+    with session_scope() as s:
+        res = ingest.import_functions_json(s, Path(args.source), None)
+        if args.apply:
+            s.commit()
+        else:
+            s.rollback()
+    print(("[ÁP DỤNG] " if args.apply else "[CHẠY KHÔ] ") + json.dumps(res, ensure_ascii=False))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):  # console Windows mặc định cp1252 sẽ lỗi với tiếng Việt
         if hasattr(stream, "reconfigure"):
@@ -148,6 +161,10 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--legacy-db")
     a.add_argument("--apply", action="store_true")
     a.set_defaults(fn=cmd_import_automation)
+    f = sub.add_parser("import-functions")
+    f.add_argument("--source", required=True)
+    f.add_argument("--apply", action="store_true")
+    f.set_defaults(fn=cmd_import_functions)
     args = ap.parse_args(argv)
     return args.fn(args)
 

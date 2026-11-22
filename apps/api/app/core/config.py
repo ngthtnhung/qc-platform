@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     s3_access_key: str = ""
     s3_secret_key: str = ""
     max_upload_bytes: int = 10 * 1024 * 1024
+    max_source_upload_bytes: int = 25 * 1024 * 1024  # tài liệu nguồn (BA .docx, wiki) lớn hơn file đính kèm thường
+    figma_api_base: str = "https://api.figma.com"
+    haraworks_base_url: str = "https://tasks.haraworks.vn"
+    # Chỉ cho phép tải trang wiki từ các host này (phân tách bằng dấu phẩy). Trống = tắt tính năng tải từ URL (chặn SSRF mặc định).
+    wiki_fetch_allowed_hosts: str = ""
 
     @field_validator("jwt_signing_key")
     @classmethod

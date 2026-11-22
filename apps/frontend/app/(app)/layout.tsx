@@ -6,8 +6,10 @@ import type { ReactNode } from "react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 
 const NAV = [
+  { href: "/lookup", label: "Tra cứu theo mô tả bug" },
+  { href: "/sources", label: "Nguồn tài liệu" },
   { href: "/approvals", label: "Duyệt" },
-  { href: "/library", label: "Thư viện tham chiếu" },
+  { href: "/library", label: "Thư viện rule (cũ)" },
   { href: "/bugs", label: "Tra cứu bug" },
   { href: "/automation", label: "Tác vụ tự động" },
   { href: "/runners", label: "Runner" },

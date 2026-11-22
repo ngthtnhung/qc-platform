@@ -22,7 +22,7 @@ export default function AccountPage() {
       setCurrent("");
       setNext("");
       await reload();
-      router.replace("/approvals");
+      router.replace("/lookup");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Không đổi được mật khẩu");
     }

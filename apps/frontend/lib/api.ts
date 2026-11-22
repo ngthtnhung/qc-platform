@@ -52,6 +52,14 @@ async function parseError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, code, message, cid);
 }
 
+export async function apiForm<T = unknown>(path: string, form: FormData): Promise<T> {
+  const doFetch = () => fetch(`/api/v1${path}`, { method: "POST", credentials: "same-origin", headers: { "X-CSRF-Token": readCookie("csrf_token") }, body: form });
+  let res = await doFetch();
+  if (res.status === 401 && (await tryRefresh())) res = await doFetch();
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()) as T;
+}
+
 export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const doFetch = () =>
@@ -145,3 +153,18 @@ export type Execution = {
   batch_id: string; queued_at: string; finished_at: string | null;
 };
 export type RunnerRow = { id: string; name: string; type: string; capabilities: string[]; status: string; last_heartbeat_at: string | null; revoked: boolean; token?: string };
+
+export type Highlight = { start: number; end: number; term: string };
+export type Citation = {
+  passage_id: string; source_id: string; source_kind: string; source_title: string; source_version: string; is_current: boolean; heading_path: string;
+  locator: Record<string, unknown>; location: string; url: string; quote: string; excerpt: { text: string; start: number; end: number };
+  highlights: Highlight[]; matched_terms: string[]; score: number; citation: string;
+};
+export type Keyword = { term: string; display: string; type: string; weight: number };
+export type Coverage = Record<string, { label: string; sources: number; passages: number }>;
+export type LookupResult = { keywords: Keyword[]; groups: Record<string, Citation[]>; coverage: Coverage; total_passages: number; hint: string; lookup_id: string | null };
+export type SourceItem = {
+  id: string; kind: string; kind_label: string; title: string; url: string; status: string; created_at: string;
+  versions: { id: string; label: string; created_at: string; current_passages: number; has_file: boolean }[];
+};
+export type IntegrationStatus = { key: string; label: string; configured: boolean; last_check_at: string | null; last_check_status: string };
