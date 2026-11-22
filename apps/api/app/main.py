@@ -17,6 +17,7 @@ from app.domains.automation.router import router as automation_router
 from app.domains.automation.router import runner_router
 from app.domains.bugs.router import router as bugs_router
 from app.domains.files.router import router as files_router
+from app.domains.flows.router import router as flows_router
 from app.domains.knowledge.router import router as library_router
 from app.domains.platform.jobs_router import router as jobs_router
 from app.domains.platform.router import router as platform_router
@@ -91,6 +92,7 @@ def create_app() -> FastAPI:
 
     app.include_router(platform_router, prefix="/api/v1")
     app.include_router(files_router, prefix="/api/v1")
+    app.include_router(flows_router, prefix="/api/v1")
     app.include_router(library_router, prefix="/api/v1")
     app.include_router(bugs_router, prefix="/api/v1")
     app.include_router(sources_router, prefix="/api/v1")

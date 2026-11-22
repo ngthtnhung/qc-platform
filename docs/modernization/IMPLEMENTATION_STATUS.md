@@ -116,26 +116,40 @@ Chế độ `RUNNER_SKIP_LOGIN=1` vẫn được dùng cho các tác vụ thử 
 
 Stack tạm đã được gỡ (container, volume, image `qc-platform-*`, file token). Image nền `pgvector`, `redis` còn lại trong Docker (bạn có thể xóa nếu cần chỗ).
 
+### Cập nhật 2026-11-22 (4): tra cứu trích dẫn, AI, tác vụ nền, lịch chạy, ghi luồng
+
+**Đổi nghiệp vụ theo yêu cầu mới:** QC nhập mô tả bug ⇒ hệ thống rút từ khóa và **trích nguyên văn kèm vị trí chính xác** từ các nguồn đã nạp vào DB: (1) tài liệu BA `.docx`, (2) link Figma, (3) mô tả Task Function (toàn bộ danh sách), (4) trang wiki tổng hợp rule chạy thực tế trên code. Hướng dẫn vận hành: `docs/operations/tra-cuu-trich-dan.md`.
+
+| Hạng mục | Cách kiểm chứng | Kết quả |
+|---|---|---|
+| Nạp và tra cứu trích dẫn (docx/figma/task function/wiki; phiên bản; vị trí dòng/đoạn/bảng/ký tự) | Test tự động + dữ liệu thật đọc-only: danh sách Task Function 3425 đoạn, tra cứu 0,3–0,8 giây | Đạt |
+| AI phân tích bug dựa trên trích dẫn, AI gợi ý sửa code | Test với **transport giả** (kiểm tra trích dẫn phải tồn tại, code phải qua `validate_script`, luôn ở PENDING chờ QC) | Đạt với giả lập; **chưa gọi AI thật** |
+| Tác vụ nền (`jobs`), đồng bộ bug trực tiếp từ Haraworks, đồng bộ mô tả Task Function, lịch chạy định kỳ, Celery beat | Test tự động (eager) + chạy trong Docker | Đạt với giả lập; **chưa gọi Haraworks thật** (cần cookie) |
+| Runner tải file đính kèm của lần chạy, giao diện sửa code thành phiên bản mới, so sánh dòng khi duyệt | Test tự động (backend + runner + frontend) | Đạt |
+| `scripts/migrate-accounts.mjs`: chuyển môi trường/tài khoản/mật khẩu từ bản Node | 4 test với vault và API giả; chạy khô **không giải mã** mật khẩu; chỉ `--apply` mới giải mã, mật khẩu không in ra | Đạt với giả lập; **chưa chạy với vault thật** (cần bạn có mặt) |
+| Flow Recorder (lát cắt mỏng): `apps/runner-agent/src/recorder.ts` ghi thao tác ⇒ `recording.json`; API `/flows/recordings` chuẩn hóa, xếp hạng locator, sinh code tất định, tạo tác vụ **PENDING**; trang "Ghi luồng" | 5 test backend + 2 test recorder (Chrome thật: mật khẩu không bị ghi) | Đạt; **chưa ghi trên Staging thật** |
+
+Bộ kiểm thử gần nhất: backend 122 đạt, runner 22 đạt, frontend 8 đạt + tsc/lint/build sạch.
+
 ## Chưa làm / chưa kiểm chứng (nói rõ, không coi là xong)
 
 | Hạng mục | Tình trạng |
 |---|---|
-| PostgreSQL thật | **Đã kiểm chứng** trong stack Docker và trên CI (xem mục "Cập nhật (3)") |
-| Redis/Celery: worker chỉ có tác vụ `system.ping`; `/health` báo Redis lỗi khi không có Redis (đúng hành vi, đã thấy) | Chưa chạy với Redis thật |
-| `S3Storage` | Có mã, **chưa kiểm thử** (không có MinIO); `boto3` không nằm trong phụ thuộc mặc định |
-| Nhập dữ liệu thật từ bản Node: môi trường, tài khoản, vault (cần giải mã DPAPI trên máy gốc), file, bug, rule, tác vụ | **Chưa**. Chỉ có importer người dùng; **chưa chạy với dữ liệu thật** (chỉ test trên dữ liệu giả) |
-| Đồng bộ bug realtime từ Haraworks (Celery beat), phân tích AI, bình luận/ảnh/video của bug | **Chưa làm** — cần cookie/quyền Haraworks của bạn (xem mục "Cần bạn xác nhận") |
-| Đăng nhập thật bằng Runner vào Staging/Production OrgID DEMO | **Chưa kiểm chứng** — logic port từ bản Node, cần tài khoản test của bạn (xem mục dưới) |
-| Tham số kiểu `file` (đính kèm ảnh/PDF): Runner chưa tải được file đính kèm | **Chưa làm** — cần endpoint tải file cho runner; `attachFiles` trả `false` khi không có file |
-| Isolate script: Host Runner vẫn dùng `vm` (không phải ranh giới bảo mật); chỉ Docker Runner có cách ly container | Đã nêu trong mã; chưa có sandbox mạnh hơn cho Host Runner |
-| Lịch chạy định kỳ (`execution_schedules`), retry theo chính sách ngoài lease, Hybrid/API adapter | **Chưa làm** |
-| Flow Recorder → Flow Spec → Test Case, pgvector retrieval, AI sửa code (`repair`) qua luồng duyệt | **Chưa bắt đầu** (Phase 4 còn lại, Phase 5) |
-| Nhập dữ liệu thật vào DB thật (hiện chỉ chạy thử vào DB tạm) | **Chưa** — cần PostgreSQL chạy (xem bên dưới) |
-| Giả định múi giờ: ngày `d` của bug cũ coi là giờ Việt Nam (+07), nguồn không ghi | Cần bạn xác nhận |
-| Bản Node vẫn tự duyệt tác vụ (`autoApprove`) | **Không sửa** cho tới khi chuyển trang Tác Vụ Tự Động (Phase 4); xem APPROVAL_MODEL §6 |
-| CSP dùng `script-src 'unsafe-inline'` (yêu cầu của Next App Router chưa có nonce) | Nợ kỹ thuật, ghi ở SECURITY_REVIEW S-06 |
-| `npm audit`: 2 cảnh báo (postcss ≤ 8.5.22 nằm trong Next, XSS khi stringify CSS) | Không có bản Next 15.x vá hơn (15.5.29 là mới nhất); chỉ ảnh hưởng thời điểm build, không xử lý CSS do người dùng nhập. Theo dõi nâng cấp |
-| `gitleaks` trong CI sẽ báo chuỗi giống mật khẩu trong `database/db.js` (S-01) | Đúng như dự kiến; cần chủ repo xử lý (xoay mật khẩu nếu là thật) |
+| Truy xuất theo ngữ nghĩa (pgvector/embedding) | **Chưa làm** — hiện là tra cứu từ khóa (BM25-style); đủ cho trích dẫn nguyên văn nhưng không hiểu đồng nghĩa |
+| Docx: ô văn bản (textbox), chú thích, header/footer, số thứ tự tự động | Parser **chưa đọc** các phần này |
+| Figma/Haraworks/AI thật | Chỉ kiểm chứng bằng transport giả; cần token/cookie/khóa của bạn (xem bảng dưới) |
+| Đồng bộ mô tả Task Function | `functions-live.json` chỉ có tên/thuộc tính, **chưa có mô tả**; cần cookie Haraworks để lấy mô tả |
+| Đăng nhập thật bằng Runner | Đã chạy thật một lần (bạn tự nhập mật khẩu); tác vụ ở bước chọn ngày từng ra trang trắng — đã thêm chẩn đoán, chờ bạn chạy lại và gửi các dòng `[chẩn đoán]` |
+| `S3Storage` | Có mã, **chưa kiểm thử** (không có MinIO) |
+| Skill `business-rule-extractor` (qa-sync) nối sang API mới | **Chưa** — luồng rule đã đổi sang tra cứu trích dẫn nên ít cấp thiết |
+| Flow Recorder đầy đủ: nhiều phiên bản FlowSpec, test case, locator tự sửa, assertion | **Chưa** — chỉ có lát cắt mỏng (click/nhập/chọn/phím) |
+| Isolate script Host Runner | Vẫn `vm` (không phải ranh giới bảo mật); chỉ Docker Runner cách ly container |
+| Retry theo chính sách, Hybrid/API adapter | **Chưa làm** |
+| Giả định múi giờ: ngày bug cũ coi là +07 | Cần bạn xác nhận |
+| Bản Node vẫn tự duyệt tác vụ (`autoApprove`) | Không sửa bản Node; platform mới không có đường tự duyệt |
+| CSP `script-src 'unsafe-inline'` (Next App Router chưa có nonce) | Nợ kỹ thuật (SECURITY_REVIEW S-06) |
+| `npm audit`: cảnh báo postcss trong Next | Chỉ ảnh hưởng lúc build; chưa có bản Next vá hơn |
+| `gitleaks` báo chuỗi giống mật khẩu trong `database/db.js` (S-01) | Cần chủ repo xử lý |
 
 ## Cách chạy cục bộ (không cần Docker)
 
@@ -151,25 +165,28 @@ cd apps/frontend ; npm ci ; $env:API_INTERNAL_URL="http://127.0.0.1:8000" ; npm 
 .\.venv\Scripts\python -m pytest        # trong apps/api
 ```
 
-Với Docker (khi daemon chạy): sao chép `.env.example` → `.env`, điền giá trị, rồi
-`docker compose -f infra/compose/compose.yaml --env-file .env up -d --build`.
+Với Docker: sao chép `.env.example` → `.env` (hoặc chạy `scripts/init-env.ps1`), rồi
+`docker compose -f infra/compose/compose.yaml --env-file .env up -d --build`. **Stack đang chạy của bạn phải build lại** để có migration 0004–0006 (volume giữ nguyên dữ liệu).
+
+Ghi luồng: `cd apps/runner-agent ; npm run build ; $env:QC_RECORD_URL="https://<staging>" ; node dist/recorder.js`, thao tác xong đóng trình duyệt, nạp `recording.json` ở trang "Ghi luồng".
 
 ## Cần bạn xác nhận hoặc cấp quyền hạ tầng
 
 | # | Việc | Vì sao cần bạn | Hiện tại |
 |---|---|---|---|
-| 1 | **Bật Docker Desktop** (daemon đang tắt) | Tôi không tự khởi chạy ứng dụng trên máy bạn. Cần để chạy `docker compose up`, PostgreSQL + pgvector, Redis, worker/beat và kiểm chứng migration 0001–0002 trên PostgreSQL thật | Chưa kiểm chứng |
-| 2 | **Cho phép tôi mở Pull Request** `feature/new-platform` → `main` để chạy CI (có job PostgreSQL) | Mở PR là hành động công khai trên GitHub của bạn; CI chạy trên PR chứ không chạy khi push nhánh | Chưa mở |
-| 3 | **Cookie phiên Haraworks (chỉ đọc)** cho đồng bộ bug realtime | Là thông tin đăng nhập của bạn; tôi không tự lấy. Bạn đưa vào `secrets` theo hướng dẫn README cũ hoặc nhập qua giao diện khi tôi làm xong chỗ nhập bí mật. Tôi chỉ gọi các truy vấn đọc | Chưa làm |
-| 4 | **Khóa AI** (`GEMINI_API_KEY` hoặc `ANTHROPIC_API_KEY`) | Cho phân tích bug bằng AI qua luồng đề xuất chờ QC duyệt; đặt trong `.env`, không gửi cho tôi | Chưa làm |
-| 5 | **Quyết định**: máy chủ nhóm chạy Docker trên Windows hay Linux; HTTPS dùng mkcert hay CA nội bộ/ACME | Ảnh hưởng profile `team` và cách thành viên cài Runner | Chưa chốt |
-| 6 | **Giải mã vault DPAPI** trên máy Windows gốc để nhập mật khẩu tài khoản test (M-03) | Chỉ đúng người dùng Windows tạo `secrets/vault.key` giải mã được; cần bạn có mặt và chấp thuận | Chưa làm |
-| 8 | **Một tài khoản Staging test + máy Windows chạy Runner** để kiểm chứng đăng nhập thật và chạy 1–2 tác vụ trong 43 tác vụ đã nhập | Tôi không có thông tin đăng nhập; chỉ bạn quyết định tài khoản nào được dùng và chấp thuận chạy trên Staging. Tác vụ ghi dữ liệu dùng tiền tố `[AI TEST]` | Chưa làm |
-| 7 | **S-01**: chuỗi giống mật khẩu trong `database/db.js` (đã nằm trong lịch sử Git) | Nếu là mật khẩu thật, cần bạn đổi trên Staging/Production DEMO | Chưa xác nhận |
+| 1 | **Cookie phiên Haraworks (chỉ đọc)** — nhập ở trang Nguồn tài liệu → Tích hợp | Bật đồng bộ bug realtime và lấy mô tả Task Function. Là thông tin đăng nhập của bạn, chỉ ghi vào vault, không gửi cho tôi | Chưa |
+| 2 | **Token Figma** — cùng chỗ nhập trên | Để hệ thống đọc chữ trong thiết kế (không có token vẫn dán tay được) | Chưa |
+| 3 | **Khóa AI** (Gemini hoặc Anthropic) — cùng chỗ nhập trên | Bật phân tích bug bằng AI và gợi ý code (luôn chờ QC duyệt) | Chưa |
+| 4 | **Chạy lại tác vụ Staging lỗi bước chọn ngày** và gửi các dòng `[chẩn đoán]` | Tôi chưa có thông tin đăng nhập; chỉ bạn nhập mật khẩu | Chờ bạn |
+| 5 | **Chuyển tài khoản/mật khẩu từ vault cũ**: `node scripts/migrate-accounts.mjs --server https://… --apply` | Giải mã DPAPI chỉ đúng người dùng Windows gốc; cần bạn có mặt và đồng ý. Chạy khô trước (không giải mã) | Chưa |
+| 6 | **Đổi mật khẩu Staging** đã gửi trong khung chat | Mật khẩu đã lộ trong hội thoại; tôi không dùng nó | Nên làm |
+| 7 | **S-01**: chuỗi giống mật khẩu trong `database/db.js` (đã nằm trong lịch sử Git) | Nếu là thật, cần đổi | Chưa xác nhận |
+| 8 | **Quyết định** hạ tầng nhóm: Docker trên Windows hay Linux; HTTPS dùng mkcert hay CA nội bộ/ACME | Ảnh hưởng profile `team` và cách thành viên cài Runner | Chưa chốt |
+| 9 | **Múi giờ** ngày bug cũ (+07) | Giả định chưa được xác nhận | Chưa |
 
 ## Bước tiếp theo đề xuất
 
-1. Có Docker (mục 1) hoặc PR (mục 2) ⇒ kiểm chứng PostgreSQL + compose; sửa nếu có lỗi.
-2. Nhập dữ liệu thật vào PostgreSQL bằng `import-kb-snapshot`, `import-bugs`, `import-legacy-users` (chạy khô trước).
-3. Đồng bộ Haraworks bằng Celery beat (cần mục 3); phân tích AI qua `create_ai_suggestion` (cần mục 4).
-4. Phase 4: tác vụ automation + code version có duyệt, Runner Agent.
+1. Build lại stack Docker, đăng nhập, nạp các nguồn (BA .docx, Figma, Task Function, wiki) rồi thử tra cứu bằng mô tả bug thật.
+2. Cấu hình cookie/token/khóa AI (mục 1–3) để bật đồng bộ và AI; kiểm tra từng kết nối bằng nút “Kiểm tra”.
+3. Nếu tra cứu từ khóa chưa đủ tốt trên mô tả thật, thêm pgvector làm lớp gợi ý phụ (vẫn trích nguyên văn).
+4. Mở rộng Flow Recorder thành FlowSpec có phiên bản + assertion khi cần.

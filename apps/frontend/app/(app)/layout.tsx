@@ -12,6 +12,7 @@ const NAV = [
   { href: "/library", label: "Thư viện rule (cũ)" },
   { href: "/bugs", label: "Tra cứu bug" },
   { href: "/automation", label: "Tác vụ tự động" },
+  { href: "/flows", label: "Ghi luồng" },
   { href: "/runners", label: "Runner" },
   { href: "/environments", label: "Môi trường & tài khoản" },
   { href: "/users", label: "Người dùng QC" },
