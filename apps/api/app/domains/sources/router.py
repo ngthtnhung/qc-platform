@@ -142,9 +142,14 @@ async def upload_task_functions(file: UploadFile = File(...), p: Principal = Dep
     return {"teams": [ingest.ingest_task_functions(session, actor=p, team=team, tasks=items) for team, items in sorted(by_team.items())]}
 
 
-@router.post("/sources/task-functions/sync-descriptions")
+@router.post("/sources/task-functions/sync-descriptions", status_code=202)
 def sync_descriptions(limit: int | None = None, p: Principal = Depends(require(Perm.FILES_WRITE)), session: Session = Depends(get_session)):
-    return integ.sync_function_descriptions(session, p, limit=limit)
+    """Việc dài (hàng nghìn task): chạy ở worker. Trả job_id; xem tiến độ ở GET /jobs/{id}."""
+    from app.domains.platform import jobs
+
+    integ.haraworks_client(session, p).close()  # báo lỗi sớm (chưa cấu hình cookie) thay vì để job thất bại
+    job = jobs.enqueue(session, kind="sync_function_descriptions", actor=p, payload={"limit": limit})
+    return {"job_id": str(job.id), "status": job.status}
 
 
 @router.delete("/sources/{source_id}", status_code=204)

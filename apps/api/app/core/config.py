@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     # Chỉ cho phép tải trang wiki từ các host này (phân tách bằng dấu phẩy). Trống = tắt tính năng tải từ URL (chặn SSRF mặc định).
     wiki_fetch_allowed_hosts: str = ""
     ai_provider_order: str = "gemini,anthropic"
+    haraworks_sync_seconds: int = 300
     gemini_model: str = "gemini-2.5-flash"
     anthropic_model: str = "claude-sonnet-5-5"
     gemini_api_base: str = "https://generativelanguage.googleapis.com"

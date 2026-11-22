@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, type BugItem } from "@/lib/api";
+import { api, waitJob, ApiError, type BugItem } from "@/lib/api";
 
 type Meta = { sources: Record<string, number>; modules: string[]; status_labels: Record<string, string> };
 const SOURCE_LABEL: Record<string, string> = { haraworks: "Haraworks (realtime)", legacy_kb: "Kho bug cũ" };
@@ -16,6 +16,24 @@ export default function BugsPage() {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [data, setData] = useState<{ total: number; items: BugItem[] } | null>(null);
   const [error, setError] = useState("");
+  const [syncMsg, setSyncMsg] = useState("");
+  const [syncing, setSyncing] = useState(false);
+
+  async function syncNow() {
+    setSyncing(true);
+    setSyncMsg("");
+    try {
+      const q = await api<{ job_id: string }>("/bugs/sync", { method: "POST" });
+      const j = await waitJob(q.job_id);
+      const r = (j.result ?? {}) as { created?: number; updated?: number; error?: { message?: string } };
+      setSyncMsg(j.status === "DONE" ? `Đồng bộ xong: ${r.created ?? 0} bug mới, ${r.updated ?? 0} bug đổi.` : `Lỗi: ${r.error?.message ?? "đồng bộ thất bại"}`);
+      void load();
+    } catch (e) {
+      setSyncMsg(e instanceof ApiError ? e.message : "Không đồng bộ được");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   useEffect(() => {
     api<Meta>("/bugs/meta").then(setMeta).catch(() => undefined);
@@ -54,7 +72,9 @@ export default function BugsPage() {
           {meta && Object.entries(meta.status_labels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <span className="muted">{data ? `${data.total} bug` : ""}</span>
+        <button disabled={syncing} onClick={() => void syncNow()}>{syncing ? "Đang đồng bộ…" : "Đồng bộ từ Haraworks"}</button>
       </div>
+      {syncMsg && <div role="status" className="muted">{syncMsg}</div>}
       {error && <div className="err" role="alert">{error}</div>}
       <div className="card" style={{ overflowX: "auto" }}>
         <table>

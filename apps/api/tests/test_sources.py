@@ -291,7 +291,11 @@ def test_haraworks_description_sync_reads_only_and_updates_citations(qc, session
     seen: list = []
     integ.TRANSPORT["haraworks"] = haraworks_transport(seen)
     try:
-        out = qc.post("/api/v1/sources/task-functions/sync-descriptions").json()
+        r = qc.post("/api/v1/sources/task-functions/sync-descriptions")
+        assert r.status_code == 202  # việc dài chạy ở worker, không trong request
+        job = qc.get(f"/api/v1/jobs/{r.json()['job_id']}").json()
+        assert job["status"] == "DONE", job
+        out = job["result"]
         assert out["with_description"] == 1 and out["requested"] == 3
         assert all(c == "sid=abc123; other=zzz" for c, _ in seen)  # cookie lấy từ vault, bỏ tiền tố "Cookie:"
         assert all(q.startswith("query{") and "mutation" not in q for _, q in seen)  # chỉ truy vấn đọc

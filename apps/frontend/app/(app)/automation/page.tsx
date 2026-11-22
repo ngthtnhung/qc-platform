@@ -54,6 +54,43 @@ function AiCode({ t, onDone }: { t: AutoTask; onDone: () => void }) {
   );
 }
 
+type Schedule = { id: string; task_id: string; interval_minutes: number; run_count: number; enabled: boolean; next_run_at: string; last_run_at: string | null; last_status: string };
+
+function Schedules({ t, schedules, onChange }: { t: AutoTask; schedules: Schedule[]; onChange: () => void }) {
+  const [every, setEvery] = useState(60);
+  const [msg, setMsg] = useState("");
+  const mine = schedules.filter((s) => s.task_id === t.id);
+  async function create() {
+    setMsg("");
+    try {
+      await api("/automation/schedules", { method: "POST", body: { task_id: t.id, interval_minutes: every } });
+      onChange();
+    } catch (e) {
+      setMsg(e instanceof ApiError ? e.message : "Không đặt được lịch");
+    }
+  }
+  return (
+    <div style={{ marginTop: 8 }}>
+      <strong>Lịch chạy định kỳ</strong>
+      {mine.map((s) => (
+        <div className="row" key={s.id}>
+          <span className="grow">mỗi {s.interval_minutes} phút · lần tới {new Date(s.next_run_at).toLocaleString("vi-VN")}{s.last_status ? ` · ${s.last_status}` : ""}</span>
+          <span className={`badge ${s.enabled ? "ok" : "warn"}`}>{s.enabled ? "Đang bật" : "Đã tắt"}</span>
+          <button onClick={() => void api(`/automation/schedules/${s.id}`, { method: "PUT", body: { enabled: !s.enabled } }).then(onChange)}>{s.enabled ? "Tắt" : "Bật"}</button>
+          <button className="danger" onClick={() => void api(`/automation/schedules/${s.id}`, { method: "DELETE" }).then(onChange)}>Xóa</button>
+        </div>
+      ))}
+      <div className="row">
+        <label htmlFor={`${t.id}-iv`} style={{ margin: 0 }}>Chạy mỗi (phút, ≥ 5)</label>
+        <input id={`${t.id}-iv`} type="number" min={5} value={every} onChange={(e) => setEvery(Number(e.target.value))} style={{ width: 100 }} />
+        <button disabled={!t.runnable} onClick={() => void create()}>Đặt lịch</button>
+        <span className="muted">Chạy bằng quyền của bạn, qua đúng kiểm tra như khi bạn bấm chạy.</span>
+      </div>
+      {msg && <div className="err" role="alert">{msg}</div>}
+    </div>
+  );
+}
+
 function FileParam({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
   const [err, setErr] = useState("");
   const ids = value.split(",").map((s) => s.trim()).filter(Boolean);
@@ -158,7 +195,7 @@ function NewTask({ onDone }: { onDone: () => void }) {
   );
 }
 
-function TaskCard({ t, onChange, accounts }: { t: AutoTask; onChange: () => void; accounts: Account[] }) {
+function TaskCard({ t, onChange, accounts, schedules }: { t: AutoTask; onChange: () => void; accounts: Account[]; schedules: Schedule[] }) {
   const [accountId, setAccountId] = useState("");
   const [open, setOpen] = useState(false);
   const [count, setCount] = useState(1);
@@ -229,6 +266,7 @@ function TaskCard({ t, onChange, accounts }: { t: AutoTask; onChange: () => void
             <button className="primary" disabled={!t.runnable} onClick={() => void run()}>Xếp hàng chạy</button>
           </div>
           {msg && <div role="status" className="muted">{msg}</div>}
+          <Schedules t={t} schedules={schedules} onChange={onChange} />
           <NewVersion t={t} onDone={onChange} />
           <AiCode t={t} onDone={onChange} />
         </>
@@ -241,14 +279,16 @@ export default function AutomationPage() {
   const [tasks, setTasks] = useState<AutoTask[]>([]);
   const [execs, setExecs] = useState<Execution[]>([]);
   const [stagingAccounts, setStagingAccounts] = useState<Account[]>([]);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [module, setModule] = useState("");
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     try {
-      const [t, e, envs, accs] = await Promise.all([api<AutoTask[]>(`/automation/tasks${module ? `?module=${module}` : ""}`), api<Execution[]>("/automation/executions?limit=30"), api<Environment[]>("/environments"), api<Account[]>("/accounts")]);
+      const [t, e, envs, accs, sch] = await Promise.all([api<AutoTask[]>(`/automation/tasks${module ? `?module=${module}` : ""}`), api<Execution[]>("/automation/executions?limit=30"), api<Environment[]>("/environments"), api<Account[]>("/accounts"), api<Schedule[]>("/automation/schedules")]);
       setTasks(t);
       setExecs(e);
+      setSchedules(sch);
       const staging = new Set(envs.filter((x) => x.type === "STAGING" && x.is_active).map((x) => x.id));
       setStagingAccounts(accs.filter((a) => staging.has(a.environment_id)));
     } catch (err) {
@@ -277,7 +317,7 @@ export default function AutomationPage() {
         <span className="muted">{tasks.length} tác vụ</span>
       </div>
       <NewTask onDone={() => void load()} />
-      {tasks.map((t) => <TaskCard key={t.id} t={t} accounts={stagingAccounts} onChange={() => void load()} />)}
+      {tasks.map((t) => <TaskCard key={t.id} t={t} schedules={schedules} accounts={stagingAccounts} onChange={() => void load()} />)}
       <h3>Lần chạy gần đây</h3>
       <div className="card" style={{ overflowX: "auto" }}>
         <table>

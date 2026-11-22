@@ -43,7 +43,8 @@ def get_secret(session: Session, actor: Principal, key: str, purpose: str) -> st
     if integ is None or integ.secret_id is None:
         return None
     sec = session.get(Secret, integ.secret_id)
-    return reveal_secret(session, sec, actor=actor, purpose=purpose) if sec else None
+    # SYSTEM (tác vụ nền theo lịch) được đọc bí mật TÍCH HỢP đã cấu hình; AI không bao giờ
+    return reveal_secret(session, sec, actor=actor, purpose=purpose, allow_system=True) if sec else None
 
 
 def status(session: Session) -> list[dict]:

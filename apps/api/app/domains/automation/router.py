@@ -12,6 +12,7 @@ from app.core.db import get_session
 from app.core.deps import client_ip, correlation_id, current_principal, require
 from app.core.errors import AuthRequired, NotFound
 from app.core.principal import Perm, Principal
+from app.domains.automation import schedules as sched
 from app.domains.automation import service
 from app.domains.automation.models import (
     AutomationTask,
@@ -19,6 +20,7 @@ from app.domains.automation.models import (
     Execution,
     ExecutionArtifact,
     ExecutionLog,
+    ExecutionSchedule,
     ExecutionStep,
     Runner,
 )
@@ -200,6 +202,56 @@ def get_execution(execution_id: uuid.UUID, _: Principal = Depends(current_princi
 @router.post("/automation/executions/{execution_id}/cancel")
 def cancel(execution_id: uuid.UUID, p: Principal = Depends(require(Perm.APPROVE)), session: Session = Depends(get_session)):
     return _ex_out(service.cancel_execution(session, actor=p, execution_id=execution_id))
+
+
+# ------------------------------------------------------------------ QC: lịch chạy định kỳ
+class ScheduleIn(BaseModel):
+    task_id: uuid.UUID
+    interval_minutes: int = Field(ge=5, le=60 * 24 * 30)
+    account_id: uuid.UUID | None = None
+    params: dict[str, str] = {}
+    run_count: int = Field(1, ge=1, le=service.MAX_BATCH)
+    first_run_in_minutes: int | None = Field(None, ge=0, le=60 * 24)
+
+
+def _sched_out(s: ExecutionSchedule) -> dict[str, Any]:
+    return {"id": str(s.id), "task_id": str(s.task_id), "interval_minutes": s.interval_minutes, "run_count": s.run_count, "enabled": s.enabled,
+            "next_run_at": s.next_run_at.isoformat(), "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None, "last_status": s.last_status,
+            "account_id": str(s.account_id) if s.account_id else None}
+
+
+@router.get("/automation/schedules")
+def list_schedules(_: Principal = Depends(current_principal), session: Session = Depends(get_session)):
+    return [_sched_out(s) for s in session.scalars(select(ExecutionSchedule).order_by(ExecutionSchedule.next_run_at))]
+
+
+@router.post("/automation/schedules", status_code=201)
+def create_schedule(body: ScheduleIn, p: Principal = Depends(require(Perm.APPROVE)), session: Session = Depends(get_session)):
+    return _sched_out(sched.create_schedule(session, actor=p, task_id=body.task_id, interval_minutes=body.interval_minutes, account_id=body.account_id,
+                                            params=body.params, run_count=body.run_count, first_run_in_minutes=body.first_run_in_minutes))
+
+
+class ScheduleToggle(BaseModel):
+    enabled: bool
+
+
+@router.put("/automation/schedules/{schedule_id}")
+def toggle_schedule(schedule_id: uuid.UUID, body: ScheduleToggle, p: Principal = Depends(require(Perm.APPROVE)), session: Session = Depends(get_session)):
+    s = session.get(ExecutionSchedule, schedule_id)
+    if s is None:
+        raise NotFound("Không thấy lịch")
+    s.enabled = body.enabled
+    log_audit(session, p, "SCHEDULE_TOGGLE", resource_type="automation_task", resource_id=str(s.task_id), after={"schedule": str(s.id), "enabled": body.enabled})
+    return _sched_out(s)
+
+
+@router.delete("/automation/schedules/{schedule_id}", status_code=204)
+def delete_schedule(schedule_id: uuid.UUID, p: Principal = Depends(require(Perm.APPROVE)), session: Session = Depends(get_session)):
+    s = session.get(ExecutionSchedule, schedule_id)
+    if s is None:
+        raise NotFound("Không thấy lịch")
+    log_audit(session, p, "SCHEDULE_DELETE", resource_type="automation_task", resource_id=str(s.task_id), after={"schedule": str(s.id)})
+    session.delete(s)
 
 
 # ------------------------------------------------------------------ QC: runner

@@ -55,6 +55,17 @@ def list_bugs(q: str = "", source: str = "", module: str = "", status: int | Non
     return BugList(total=total, items=[_item(b, c) for b, c in rows])
 
 
+@router.post("/sync", status_code=202)
+def sync_now(p: Principal = Depends(current_principal), session: Session = Depends(get_session)):
+    """Đồng bộ bug từ Haraworks (chỉ đọc) ở worker. Cần cookie Haraworks (Nguồn tài liệu → Tích hợp)."""
+    from app.domains.integrations import service as integ
+    from app.domains.platform import jobs
+
+    integ.haraworks_client(session, p).close()
+    job = jobs.enqueue(session, kind="sync_bugs", actor=p)
+    return {"job_id": str(job.id), "status": job.status}
+
+
 @router.get("/meta")
 def meta(_: Principal = Depends(current_principal), session: Session = Depends(get_session)):
     by_source = {c: n for c, n in session.execute(select(BugSource.code, func.count(Bug.id)).join(Bug, Bug.source_id == BugSource.id, isouter=True).group_by(BugSource.code))}

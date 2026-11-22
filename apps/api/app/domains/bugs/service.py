@@ -74,6 +74,27 @@ def derive_module(title: str, index: dict[str, str]) -> str:
     return ""
 
 
+def _person(v) -> str:
+    if isinstance(v, str):
+        try:
+            v = json.loads(v)
+        except ValueError:
+            return v
+    return str(v.get("name", "")) if isinstance(v, dict) else ""
+
+
+_KNOWN = {"id", "name", "status", "priority", "is_Deleted", "created_At", "status_Updated_At", "project_Id", "assignTo", "approverEntity", "project_Name"}
+
+
+def live_fields(b: dict, proj: Project | None, mod_index: dict[str, str]) -> dict:
+    """Ánh xạ một task Haraworks (định dạng của bản Node/API) sang các cột của bảng bugs; trường chưa ánh xạ giữ trong extra."""
+    title = str(b.get("name", ""))
+    return dict(title=title, title_fold=fold(title), status=b.get("status"), priority=b.get("priority"), module_code=derive_module(title, mod_index),
+                project_id=proj.id if proj else None, created_at_ext=_dt(b.get("created_At")), updated_at_ext=_dt(b.get("status_Updated_At")),
+                assignee=_person(b.get("assignTo")), approver=_person(b.get("approverEntity")), is_deleted=bool(b.get("is_Deleted")),
+                extra={k: v for k, v in b.items() if k not in _KNOWN})
+
+
 def get_source(session: Session, code: str, name: str) -> BugSource:
     src = session.scalar(select(BugSource).where(BugSource.code == code))
     if src is None:
@@ -140,26 +161,13 @@ def import_live(session: Session, live_json: Path, *, apply: bool) -> Report:
             rep.projects_created += 1
         projects[pid] = proj
 
-    def person(v) -> str:
-        if isinstance(v, str):
-            try:
-                v = json.loads(v)
-            except ValueError:
-                return v
-        return str(v.get("name", "")) if isinstance(v, dict) else ""
-
+    src.config = {**(src.config or {}), "all_tasks": {str(p["id"]): bool(p.get("allTasks")) for p in data.get("projects", [])},
+                  "versions": {str(p["id"]): str(p.get("version", "0")) for p in data.get("projects", [])}, "seen": data.get("seen") or {}}
     for b in data.get("bugs", []):
         try:
             ext = str(b["id"])
-            title = str(b.get("name", ""))
             proj = projects.get(str(b.get("project_Id")))
-            known = {"id", "name", "status", "priority", "is_Deleted", "created_At", "status_Updated_At", "project_Id", "assignTo", "approverEntity", "project_Name"}
-            fields = dict(title=title, title_fold=fold(title), status=b.get("status"), priority=b.get("priority"),
-                          module_code=derive_module(title, mod_index), project_id=proj.id if proj else None, created_at_ext=_dt(b.get("created_At")),
-                          updated_at_ext=_dt(b.get("status_Updated_At")), assignee=person(b.get("assignTo")),
-                          approver=person(b.get("approverEntity")), is_deleted=bool(b.get("is_Deleted")),
-                          extra={k: v for k, v in b.items() if k not in known})
-            upsert_bug(session, src, ext, fields, b, rep)
+            upsert_bug(session, src, ext, live_fields(b, proj, mod_index), b, rep)
         except Exception as exc:  # noqa: BLE001
             rep.errors.append(f"{b.get('id')}: {exc}")
     return _finish(session, rep, apply)

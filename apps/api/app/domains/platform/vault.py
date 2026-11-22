@@ -37,9 +37,10 @@ def store_secret(session: Session, *, kind: str, plaintext: str, aad: str, actor
     return rec
 
 
-def reveal_secret(session: Session, secret: Secret, *, actor: Principal, purpose: str) -> str:
+def reveal_secret(session: Session, secret: Secret, *, actor: Principal, purpose: str, allow_system: bool = False) -> str:
     """Chỉ USER (qc) hoặc RUNNER đã xác thực mới được đọc; AI/SYSTEM không bao giờ. Luôn ghi audit."""
-    if actor.type not in (PrincipalType.USER, PrincipalType.RUNNER):
+    allowed = (PrincipalType.USER, PrincipalType.RUNNER) + ((PrincipalType.SYSTEM,) if allow_system else ())
+    if actor.type not in allowed:
         log_audit(session, actor, "SECRET_READ", resource_type="secret", resource_id=str(secret.id), decision="DENY", reason=purpose)
         raise PermissionDenied("Chủ thể này không được đọc bí mật")
     try:

@@ -64,6 +64,14 @@ class HaraworksClient:
     def projects(self) -> list[dict]:
         return self.gql("{projects{id name}}").get("projects") or []
 
+    def get_list_task(self, version: str, project_id: str) -> dict | None:
+        """version='0': toàn bộ id task của dự án; version=timestamp lần trước: None nếu không đổi."""
+        if not re.fullmatch(r"[0-9a-f]{24}", project_id) or not re.fullmatch(r"[0-9A-Za-z_.:-]{1,40}", str(version)):
+            raise AppError("Mã dự án/phiên bản không hợp lệ", code="VALIDATION_ERROR", status=422)
+        data = self.gql(f'query{{getListTask(version:"{version}",projectId:"{project_id}"){{tasks timestamp}}}}')
+        r = data.get("getListTask")
+        return None if not r else {"ids": r.get("tasks") or [], "timestamp": str(r.get("timestamp"))}
+
     def get_tasks(self, ids: list[str], fields: str) -> list[dict]:
         out: list[dict] = []
         for i in range(0, len(ids), BATCH_SIZE):

@@ -52,6 +52,20 @@ async function parseError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, code, message, cid);
 }
 
+export type Job = { id: string; kind: string; status: "QUEUED" | "RUNNING" | "DONE" | "FAILED"; result: Record<string, unknown> | null };
+
+/** Chờ một tác vụ nền (đồng bộ Haraworks...) xong; trả về job cuối cùng. Việc dài chạy ở worker, không trong request. */
+export async function waitJob(id: string, onTick?: (j: Job) => void, timeoutMs = 15 * 60_000): Promise<Job> {
+  const t0 = Date.now();
+  for (;;) {
+    const j = await api<Job>(`/jobs/${id}`);
+    onTick?.(j);
+    if (j.status === "DONE" || j.status === "FAILED") return j;
+    if (Date.now() - t0 > timeoutMs) throw new ApiError(408, "JOB_TIMEOUT", "Tác vụ nền chạy quá lâu; xem lại sau.");
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+}
+
 export async function apiForm<T = unknown>(path: string, form: FormData): Promise<T> {
   const doFetch = () => fetch(`/api/v1${path}`, { method: "POST", credentials: "same-origin", headers: { "X-CSRF-Token": readCookie("csrf_token") }, body: form });
   let res = await doFetch();

@@ -103,12 +103,32 @@ class Execution(Base):
     lease_expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     credentials_served: Mapped[bool] = mapped_column(Boolean, default=False)
     batch_id: Mapped[str] = mapped_column(String(24), default="")
+    schedule_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("execution_schedules.id", ondelete="SET NULL"), nullable=True, index=True)
     error: Mapped[str] = mapped_column(Text, default="")
     requested_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     queued_at: Mapped[dt.datetime] = ts(index=True)
     started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class ExecutionSchedule(Base):
+    """Lịch chạy định kỳ do một QC tạo; đến hạn thì xếp hàng thay mặt QC đó qua đúng các kiểm tra như QC bấm chạy."""
+
+    __tablename__ = "execution_schedules"
+    __table_args__ = (CheckConstraint("interval_minutes >= 5", name="interval_min"), CheckConstraint("run_count BETWEEN 1 AND 50", name="count_range"))
+    id: Mapped[uuid.UUID] = pk()
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("automation_tasks.id", ondelete="CASCADE"), index=True)
+    account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
+    params: Mapped[dict] = mapped_column(JsonType, default=dict)
+    run_count: Mapped[int] = mapped_column(Integer, default=1)
+    interval_minutes: Mapped[int] = mapped_column(Integer)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    next_run_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_run_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_status: Mapped[str] = mapped_column(String(300), default="")
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    created_at: Mapped[dt.datetime] = ts()
 
 
 class ExecutionStep(Base):

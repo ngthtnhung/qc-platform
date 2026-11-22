@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { api, apiForm, ApiError, type Coverage, type IntegrationStatus, type SourceItem } from "@/lib/api";
+import { api, apiForm, waitJob, ApiError, type Coverage, type IntegrationStatus, type SourceItem } from "@/lib/api";
 
 function useMessage() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -85,7 +85,7 @@ function TaskFunctions({ onDone }: { onDone: () => void }) {
       <div className="row" style={{ marginTop: 8 }}>
         <input type="file" accept=".json" ref={file} style={{ maxWidth: 320 }} aria-label="Tệp danh sách task" />
         <button onClick={() => { const f = file.current?.files?.[0]; if (!f) return; void run(async () => { const form = new FormData(); form.append("file", f); const r = await apiForm<{ teams: { team: string; created: number; updated: number; unchanged: number }[] }>("/sources/task-functions/upload", form); onDone(); return r.teams.map((t) => `${t.team}: +${t.created} mới, ${t.updated} đổi, ${t.unchanged} giữ`).join(" · "); }); }}>Nạp danh sách</button>
-        <button className="primary" onClick={() => void run(async () => { const r = await api<{ requested: number; with_description: number }>("/sources/task-functions/sync-descriptions", { method: "POST" }); onDone(); return `Đã lấy mô tả cho ${r.with_description}/${r.requested} task.`; })}>Đồng bộ mô tả</button>
+        <button className="primary" onClick={() => void run(async () => { const q = await api<{ job_id: string }>("/sources/task-functions/sync-descriptions", { method: "POST" }); const j = await waitJob(q.job_id); onDone(); if (j.status === "FAILED") throw new ApiError(500, "JOB_FAILED", String((j.result as { error?: { message?: string } })?.error?.message ?? "Đồng bộ thất bại")); const r = j.result as { requested: number; with_description: number }; return `Đã lấy mô tả cho ${r.with_description}/${r.requested} task.`; })}>Đồng bộ mô tả</button>
       </div>
       <Msg m={msg} />
     </div>
