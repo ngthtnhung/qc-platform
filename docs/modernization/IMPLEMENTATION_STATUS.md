@@ -79,7 +79,7 @@ Tổng: **60 test backend** (`pytest`), **4 test frontend**, `ruff` và `tsc` s�
 
 Lỗi tìm thấy nhờ test và đã sửa: `claim` truy vấn hàng đợi trước khi ghi việc tái xếp hàng (session tắt autoflush) ⇒ việc hết lease không được nhận lại.
 
-Tổng: **76 test backend**, **4 test frontend**, **15 test runner-agent**; `ruff`, `tsc` sạch.
+Tổng: **76 test backend**, **6 test frontend**, **16 test runner-agent**; `ruff`, `tsc` sạch.
 
 ### Cập nhật 2026-11-22 (3): chạy thật bằng Docker Compose (Docker Desktop do bạn bật)
 
@@ -99,14 +99,28 @@ Tổng: **76 test backend**, **4 test frontend**, **15 test runner-agent**; `ruf
 
 Lỗi chỉ lộ khi chạy trong Docker và đã sửa: (1) `kombu` cần `packaging` nhưng không khai báo ⇒ worker/beat khởi động lại liên tục ⇒ thêm vào `pyproject.toml`; (2) beat thừa hưởng healthcheck HTTP của image API ⇒ thêm healthcheck riêng; (3) agent trong container Playwright không có Chrome ⇒ rơi về Chromium đi kèm khi headless; (4) compose bắt biến `RUNNER_TOKEN` ngay cả khi profile tắt.
 
-**Vấn đề hạ tầng cần bạn xử lý:** ổ C: chỉ còn ~0,3 GB trống sau các lần build ⇒ Docker Desktop không phản hồi. Việc build image Docker Runner (Playwright ≈ 2 GB) chưa hoàn tất nên Docker Runner **chưa được chạy thử**.
+**Sự cố đã xử lý:** các lần build làm đầy ổ C: (còn 0,3 GB) khiến Docker Desktop treo; sau khi bạn giải phóng dung lượng và Docker chạy lại, stack tự lên healthy và **dữ liệu trong volume còn nguyên** (6773 bug, 43 tác vụ).
+
+#### Docker Runner và web trong Docker (đã chạy thật)
+
+| Kiểm tra | Kết quả |
+|---|---|
+| Docker Runner (image Playwright, Chromium headless trong container) | Nhận việc từ API qua mạng Compose, chạy 2 tác vụ thử: một **PASSED** (3 bước), một **FAILED** kèm dòng `waiting for locator` và **ảnh chụp lỗi** lưu thành artifact; runner `ONLINE` |
+| Cách ly container | `user=pwuser`, `cap_drop=ALL`, `no-new-privileges`, không privileged |
+| Đăng nhập qua web (trình duyệt) trên stack Docker, trang Tác vụ tự động | Đạt, hiển thị 45 tác vụ (43 nhập + 2 tác vụ thử) |
+| Duyệt hàng loạt qua API | Đạt (2/2) |
+
+Lỗi chỉ lộ khi chạy trong Docker và đã sửa: (5) Next tính `rewrites` lúc build nên địa chỉ API bị đóng cứng `127.0.0.1:8000` ⇒ web trong container trả 500 khi gọi `/api` ⇒ chuyển sang `middleware.ts` đọc `API_INTERNAL_URL` lúc chạy (có test); (6) Runner từ chối `http://api:8000` (chỉ cho https/localhost) ⇒ thêm cờ tường minh `RUNNER_ALLOW_HTTP=1`, chỉ đặt cho service Docker Runner trong compose (có test); runner ngoài compose vẫn bắt buộc https.
+
+Chế độ `RUNNER_SKIP_LOGIN=1` vẫn được dùng cho các tác vụ thử vì chưa có Staging thật; **đăng nhập thật bằng Runner chưa được kiểm chứng**.
+
+Stack tạm đã được gỡ (container, volume, image `qc-platform-*`, file token). Image nền `pgvector`, `redis` còn lại trong Docker (bạn có thể xóa nếu cần chỗ).
 
 ## Chưa làm / chưa kiểm chứng (nói rõ, không coi là xong)
 
 | Hạng mục | Tình trạng |
 |---|---|
 | PostgreSQL thật | **Đã kiểm chứng** trong stack Docker và trên CI (xem mục "Cập nhật (3)") |
-| Docker Runner (build image Playwright ~2 GB, chạy thật trong container) | **Chưa**: build làm đầy ổ C: (còn 0,3 GB) và Docker Desktop bị treo; cần bạn giải phóng dung lượng (xem dưới) |
 | Redis/Celery: worker chỉ có tác vụ `system.ping`; `/health` báo Redis lỗi khi không có Redis (đúng hành vi, đã thấy) | Chưa chạy với Redis thật |
 | `S3Storage` | Có mã, **chưa kiểm thử** (không có MinIO); `boto3` không nằm trong phụ thuộc mặc định |
 | Nhập dữ liệu thật từ bản Node: môi trường, tài khoản, vault (cần giải mã DPAPI trên máy gốc), file, bug, rule, tác vụ | **Chưa**. Chỉ có importer người dùng; **chưa chạy với dữ liệu thật** (chỉ test trên dữ liệu giả) |

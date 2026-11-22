@@ -122,6 +122,7 @@ services:
       dockerfile: apps/runner-agent/Dockerfile
     environment:
       QC_SERVER_URL: http://api:8000
+      RUNNER_ALLOW_HTTP: "1"  # chỉ vì api nằm trong mạng nội bộ Docker Compose; runner ngoài compose phải dùng https
       RUNNER_TOKEN: ${RUNNER_TOKEN:-}
       RUNNER_SKIP_LOGIN: ${RUNNER_SKIP_LOGIN:-}  # CHỈ để kiểm thử giao thức trên máy dev; để trống ở môi trường thật
     # Chromium trong Docker cần --ipc=host hoặc shm lớn hơn; không mount docker.sock, không privileged

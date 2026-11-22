@@ -7,6 +7,7 @@
 import os from "node:os";
 import path from "node:path";
 import { playwrightBrowser, runLoop, type AgentConfig } from "./agent.js";
+import { checkServerUrl } from "./serverUrl.js";
 
 function need(name: string): string {
   const v = process.env[name]?.trim();
@@ -18,8 +19,9 @@ function need(name: string): string {
 }
 
 const server = need("QC_SERVER_URL");
-if (!/^https:\/\//.test(server) && !/^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(server)) {
-  console.error("QC_SERVER_URL phải là https (chỉ localhost được dùng http)");
+const urlError = checkServerUrl(server, process.env.RUNNER_ALLOW_HTTP === "1");
+if (urlError) {
+  console.error(urlError);
   process.exit(1);
 }
 const skipLogin = process.env.RUNNER_SKIP_LOGIN === "1";

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { handleJob, type AgentConfig, type BrowserFactory } from "../src/agent.js";
 import { ApiError, ServerApi, type Job } from "../src/api.js";
 import { sha256Hex } from "../src/kit.js";
+import { checkServerUrl } from "../src/serverUrl.js";
 
 const cfg: AgentConfig = { server: "http://x", token: "rn_t", pollMs: 1, headless: true, skipLogin: false, profileDir: os.tmpdir() };
 const mkJob = (script: string, sha = sha256Hex(script)): Job => ({
@@ -106,3 +107,15 @@ describe("integration: Chrome thật", () => {
   }, 60_000);
 });
 
+
+describe("checkServerUrl", () => {
+  it("https luôn được; http chỉ localhost; http nội bộ cần cờ tường minh", () => {
+    expect(checkServerUrl("https://qc.noi-bo.local")).toBeNull();
+    expect(checkServerUrl("http://localhost:8000")).toBeNull();
+    expect(checkServerUrl("http://127.0.0.1:8000")).toBeNull();
+    expect(checkServerUrl("http://api:8000")).not.toBeNull();
+    expect(checkServerUrl("http://api:8000", true)).toBeNull();
+    expect(checkServerUrl("http://evil.example.com/x@y", false)).not.toBeNull();
+    expect(checkServerUrl("ftp://api", true)).not.toBeNull();
+  });
+});

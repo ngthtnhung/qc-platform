@@ -1,5 +1,4 @@
-/** Trình duyệt chỉ nói chuyện với Next (cùng origin) ⇒ cookie HttpOnly + SameSite=Strict hoạt động, không cần CORS. */
-const API = process.env.API_INTERNAL_URL || "http://127.0.0.1:8000";
+/** Proxy /api → API nằm ở middleware.ts (đọc API_INTERNAL_URL lúc chạy; `rewrites` bị đóng cứng lúc build). */
 
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -16,11 +15,6 @@ const securityHeaders = [
 export default {
   output: "standalone",
   poweredByHeader: false,
-  async rewrites() {
-    return [
-      { source: "/api/:path*", destination: `${API}/api/:path*` },
-    ];
-  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
