@@ -8,6 +8,85 @@ const VSTATUS: Record<string, { label: string; cls: string }> = {
 };
 const ESTATUS: Record<string, string> = { QUEUED: "Đang chờ", CLAIMED: "Runner đã nhận", RUNNING: "Đang chạy", PASSED: "Đạt", FAILED: "Lỗi", CANCELLED: "Đã hủy" };
 
+function NewVersion({ t, onDone }: { t: AutoTask; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [script, setScript] = useState("");
+  const [note, setNote] = useState("");
+  const [msg, setMsg] = useState("");
+  async function load() {
+    const d = await api<{ script_by_version: Record<string, string>; versions: { version_no: number; status: string }[] }>(`/automation/tasks/${t.id}`);
+    const approved = d.versions.find((v) => v.status === "APPROVED") ?? d.versions[0];
+    setScript(d.script_by_version[String(approved.version_no)] ?? "");
+    setOpen(true);
+  }
+  async function submit() {
+    setMsg("");
+    try {
+      await api(`/automation/tasks/${t.id}/versions`, { method: "POST", body: { script, note, origin: "human" } });
+      setMsg("Đã gửi phiên bản mới, chờ QC duyệt ở mục Duyệt.");
+      setOpen(false);
+      onDone();
+    } catch (e) {
+      setMsg(e instanceof ApiError ? e.message : "Không gửi được");
+    }
+  }
+  return (
+    <div style={{ marginTop: 8 }}>
+      {!open && <button onClick={() => void load()}>Sửa code (tạo phiên bản mới)</button>}
+      {open && (
+        <>
+          <label htmlFor={`${t.id}-s`}>Code Playwright (bắt đầu từ bản đã duyệt gần nhất; sửa sẽ tạo phiên bản MỚI chờ duyệt)</label>
+          <textarea id={`${t.id}-s`} rows={14} value={script} onChange={(e) => setScript(e.target.value)} style={{ fontFamily: "ui-monospace, Consolas, monospace", fontSize: 13 }} spellCheck={false} />
+          <label htmlFor={`${t.id}-n`}>Ghi chú cho người duyệt (vì sao đổi)</label>
+          <input id={`${t.id}-n`} value={note} onChange={(e) => setNote(e.target.value)} />
+          <div className="row" style={{ marginTop: 6 }}><button className="primary" onClick={() => void submit()}>Gửi duyệt</button><button onClick={() => setOpen(false)}>Hủy</button></div>
+        </>
+      )}
+      {msg && <div role="status" className="muted">{msg}</div>}
+    </div>
+  );
+}
+
+function NewTask({ onDone }: { onDone: () => void }) {
+  const [f, setF] = useState({ name: "", module_code: "", start_url: "", steps: "", script: "", required_roles: "", writes: false, params: "" });
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  async function submit() {
+    setMsg(null);
+    try {
+      const params = f.params.trim() ? (JSON.parse(f.params) as unknown) : [];
+      const steps = f.steps.split("\n").map((s) => s.trim()).filter(Boolean);
+      const roles = f.required_roles.split(",").map((s) => s.trim()).filter(Boolean);
+      await api("/automation/tasks", { method: "POST", body: { name: f.name, module_code: f.module_code, start_url: f.start_url, steps, script: f.script, required_roles: roles, writes: f.writes, params } });
+      setMsg({ ok: true, text: "Đã tạo tác vụ; code đang chờ QC duyệt ở mục Duyệt." });
+      onDone();
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof ApiError ? e.message : e instanceof SyntaxError ? "Tham số không phải JSON hợp lệ" : "Không tạo được" });
+    }
+  }
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  return (
+    <details className="card">
+      <summary><strong>Tạo tác vụ mới</strong></summary>
+      <div className="row">
+        <div className="grow"><label htmlFor="nt-n">Tên</label><input id="nt-n" value={f.name} onChange={set("name")} /></div>
+        <div><label htmlFor="nt-m">Module</label><input id="nt-m" value={f.module_code} onChange={set("module_code")} placeholder="MAINT" /></div>
+      </div>
+      <label htmlFor="nt-u">URL bắt đầu (https, cùng miền Staging)</label><input id="nt-u" value={f.start_url} onChange={set("start_url")} />
+      <label htmlFor="nt-s">Các bước bằng lời (mỗi dòng một bước, để người duyệt đọc)</label><textarea id="nt-s" rows={3} value={f.steps} onChange={set("steps")} />
+      <label htmlFor="nt-c">Code Playwright (dùng page, ctx, step, assert, pickOption, attachFiles)</label>
+      <textarea id="nt-c" rows={10} value={f.script} onChange={set("script")} style={{ fontFamily: "ui-monospace, Consolas, monospace", fontSize: 13 }} spellCheck={false} />
+      <div className="row">
+        <div className="grow"><label htmlFor="nt-r">Vai trò tài khoản cần (cách nhau dấu phẩy)</label><input id="nt-r" value={f.required_roles} onChange={set("required_roles")} /></div>
+        <label style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={f.writes} onChange={(e) => setF({ ...f, writes: e.target.checked })} style={{ width: "auto" }} /> Ghi dữ liệu (tiền tố [AI TEST])</label>
+      </div>
+      <label htmlFor="nt-p">Tham số (JSON, tùy chọn)</label>
+      <textarea id="nt-p" rows={2} value={f.params} onChange={set("params")} placeholder='[{"key":"loai","label":"Loại","value":"Bảo trì","type":"text"}]' />
+      <p><button className="primary" onClick={() => void submit()}>Tạo và gửi duyệt</button></p>
+      {msg && <div role={msg.ok ? "status" : "alert"} className={msg.ok ? "muted" : "err"}>{msg.text}</div>}
+    </details>
+  );
+}
+
 function TaskCard({ t, onChange, accounts }: { t: AutoTask; onChange: () => void; accounts: Account[] }) {
   const [accountId, setAccountId] = useState("");
   const [open, setOpen] = useState(false);
@@ -77,6 +156,7 @@ function TaskCard({ t, onChange, accounts }: { t: AutoTask; onChange: () => void
             <button className="primary" disabled={!t.runnable} onClick={() => void run()}>Xếp hàng chạy</button>
           </div>
           {msg && <div role="status" className="muted">{msg}</div>}
+          <NewVersion t={t} onDone={onChange} />
         </>
       )}
     </article>
@@ -122,6 +202,7 @@ export default function AutomationPage() {
         </select>
         <span className="muted">{tasks.length} tác vụ</span>
       </div>
+      <NewTask onDone={() => void load()} />
       {tasks.map((t) => <TaskCard key={t.id} t={t} accounts={stagingAccounts} onChange={() => void load()} />)}
       <h3>Lần chạy gần đây</h3>
       <div className="card" style={{ overflowX: "auto" }}>

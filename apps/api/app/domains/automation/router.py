@@ -128,6 +128,7 @@ def list_tasks(module: str = "", _: Principal = Depends(current_principal), sess
 def get_task(task_id: uuid.UUID, _: Principal = Depends(current_principal), session: Session = Depends(get_session)):
     out = _task_out(session, _get_task(session, task_id))
     out["scripts"] = {v.sha256: v.script for v in session.scalars(select(CodeVersion).where(CodeVersion.task_id == task_id))}
+    out["script_by_version"] = {str(v.version_no): v.script for v in session.scalars(select(CodeVersion).where(CodeVersion.task_id == task_id))}
     return out
 
 

@@ -319,3 +319,15 @@ def test_no_account_message_explains_cause_and_manual_pick_works(qc):
     pacc = qc.post("/api/v1/accounts", json={"environment_id": prod["id"], "name": "P", "username_ref": "p@x.com"}).json()
     r = qc.post(f"/api/v1/automation/tasks/{t['id']}/run", json={"account_id": pacc["id"]})
     assert r.status_code == 422 and "không thuộc môi trường loại STAGING" in r.json()["error"]["message"]  # không thể chọn Production
+
+
+def test_approval_payload_carries_previous_approved_script_for_diff(qc, staging):
+    t = qc.post("/api/v1/automation/tasks", json=_task_body()).json()
+    _approve(qc, t["id"])
+    new_script = SCRIPT + "\n// sửa"
+    qc.post(f"/api/v1/automation/tasks/{t['id']}/versions", json={"script": new_script, "note": "đổi selector"})
+    pend = [a for a in qc.get("/api/v1/approvals?status=PENDING").json() if a["subject_type"] == "automation_code_version"][0]
+    assert pend["payload"]["script"] == new_script and pend["payload"]["prev_script"] == SCRIPT and pend["payload"]["prev_version"] == 1
+    assert pend["payload"]["note"] == "đổi selector"
+    detail = qc.get(f"/api/v1/automation/tasks/{t['id']}").json()
+    assert detail["script_by_version"]["1"] == SCRIPT and detail["script_by_version"]["2"] == new_script

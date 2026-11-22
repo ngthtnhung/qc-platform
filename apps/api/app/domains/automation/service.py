@@ -61,11 +61,14 @@ approvals.register_hook("automation_code_version", _on_code_version)
 
 
 def _submit(session: Session, cv: CodeVersion, task: AutomationTask, requester: Principal) -> ApprovalRequest:
+    prev = session.scalar(select(CodeVersion).where(CodeVersion.task_id == task.id, CodeVersion.status == "APPROVED", CodeVersion.id != cv.id)
+                          .order_by(CodeVersion.version_no.desc()))
     return approvals.submit_for_approval(
         session, requester=requester, subject_type="automation_code_version", subject_id=str(cv.id),
         title=f"[Code] {task.name} · v{cv.version_no}",
         payload={"task": task.name, "module": task.module_code, "version": cv.version_no, "sha256": cv.sha256, "origin": cv.origin,
-                 "writes": task.writes, "start_url": task.start_url, "steps": task.steps, "script": cv.script},
+                 "writes": task.writes, "start_url": task.start_url, "steps": task.steps, "script": cv.script,
+                 "prev_script": prev.script if prev else None, "prev_version": prev.version_no if prev else None, "note": cv.note},
     )
 
 

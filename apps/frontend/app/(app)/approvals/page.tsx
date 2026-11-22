@@ -2,8 +2,34 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, type Approval } from "@/lib/api";
+import { lineDiff } from "@/lib/diff";
 
 const STATUS_LABEL: Record<string, string> = { PENDING: "Chờ duyệt", APPROVED: "Đã duyệt", REJECTED: "Đã từ chối", CANCELLED: "Đã hủy" };
+
+function CodeReview({ payload }: { payload: Record<string, unknown> }) {
+  const script = String(payload.script ?? "");
+  const prev = payload.prev_script == null ? null : String(payload.prev_script);
+  const [view, setView] = useState<"diff" | "full">(prev === null ? "full" : "diff");
+  const steps = Array.isArray(payload.steps) ? (payload.steps as string[]) : [];
+  return (
+    <div aria-label="Nội dung cần duyệt">
+      <div className="muted">
+        {String(payload.task)} · module {String(payload.module)} · v{String(payload.version)} · nguồn: {String(payload.origin)} · {payload.writes ? "GHI dữ liệu trên Staging" : "chỉ đọc"} · sha256 {String(payload.sha256).slice(0, 12)}…
+      </div>
+      {payload.note ? <div className="notice">Ghi chú của người đề xuất: {String(payload.note)}</div> : null}
+      {steps.length > 0 && <ol>{steps.map((s, i) => <li key={i}>{s}</li>)}</ol>}
+      <div className="row">
+        {prev !== null && <button onClick={() => setView(view === "diff" ? "full" : "diff")}>{view === "diff" ? "Xem toàn bộ code" : `Xem khác biệt so với v${String(payload.prev_version)} đã duyệt`}</button>}
+        {prev === null && <span className="muted">Chưa có bản đã duyệt trước đó: xem toàn bộ code.</span>}
+      </div>
+      <pre style={{ maxHeight: 420 }}>
+        {view === "diff" && prev !== null
+          ? lineDiff(prev, script).map((l, i) => <div key={i} style={{ background: l.op === "+" ? "color-mix(in srgb, var(--ok) 18%, transparent)" : l.op === "-" ? "color-mix(in srgb, var(--bad) 18%, transparent)" : undefined }}>{l.op} {l.text}</div>)
+          : script}
+      </pre>
+    </div>
+  );
+}
 
 function Item({ a, onDone, checked, onCheck }: { a: Approval; onDone: () => void; checked: boolean; onCheck: (v: boolean) => void }) {
   const [note, setNote] = useState("");
@@ -35,7 +61,7 @@ function Item({ a, onDone, checked, onCheck }: { a: Approval; onDone: () => void
       <div className="muted">
         {a.subject_type} · {new Date(a.created_at).toLocaleString("vi-VN")}
       </div>
-      <pre aria-label="Nội dung cần duyệt">{JSON.stringify(a.payload, null, 2)}</pre>
+      {a.subject_type === "automation_code_version" ? <CodeReview payload={a.payload} /> : <pre aria-label="Nội dung cần duyệt">{JSON.stringify(a.payload, null, 2)}</pre>}
       {a.status === "PENDING" ? (
         <>
           <label htmlFor={`n-${a.id}`}>Ghi chú (bắt buộc khi từ chối)</label>
