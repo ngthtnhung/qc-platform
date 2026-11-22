@@ -15,7 +15,14 @@ export type AgentConfig = {
   profileDir: string;
 };
 
-export type BrowserSession = { page: unknown; screenshot: () => Promise<Uint8Array | null>; close: () => Promise<void> };
+export type Diagnostics = { url: string; title: string; html: string; errors: string[] };
+export type BrowserSession = {
+  page: unknown;
+  screenshot: () => Promise<Uint8Array | null>;
+  /** Chẩn đoán khi script lỗi: trang đang ở đâu, lỗi JS của trang, DOM lúc đó (để biết trang trắng/sập hay selector sai). */
+  diagnostics?: () => Promise<Diagnostics>;
+  close: () => Promise<void>;
+};
 export type BrowserFactory = (job: Job, cfg: AgentConfig, password: string | null) => Promise<BrowserSession>;
 
 const safe = (s: string) => s.replace(/[^\w.-]/g, "_");
@@ -39,6 +46,11 @@ export const playwrightBrowser: BrowserFactory = async (job, cfg, password) => {
   }
   if (!ctx) throw new Error(`Không mở được trình duyệt (Chrome/Edge/Chromium): ${String((last as Error)?.message).split("\n")[0]}`);
   const page = ctx.pages()[0] ?? (await ctx.newPage());
+  const pageErrors: string[] = [];
+  const keep = (m: string) => { if (pageErrors.length < 30) pageErrors.push(m.replace(/\s+/g, " ").slice(0, 300)); };
+  page.on("pageerror", (e) => keep(`[pageerror] ${e.message}`));
+  page.on("console", (m) => { if (m.type() === "error") keep(`[console.error] ${m.text()}`); });
+  page.on("crash", () => keep("[crash] tab của trình duyệt bị sập"));
   if (!cfg.skipLogin) {
     const status = await runLogin(page, { loginUrl: job.environment.login_url, orgCode: job.account.expected_org, username: job.account.username, password });
     if (status !== "LOGGED_IN") {
@@ -50,6 +62,12 @@ export const playwrightBrowser: BrowserFactory = async (job, cfg, password) => {
   return {
     page,
     screenshot: async () => page.screenshot({ type: "png" }).catch(() => null),
+    diagnostics: async () => ({
+      url: page.url(),
+      title: await page.title().catch(() => ""),
+      html: (await page.content().catch(() => "")).slice(0, 1_500_000),
+      errors: [...pageErrors],
+    }),
     close: () => ctx!.close().catch(() => {}),
   };
 };
@@ -68,10 +86,16 @@ export async function handleJob(api: ServerApi, job: Job, cfg: AgentConfig, brow
       script: job.script, expectedSha256: job.sha256, page: session.page, username: job.account.username,
       startUrl: job.task.start_url, params: job.params, paramMeta: meta,
     });
+    const diag = result.status === "FAILED" ? await session.diagnostics?.().catch(() => undefined) : undefined;
+    if (diag) {
+      result.log.push(`[chẩn đoán] URL khi lỗi: ${diag.url}`, `[chẩn đoán] Tiêu đề: ${diag.title || "(trống)"}`, `[chẩn đoán] Kích thước DOM: ${diag.html.length} ký tự`);
+      result.log.push(...diag.errors.map((e) => `[chẩn đoán] ${e}`));
+    }
     await api.report(job.execution_id, result);
     if (result.status === "FAILED") {
       const shot = await session.screenshot();
       if (shot) await api.artifact(job.execution_id, "screenshot", "failure.png", shot, "image/png").catch((e) => log(`Không tải được ảnh: ${(e as Error).message}`));
+      if (diag?.html) await api.artifact(job.execution_id, "log", "failure-dom.txt", new TextEncoder().encode(diag.html), "text/plain").catch((e) => log(`Không tải được DOM: ${(e as Error).message}`));
     }
     return result;
   } catch (e) {

@@ -18,7 +18,7 @@ const fakeApi = () => {
     credentials: vi.fn(async () => (calls.push("credentials"), { username: "nv", password: "pw" })),
     start: vi.fn(async () => void calls.push("start")),
     report: vi.fn(async (_id: string, _body: unknown) => (calls.push("report"), { status: "PASSED" })),
-    artifact: vi.fn(async () => (calls.push("artifact"), { file_id: "f" })),
+    artifact: vi.fn(async (_id: string, _kind: string, _n: string, _d: Uint8Array, _m: string) => (calls.push("artifact"), { file_id: "f" })),
   };
   return { api: api as unknown as ServerApi, mocks: api, calls };
 };
@@ -63,6 +63,29 @@ describe("handleJob", () => {
     const { api, calls } = fakeApi();
     await handleJob(api, mkJob("await step('a', async () => {});"), { ...cfg, skipLogin: true }, fakeBrowser(), () => {});
     expect(calls).not.toContain("credentials");
+  });
+});
+
+describe("chẩn đoán khi lỗi", () => {
+  it("gửi URL, tiêu đề, lỗi JS vào log báo cáo và tải DOM làm artifact", async () => {
+    const { api, mocks } = fakeApi();
+    const browser: BrowserFactory = async () => ({
+      page: {}, screenshot: async () => new Uint8Array([1]), close: async () => {},
+      diagnostics: async () => ({ url: "https://s.example.com/maint/new", title: "", html: "<html></html>", errors: ["[pageerror] x is not defined"] }),
+    });
+    await handleJob(api, mkJob("assert(false, 'x')"), cfg, browser, () => {});
+    const reported = mocks.report.mock.calls[0][1] as { log: string[] };
+    expect(reported.log).toContain("[chẩn đoán] URL khi lỗi: https://s.example.com/maint/new");
+    expect(reported.log).toContain("[chẩn đoán] [pageerror] x is not defined");
+    expect(mocks.artifact.mock.calls.map((c) => c[1])).toEqual(["screenshot", "log"]);
+  });
+
+  it("script đạt thì không thu thập chẩn đoán", async () => {
+    const { api, mocks } = fakeApi();
+    const diagnostics = vi.fn();
+    await handleJob(api, mkJob("await step('a', async () => {});"), cfg, async () => ({ page: {}, screenshot: async () => null, close: async () => {}, diagnostics }), () => {});
+    expect(diagnostics).not.toHaveBeenCalled();
+    expect(mocks.artifact).not.toHaveBeenCalled();
   });
 });
 
