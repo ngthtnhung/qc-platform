@@ -60,6 +60,44 @@ function CitationCard({ c }: { c: Citation }) {
   );
 }
 
+function AiAnalysis({ lookupId, description }: { lookupId: string; description: string }) {
+  type Out = { approval_id: string; provider: string; unverified_causes: number; analysis: { summary: string; suspected_causes: { text: string; citations: string[]; verified: boolean }[]; reproduction_steps: string[]; test_suggestions: string[]; missing_information: string[] } };
+  const [out, setOut] = useState<Out | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  async function run() {
+    setBusy(true);
+    setErr("");
+    try {
+      setOut(await api<Out>("/ai/bug-analysis", { method: "POST", body: { lookup_id: lookupId, description } }));
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "Không phân tích được");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="card">
+      <div className="row">
+        <strong className="grow">AI phân tích bug dựa trên các trích dẫn trên</strong>
+        <button disabled={busy} onClick={() => void run()}>{busy ? "Đang phân tích…" : "Nhờ AI phân tích"}</button>
+      </div>
+      <div className="muted">Kết quả chỉ là ĐỀ XUẤT: nguyên nhân nào không có trích dẫn thật được đánh dấu “suy đoán”. Đề xuất được gửi sang mục Duyệt để QC xem xét.</div>
+      {err && <div className="err" role="alert">{err}</div>}
+      {out && (
+        <div role="status">
+          <p>{out.analysis.summary}</p>
+          <ul>{out.analysis.suspected_causes.map((c, i) => <li key={i}>{c.text} <span className={`badge ${c.verified ? "ok" : "warn"}`}>{c.verified ? `có ${c.citations.length} trích dẫn` : "suy đoán"}</span></li>)}</ul>
+          {out.analysis.reproduction_steps.length > 0 && <><strong>Cách tái hiện</strong><ol>{out.analysis.reproduction_steps.map((s, i) => <li key={i}>{s}</li>)}</ol></>}
+          {out.analysis.test_suggestions.length > 0 && <><strong>Gợi ý kiểm thử</strong><ul>{out.analysis.test_suggestions.map((s, i) => <li key={i}>{s}</li>)}</ul></>}
+          {out.analysis.missing_information.length > 0 && <><strong>Còn thiếu thông tin</strong><ul>{out.analysis.missing_information.map((s, i) => <li key={i}>{s}</li>)}</ul></>}
+          <div className="muted">Nguồn AI: {out.provider} · đã gửi yêu cầu duyệt.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function LookupPage() {
   const [description, setDescription] = useState("");
   const [kinds, setKinds] = useState<string[]>([]);
@@ -144,6 +182,7 @@ export default function LookupPage() {
             </section>
           ))}
           {Object.keys(result.groups).length === 0 && <div className="muted">Không có trích dẫn nào.</div>}
+          {result.lookup_id && <AiAnalysis lookupId={result.lookup_id} description={description} />}
           {result.lookup_id && (
             <div className="card">
               <label htmlFor="n">Ghi chú cho lần tra cứu này</label>

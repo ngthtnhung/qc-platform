@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     haraworks_base_url: str = "https://tasks.haraworks.vn"
     # Chỉ cho phép tải trang wiki từ các host này (phân tách bằng dấu phẩy). Trống = tắt tính năng tải từ URL (chặn SSRF mặc định).
     wiki_fetch_allowed_hosts: str = ""
+    ai_provider_order: str = "gemini,anthropic"
+    gemini_model: str = "gemini-2.5-flash"
+    anthropic_model: str = "claude-sonnet-5-5"
+    gemini_api_base: str = "https://generativelanguage.googleapis.com"
+    anthropic_api_base: str = "https://api.anthropic.com"
+    ai_max_input_chars: int = 60000
 
     @field_validator("jwt_signing_key")
     @classmethod

@@ -15,7 +15,7 @@ from app.domains.platform.vault import reveal_secret, store_secret
 from app.domains.sources.ingest import ingest_task_functions
 from app.domains.sources.models import Integration, SourcePassage
 
-KEYS = {"haraworks": "Cookie phiên Haraworks (chỉ đọc)", "figma": "Token cá nhân Figma (chỉ đọc)"}
+KEYS = {"haraworks": "Cookie phiên Haraworks (chỉ đọc)", "figma": "Token cá nhân Figma (chỉ đọc)", "gemini": "Khóa API Gemini (AI)", "anthropic": "Khóa API Anthropic/Claude (AI)"}
 TRANSPORT: dict[str, httpx.BaseTransport | None] = {}  # chỉ dùng trong test: tiêm transport giả cho haraworks/figma
 
 

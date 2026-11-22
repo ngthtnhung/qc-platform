@@ -8,6 +8,52 @@ const VSTATUS: Record<string, { label: string; cls: string }> = {
 };
 const ESTATUS: Record<string, string> = { QUEUED: "Đang chờ", CLAIMED: "Runner đã nhận", RUNNING: "Đang chạy", PASSED: "Đạt", FAILED: "Lỗi", CANCELLED: "Đã hủy" };
 
+function AiCode({ t, onDone }: { t: AutoTask; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [instruction, setInstruction] = useState("");
+  const [fails, setFails] = useState<Execution[]>([]);
+  const [execId, setExecId] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function openPanel() {
+    setFails(await api<Execution[]>(`/automation/executions?task_id=${t.id}&status=FAILED&limit=10`).catch(() => []));
+    setOpen(true);
+  }
+  async function run() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await api<{ version_no: number }>(`/automation/tasks/${t.id}/suggest-code`, { method: "POST", body: { instruction, execution_id: execId || null } });
+      setMsg({ ok: true, text: `AI đã tạo phiên bản v${r.version_no} chờ QC duyệt (mục Duyệt). Chưa chạy được cho tới khi được duyệt.` });
+      setOpen(false);
+      onDone();
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof ApiError ? e.message : "Không gọi được AI" });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div style={{ marginTop: 8 }}>
+      {!open && <button onClick={() => void openPanel()}>AI đề xuất sửa/viết code</button>}
+      {open && (
+        <div className="card">
+          <label htmlFor={`${t.id}-ai`}>Chỉ dẫn cho AI (để trống = sửa lỗi của lần chạy đã chọn)</label>
+          <textarea id={`${t.id}-ai`} rows={3} value={instruction} onChange={(e) => setInstruction(e.target.value)} />
+          <label htmlFor={`${t.id}-ex`}>Lần chạy lỗi làm bằng chứng (log, lỗi, DOM lúc lỗi)</label>
+          <select id={`${t.id}-ex`} value={execId} onChange={(e) => setExecId(e.target.value)}>
+            <option value="">Không chọn</option>
+            {fails.map((f) => <option key={f.id} value={f.id}>{new Date(f.queued_at).toLocaleString("vi-VN")} — {f.error.slice(0, 70)}</option>)}
+          </select>
+          <div className="muted">AI chỉ nhận mô tả, code hiện tại, lỗi/log/DOM. Mật khẩu không bao giờ được gửi. Kết quả là phiên bản mới chờ QC duyệt.</div>
+          <div className="row" style={{ marginTop: 6 }}><button className="primary" disabled={busy} onClick={() => void run()}>{busy ? "Đang gọi AI…" : "Gửi AI"}</button><button onClick={() => setOpen(false)}>Hủy</button></div>
+        </div>
+      )}
+      {msg && <div role={msg.ok ? "status" : "alert"} className={msg.ok ? "muted" : "err"}>{msg.text}</div>}
+    </div>
+  );
+}
+
 function NewVersion({ t, onDone }: { t: AutoTask; onDone: () => void }) {
   const [open, setOpen] = useState(false);
   const [script, setScript] = useState("");
@@ -157,6 +203,7 @@ function TaskCard({ t, onChange, accounts }: { t: AutoTask; onChange: () => void
           </div>
           {msg && <div role="status" className="muted">{msg}</div>}
           <NewVersion t={t} onDone={onChange} />
+          <AiCode t={t} onDone={onChange} />
         </>
       )}
     </article>
