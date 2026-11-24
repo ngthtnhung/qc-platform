@@ -1494,10 +1494,12 @@ const handler = async (req, res) => {
 
       // Áp dụng bộ lọc thời gian chung cho Kanban, Gantt và Charts
       // Riêng task Release Function: luôn hiện các task trong tương lai (từ hôm nay trở đi), quá khứ thì theo bộ lọc
+      // Task chưa đóng mà đã trễ hạn hoặc hết hạn hôm nay luôn hiện, bất kể ngày tạo (nếu không, bug tạo từ tuần trước sẽ biến mất khỏi mục Trễ hạn)
       const myTasks = allMatchedTasks.filter(t => {
         if (t.taskType === 'release') {
           if (isTodayOrFutureTask(t)) return true;
         }
+        if (!t.closed && (t.isOverdue || t.isDueToday)) return true;
         return inPeriod(t);
       });
 
@@ -1512,7 +1514,7 @@ const handler = async (req, res) => {
       const priOrder = p => ({ 1: 0, 2: 0, 3: 1, 4: 2 })[p] ?? 3;
       // To do: luôn lấy tất cả task trạng thái Mới từ hôm nay đến tương lai (không áp dụng bộ lọc thời gian, không lấy task quá khứ không hạn hoặc đã đóng)
       const todoItems = allMatchedTasks
-        .filter(t => (t.status === 0 || t.status == null) && !t.closed && !HIDDEN_CLOSED_SET.has(t.status) && isTodayOrFutureTask(t))
+        .filter(t => (t.status === 0 || t.status == null) && !t.closed && !HIDDEN_CLOSED_SET.has(t.status) && (isTodayOrFutureTask(t) || t.isOverdue))
         .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || priOrder(a.priority) - priOrder(b.priority));
 
       // Future tasks: các task chưa đóng có thời gian ở hôm nay hoặc tương lai (luôn hiện trên Gantt chart)
