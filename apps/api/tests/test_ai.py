@@ -40,7 +40,7 @@ def make_lookup(qc):
 def test_without_ai_key_says_what_to_do_and_lookup_still_works(qc):
     res, _ = make_lookup(qc)
     r = qc.post("/api/v1/ai/bug-analysis", json={"lookup_id": res["lookup_id"]})
-    assert r.status_code == 409 and r.json()["error"]["code"] == "NO_AI_PROVIDER" and "không cần AI" in r.json()["error"]["message"]
+    assert r.status_code == 409 and r.json()["error"]["code"] == "NO_AI_PROVIDER" and "khóa AI" in r.json()["error"]["message"]
 
 
 def test_bug_analysis_keeps_only_real_citations_and_waits_for_qc(qc, session):

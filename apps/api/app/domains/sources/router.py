@@ -260,6 +260,7 @@ def create_source_module(body: ModuleIn, p: Principal = Depends(current_principa
 @router.patch("/sources/modules/{code}")
 def update_source_module(code: str, body: ModuleUpdateIn, p: Principal = Depends(current_principal), session: Session = Depends(get_session)):
     from sqlalchemy.orm.attributes import flag_modified
+
     from app.domains.knowledge.models import Module
 
     up = code.strip().upper()
@@ -790,7 +791,7 @@ def get_pet_pulse(since: str = "", force: bool = False, p: Principal = Depends(c
                 })
 
     # Tính daily_summary DÙNG CHUNG 100% logic với Dashboard Cá Nhân (Bug + QC Function + Release Function)
-    dash = dashboard_tasks(p=p, session=session)
+    dash = personal_dashboard_tasks(p=p, session=session)
     dash_items = dash.get("items") or []
 
     def _vn_d(iso_s: str) -> str:
@@ -1103,6 +1104,7 @@ def list_builds(q: str = "", team: str = "", module: str = "", kind: str = "", s
 @router.post("/sources/builds", status_code=201)
 def create_build(body: BuildIn, p: Principal = Depends(require(Perm.FILES_WRITE)), session: Session = Depends(get_session)):
     import hashlib
+
     from app.core.text import fold
 
     ver = _build_version(session, p)
@@ -1123,6 +1125,7 @@ def create_build(body: BuildIn, p: Principal = Depends(require(Perm.FILES_WRITE)
 @router.patch("/sources/builds/{passage_id}")
 def update_build(passage_id: uuid.UUID, body: BuildIn, p: Principal = Depends(require(Perm.FILES_WRITE)), session: Session = Depends(get_session)):
     import hashlib
+
     from app.core.text import fold
 
     row = session.get(SourcePassage, passage_id)
@@ -1153,6 +1156,7 @@ def delete_build(passage_id: uuid.UUID, _: Principal = Depends(require(Perm.FILE
 @router.post("/sources/builds/upload", status_code=201)
 async def upload_builds_json(file: UploadFile = File(...), p: Principal = Depends(require(Perm.FILES_WRITE)), session: Session = Depends(get_session)):
     import hashlib
+
     from app.core.text import fold
 
     limit = get_settings().max_source_upload_bytes

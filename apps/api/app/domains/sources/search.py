@@ -14,7 +14,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.text import fold, fold_with_map, like_escape
-from app.domains.bugs.models import Bug, Project as BugProject
+from app.domains.bugs.models import Bug
+from app.domains.bugs.models import Project as BugProject
 from app.domains.knowledge.models import Source, SourceVersion
 from app.domains.sources.ingest import KIND_LABEL
 from app.domains.sources.models import SourcePassage

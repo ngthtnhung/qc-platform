@@ -559,14 +559,14 @@ def get_haraworks_task_detail(client: HaraworksClient, task_id: str) -> dict:
         ],
         "logs": [
             {
-                "type": l.get("log_Type"),
-                "value": l.get("value") or "",
-                "reason": l.get("reason") or "",
-                "at": l.get("created_At") or "",
-                "by": (l.get("created_By") or {}).get("name") or "" if isinstance(l.get("created_By"), dict) else "",
-                "info": {str(i.get("key")): i.get("value") for i in (l.get("additional_Info") or []) if isinstance(i, dict)},
+                "type": lg.get("log_Type"),
+                "value": lg.get("value") or "",
+                "reason": lg.get("reason") or "",
+                "at": lg.get("created_At") or "",
+                "by": (lg.get("created_By") or {}).get("name") or "" if isinstance(lg.get("created_By"), dict) else "",
+                "info": {str(i.get("key")): i.get("value") for i in (lg.get("additional_Info") or []) if isinstance(i, dict)},
             }
-            for l in (logs or []) if isinstance(l, dict)
+            for lg in (logs or []) if isinstance(lg, dict)
         ],
         "comments": {
             "total": (comments or {}).get("totalCount") or 0,

@@ -218,6 +218,7 @@ def list_envs(_: Principal = Depends(current_principal), session: Session = Depe
 @router.post("/environments", response_model=EnvironmentOut, status_code=201, tags=["environments"])
 def create_env(body: EnvironmentIn, p: Principal = Depends(require(Perm.ENV_MANAGE)), session: Session = Depends(get_session)):
     import re
+
     from app.core.text import fold
 
     data = body.model_dump()
