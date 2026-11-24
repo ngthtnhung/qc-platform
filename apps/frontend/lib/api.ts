@@ -150,17 +150,29 @@ export type RuleDetail = {
   references: { id: string; quote: string; stance: string; locator: Record<string, string>; validation_status: string; source_title: string; source_version: string }[];
 };
 export type BugItem = {
-  id: string; external_id: string; source: string; title: string; status: number | null; status_label: string; priority_label: string;
-  classification: string; module_code: string; created_at_ext: string | null; assignee: string; approver: string; url: string;
+  id: string; external_id: string; source: string; title: string; status: number | null; status_label: string;
+  priority?: number | null; priority_label: string;
+  classification: string; module_code: string; project?: string; created_at_ext: string | null; assignee: string; approver: string; url: string;
 };
 export type Environment = { id: string; code: string; name: string; type: string; base_url: string; org_identifier: string; requires_org_confirmation: boolean; is_active: boolean };
-export type Account = { id: string; environment_id: string; name: string; role_label: string; username_ref: string; has_secret: boolean };
+export type AccountRoute = { label?: string; url: string };
+export type Account = {
+  id: string;
+  environment_id: string;
+  name: string;
+  role_label: string;
+  username_ref: string;
+  default_route?: string;
+  routes?: AccountRoute[];
+  has_secret: boolean;
+};
 
 export type TaskParam = { key: string; label: string; type: string; value: string; auto: boolean };
 export type AutoTask = {
   id: string; name: string; module_code: string; flow: string; description: string; start_url: string; writes: boolean; steps: string[]; required_roles: string[];
+  created_at?: string;
   params: TaskParam[]; runnable: boolean; approved_version: number | null;
-  versions: { id: string; version_no: number; status: string; origin: string; sha256: string }[];
+  versions: { id: string; version_no: number; status: string; origin: string; sha256: string; created_at?: string }[];
 };
 export type Execution = {
   id: string; task_id: string; status: string; attempt: number; runner_id: string | null; error: string; duration_ms: number | null;
@@ -170,15 +182,37 @@ export type RunnerRow = { id: string; name: string; type: string; capabilities: 
 
 export type Highlight = { start: number; end: number; term: string };
 export type Citation = {
-  passage_id: string; source_id: string; source_kind: string; source_title: string; source_version: string; is_current: boolean; heading_path: string;
+  passage_id: string; source_id: string; source_kind: string; source_title: string; source_version: string;
+  source_module?: string; source_updated_at?: string;
+  is_current: boolean; heading_path: string;
   locator: Record<string, unknown>; location: string; url: string; quote: string; excerpt: { text: string; start: number; end: number };
   highlights: Highlight[]; matched_terms: string[]; score: number; citation: string;
 };
 export type Keyword = { term: string; display: string; type: string; weight: number };
 export type Coverage = Record<string, { label: string; sources: number; passages: number }>;
-export type LookupResult = { keywords: Keyword[]; groups: Record<string, Citation[]>; coverage: Coverage; total_passages: number; hint: string; lookup_id: string | null };
+export type LookupResult = { keywords: Keyword[]; groups: Record<string, Citation[]>; coverage: Coverage; total_passages: number; module_empty?: boolean; hint: string; lookup_id: string | null };
 export type SourceItem = {
-  id: string; kind: string; kind_label: string; title: string; url: string; status: string; created_at: string;
-  versions: { id: string; label: string; created_at: string; current_passages: number; has_file: boolean }[];
+  id: string; kind: string; kind_label: string; title: string; url: string; status: string; module?: string; created_at: string; updated_at?: string;
+  meta?: { module?: string; images?: { file_id: string; filename: string }[] };
+  versions: { id: string; label: string; created_at: string; current_passages: number; has_file: boolean; file_id?: string | null }[];
+};
+export type TaskFunctionItem = {
+  id: string; task_id: string; title: string; description: string; has_description: boolean;
+  team: string; project: string; module: string;
+  status?: number | null; status_label?: string; closed?: boolean;
+  priority?: number | null; priority_label?: string;
+  assignee?: string; approver?: string;
+  platform: string; customer: string; build_number: string; url: string; created_at: string; updated_at?: string;
+};
+export type BuildItem = {
+  id: string; build_id: string; title: string; note: string;
+  kind?: string; kind_label?: string;
+  team: string; project: string; source_team?: string;
+  source_function?: { id: string; title: string; url: string } | null;
+  module: string; status_code?: number | null; status: string; closed?: boolean;
+  priority?: number | null; priority_label?: string;
+  assignee?: string; approver?: string;
+  version: string; platform: string; parent_task: string; linked_count?: number; url: string;
+  created_at: string; updated_at: string;
 };
 export type IntegrationStatus = { key: string; label: string; configured: boolean; last_check_at: string | null; last_check_status: string };

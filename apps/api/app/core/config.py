@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     wiki_fetch_allowed_hosts: str = ""
     ai_provider_order: str = "gemini,anthropic"
     haraworks_sync_seconds: int = 300
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-flash-latest"
     anthropic_model: str = "claude-sonnet-5-5"
     gemini_api_base: str = "https://generativelanguage.googleapis.com"
     anthropic_api_base: str = "https://api.anthropic.com"

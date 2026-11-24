@@ -181,13 +181,8 @@ def _no_account_reason(task: AutomationTask, pool: list[dict], account_id: uuid.
     """Giải thích RÕ vì sao không chọn được tài khoản để người dùng biết sửa ở đâu."""
     if account_id:
         return "Tài khoản đã chọn không thuộc môi trường loại STAGING đang hoạt động (hoặc đã bị vô hiệu)."
-    if not pool:
-        return ("Chưa có tài khoản nào trong môi trường loại STAGING đang hoạt động. Vào \"Môi trường & tài khoản\": "
-                "môi trường phải có loại STAGING và có ít nhất một tài khoản.")
-    have = ", ".join(sorted({a["role_label"] or "(trống)" for a in pool}))
-    need = ", ".join(task.required_roles) or "(không yêu cầu)"
-    return (f"Tác vụ cần vai trò: {need}. Các tài khoản Staging hiện có mang vai trò: {have}. "
-            "Đặt lại \"Vai trò\" của tài khoản cho khớp, hoặc chọn tài khoản thủ công khi xếp hàng chạy.")
+    return ("Chưa có tài khoản nào trong môi trường loại STAGING đang hoạt động. Vào \"Môi trường & tài khoản\": "
+            "môi trường phải có loại STAGING và có ít nhất một tài khoản.")
 
 
 def cancel_execution(session: Session, *, actor: Principal, execution_id: uuid.UUID) -> Execution:
@@ -268,7 +263,7 @@ def claim(session: Session, runner: Runner) -> dict | None:
         log_audit(session, Principal(type=PrincipalType.RUNNER, id=runner.id, username=runner.name), "AUTOMATION_CLAIM", resource_type="execution", resource_id=str(ex.id))
         return {"execution_id": str(ex.id), "attempt": ex.attempt, "lease_seconds": LEASE_MINUTES * 60, "task": {"name": task.name, "start_url": task.start_url, "writes": task.writes},
                 "script": cv.script, "sha256": cv.sha256, "params": ex.params,
-                "account": {"id": str(acc.id), "username": acc.username_ref, "expected_org": env.org_identifier or acc.expected_org_ref, "route": acc.default_route},
+                "account": {"id": str(acc.id), "username": acc.username_ref, "expected_org": env.org_identifier or acc.expected_org_ref, "route": acc.default_route, "routes": acc.routes or []},
                 "environment": {"code": env.code, "type": env.type, "login_url": env.login_url or env.base_url}}
     return None
 

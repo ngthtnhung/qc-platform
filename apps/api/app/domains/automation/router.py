@@ -105,10 +105,10 @@ def _task_out(session: Session, t: AutomationTask) -> dict[str, Any]:
     approved = next((v for v in vs if v.status == "APPROVED"), None)
     return {"id": str(t.id), "legacy_id": t.legacy_id, "name": t.name, "module_code": t.module_code, "flow": t.flow, "description": t.description,
             "start_url": t.start_url, "required_roles": t.required_roles, "writes": t.writes, "rule_keys": t.rule_keys, "steps": t.steps,
-            "status": t.status, "params": service.task_params(session, t.id), "runnable": approved is not None,
+            "status": t.status, "created_at": t.created_at.isoformat(), "params": service.task_params(session, t.id), "runnable": approved is not None,
             "approved_version": approved.version_no if approved else None,
             "versions": [{"id": str(v.id), "version_no": v.version_no, "status": v.status, "origin": v.origin, "sha256": v.sha256,
-                          "approved_by": str(v.approved_by) if v.approved_by else None} for v in vs]}
+                          "created_at": v.created_at.isoformat(), "approved_by": str(v.approved_by) if v.approved_by else None} for v in vs]}
 
 
 def _get_task(session: Session, task_id: uuid.UUID) -> AutomationTask:
@@ -148,6 +148,53 @@ def add_version(task_id: uuid.UUID, body: CodeIn, p: Principal = Depends(require
     t = _get_task(session, task_id)
     cv = service.add_code_version(session, task=t, script=body.script, requester=p, origin=body.origin, note=body.note)
     return {"id": str(cv.id), "version_no": cv.version_no, "status": cv.status, "sha256": cv.sha256}
+
+
+class TaskPatchIn(BaseModel):
+    name: str | None = None
+    module_code: str | None = None
+    start_url: str | None = None
+    description: str | None = None
+    writes: bool | None = None
+    steps: list[str] | None = None
+
+
+@router.patch("/automation/tasks/{task_id}")
+def update_task(task_id: uuid.UUID, body: TaskPatchIn, p: Principal = Depends(require(Perm.APPROVE)), session: Session = Depends(get_session)):
+    t = _get_task(session, task_id)
+    if body.name is not None and body.name.strip():
+        t.name = body.name.strip()[:300]
+    if body.module_code is not None and body.module_code.strip():
+        t.module_code = body.module_code.strip().upper()[:40]
+    if body.start_url is not None and body.start_url.strip():
+        t.start_url = body.start_url.strip()
+    if body.description is not None:
+        t.description = body.description
+    if body.writes is not None:
+        t.writes = body.writes
+    if body.steps is not None and len(body.steps) > 0:
+        t.steps = body.steps
+    log_audit(session, p, "AUTOMATION_TASK_UPDATE", resource_type="automation_task", resource_id=str(t.id))
+    return _task_out(session, t)
+
+
+@router.post("/automation/tasks/{task_id}/versions/{version_id}/activate")
+def activate_version(task_id: uuid.UUID, version_id: uuid.UUID, p: Principal = Depends(require(Perm.APPROVE)), session: Session = Depends(get_session)):
+    """QC kích hoạt trực tiếp 1 phiên bản code do mình quản lý (không cần qua trang Duyệt)."""
+    from app.domains.platform import approvals as approval_service
+    from app.domains.platform.models import Approval
+
+    _get_task(session, task_id)
+    cv = session.get(CodeVersion, version_id)
+    if cv is None or cv.task_id != task_id:
+        raise NotFound("Không thấy phiên bản code")
+    if cv.status != "APPROVED":
+        req = session.scalar(select(Approval).where(Approval.target_type == "code_version", Approval.target_id == cv.id, Approval.status == "PENDING"))
+        if req is not None:
+            approval_service.decide(session, req.id, actor=p, decision="APPROVED", payload_hash=req.payload_hash, reason="QC kích hoạt trực tiếp")
+        else:
+            service.on_code_approval(session, cv.id, "APPROVED", p)
+    return {"id": str(cv.id), "version_no": cv.version_no, "status": "APPROVED"}
 
 
 @router.put("/automation/tasks/{task_id}/params")

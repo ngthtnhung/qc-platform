@@ -17,6 +17,32 @@ RECENT_DAYS = 14
 BUG_FIELDS = """id name status priority is_Deleted created_At status_Updated_At plan_Start_At plan_End_At project_Id
   assignTo { id name } approverEntity { user_Name department_Name } additionalInfo { key value }"""
 IS_BUG_TITLE = re.compile(r"\[\s*(bug|iss\w*)\s*\]", re.I)  # tag [Bug]/[Issue] (kể cả gõ sai như [Issuse]), như bản Node
+BUG_PROJECT_RE = re.compile(r"-\s*empty$|^ODOO BUG PRODUCTION$", re.I)
+ALL_TASKS_RE = re.compile(r"^ODOO BUG PRODUCTION$", re.I)
+
+
+def _discover_bug_projects(session: Session, client: HaraworksClient, src, all_tasks: dict, rep: Report) -> list[Project]:
+    existing = {p.external_id: p for p in session.scalars(select(Project).where(Project.source_id == src.id))}
+    try:
+        remote = client.projects() or []
+    except Exception:  # noqa: BLE001
+        remote = []
+    for rp in remote:
+        pid = str(rp.get("id") or "").strip()
+        name = str(rp.get("name") or "").strip()
+        if not pid or not name or not BUG_PROJECT_RE.search(name):
+            continue
+        if pid not in existing:
+            proj = Project(source_id=src.id, external_id=pid, name=name)
+            session.add(proj)
+            session.flush()
+            existing[pid] = proj
+            rep.projects_created += 1
+        elif existing[pid].name != name:
+            existing[pid].name = name
+        if ALL_TASKS_RE.search(name):
+            all_tasks[pid] = True
+    return list(existing.values())
 
 
 def sync_bugs(session: Session, client: HaraworksClient, *, now: dt.datetime | None = None) -> dict:
@@ -28,7 +54,8 @@ def sync_bugs(session: Session, client: HaraworksClient, *, now: dt.datetime | N
     idx = module_index(session)
     recent = (now - dt.timedelta(days=RECENT_DAYS)).isoformat()
     changed_projects = 0
-    for proj in session.scalars(select(Project).where(Project.source_id == src.id)):
+    projects = _discover_bug_projects(session, client, src, all_tasks, rep)
+    for proj in projects:
         pid = proj.external_id
         lst = client.get_list_task(versions.get(pid, "0"), pid)
         if lst is None:  # không đổi từ lần trước
@@ -51,7 +78,7 @@ def sync_bugs(session: Session, client: HaraworksClient, *, now: dt.datetime | N
             except Exception as exc:  # noqa: BLE001
                 rep.errors.append(f"{t.get('id')}: {exc}")
         versions[pid], seen[pid] = lst["timestamp"], ids
-    src.config = {**cfg, "versions": versions, "seen": seen}
+    src.config = {**cfg, "versions": versions, "seen": seen, "all_tasks": all_tasks}
     src.last_sync_at, src.last_sync_status = now, f"ok: {rep.created} mới, {rep.updated} đổi, {len(rep.errors)} lỗi"
     out = rep.summary()
     out["projects_changed"] = changed_projects

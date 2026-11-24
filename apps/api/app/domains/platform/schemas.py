@@ -88,7 +88,7 @@ ENV_TYPES = Literal["STAGING", "PRODUCTION_TEST", "PRODUCTION", "TASK_SYSTEM"]
 
 
 class EnvironmentIn(BaseModel):
-    code: str = Field(min_length=1, max_length=60, pattern=r"^[a-z0-9_-]+$")
+    code: str = Field(default="", max_length=60, pattern=r"^$|^[a-z0-9_-]+$")
     name: str = Field(min_length=1, max_length=160)
     type: ENV_TYPES
     base_url: str
@@ -96,6 +96,13 @@ class EnvironmentIn(BaseModel):
     org_identifier: str = ""
     allowed_actions: list[str] = []
     requires_org_confirmation: bool = False
+
+
+class EnvironmentUpdateIn(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    type: ENV_TYPES | None = None
+    base_url: str | None = None
+    org_identifier: str | None = None
 
 
 class EnvironmentOut(ORM):
@@ -122,6 +129,14 @@ class AccountIn(BaseModel):
     kb_links: list[Any] = []
     kb_can_do: list[str] = []
     kb_cannot_do: list[str] = []
+
+
+class AccountUpdateIn(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    role_label: str | None = None
+    username_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    default_route: str | None = None
+    routes: list[dict[str, Any]] | None = None
 
 
 class AccountOut(ORM):

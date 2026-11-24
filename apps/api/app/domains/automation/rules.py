@@ -93,13 +93,9 @@ def merge_params(base: list[dict], override: dict | None) -> dict[str, str]:
 
 
 def choose_account(required_roles: list[str], accounts: list[dict]) -> dict | None:
-    """Chọn tài khoản Staging theo vai trò: khớp vai trò > quản trị > bất kỳ; ưu tiên tài khoản đã có mật khẩu."""
-    roles = [r.lower() for r in required_roles]
-
-    def matches(a): return not roles or any(r in (a["role_label"] or "").lower() for r in roles)
-    def is_admin(a): return bool(re.search(r"qu[aả]n tr[iị]", a["role_label"] or "", re.I))
-
-    pool = [a for a in accounts if matches(a)]
-    cands = pool or [a for a in accounts if is_admin(a)]
-    scored = sorted(cands, key=lambda a: -((4 if matches(a) else 0) + (2 if a["has_secret"] else 0) + (1 if is_admin(a) else 0)))
-    return scored[0] if scored else None
+    """Chọn tài khoản Staging để chạy automation (ưu tiên tài khoản đã lưu mật khẩu).
+    Trường vai trò (role_label) chỉ dùng làm ghi chú, không phải yếu tố quyết định thực thi."""
+    if not accounts:
+        return None
+    scored = sorted(accounts, key=lambda a: -(1 if a.get("has_secret") else 0))
+    return scored[0]

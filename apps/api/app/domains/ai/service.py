@@ -46,9 +46,32 @@ def providers(session: Session, actor: Principal) -> list[AIProvider]:
         elif name == "anthropic":
             out.append(AnthropicProvider(key, s.anthropic_model, s.anthropic_api_base, transport=TRANSPORT.get("anthropic")))
     if not out:
-        raise AppError("Chưa cấu hình khóa AI (Gemini hoặc Anthropic). Vào Nguồn tài liệu → Tích hợp để nhập (chỉ ghi). "
-                       "Tra cứu trích dẫn vẫn dùng được không cần AI.", code="NO_AI_PROVIDER", status=409)
+        raise AppError("Chưa cấu hình khóa AI (Gemini hoặc Anthropic). Vào Cài đặt → Tích hợp để thêm khóa AI.",
+                       code="NO_AI_PROVIDER", status=409)
     return out
+
+
+FLOW_SYSTEM = f"""Bạn hỗ trợ QC xác định TÊN CHỨC NĂNG / LUỒNG ỨNG DỤNG liên quan từ một mô tả bug phần mềm bằng tiếng Việt.
+{UNTRUSTED}
+Trả về DUY NHẤT một JSON: {{"flow_name": str, "keywords": [str], "summary": str}}.
+Quy tắc:
+- flow_name: tên ngắn gọn, rõ ràng của chức năng hoặc luồng màn hình liên quan (VD: "Soạn thư mới - Đính kèm tệp", "Thành viên nhóm - Xuất danh sách").
+- keywords: 3 đến 6 cụm từ khóa tiếng Việt / tên màn hình / tên trường quan trọng để tìm trong tài liệu BA, Figma, Wiki (KHÔNG chứa URL, ID, mã hex).
+- summary: 1 câu tóm tắt ngắn gọn vấn đề bug."""
+
+
+def suggest_flow(session: Session, actor: Principal, *, description: str, module: str = "") -> dict:
+    if len((description or "").strip()) < 4:
+        raise AppError("Mô tả bug quá ngắn để phân tích chức năng", code="VALIDATION_ERROR", status=422)
+    mod_line = f"Module: {module.upper()}\n" if module.strip() else ""
+    user = f"{mod_line}<MO_TA>\n{_clip(description, 4000)}\n</MO_TA>"
+    out, prov = _complete(session, actor, FLOW_SYSTEM, user, max_tokens=600)
+    return {
+        "provider": prov.name,
+        "flow_name": str(out.get("flow_name") or "").strip(),
+        "keywords": [str(k).strip() for k in (out.get("keywords") or []) if str(k).strip()][:8],
+        "summary": str(out.get("summary") or "").strip(),
+    }
 
 
 def _complete(session: Session, actor: Principal, system: str, user: str, max_tokens: int = 4096) -> tuple[dict, AIProvider]:

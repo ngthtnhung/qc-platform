@@ -7,12 +7,17 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.db import get_session
-from app.core.deps import require
+from app.core.deps import current_principal, require
 from app.core.principal import Perm, Principal
 from app.domains.ai import service
 from app.domains.files.storage import StorageBackend, get_storage
 
 router = APIRouter(prefix="/ai", tags=["ai"])
+
+
+class FlowSuggestIn(BaseModel):
+    description: str = Field(..., min_length=4, max_length=6000)
+    module: str = ""
 
 
 class BugAnalysisIn(BaseModel):
@@ -24,6 +29,12 @@ class CodeIn(BaseModel):
     instruction: str = Field("", max_length=3000)
     execution_id: uuid.UUID | None = None
     error_text: str = Field("", max_length=10000)
+
+
+@router.post("/suggest-flow")
+def suggest_flow(body: FlowSuggestIn, p: Principal = Depends(current_principal), session: Session = Depends(get_session)):
+    """AI xác định tên chức năng / luồng ứng dụng liên quan trước khi tra cứu từ khóa."""
+    return service.suggest_flow(session, p, description=body.description, module=body.module)
 
 
 @router.post("/bug-analysis")

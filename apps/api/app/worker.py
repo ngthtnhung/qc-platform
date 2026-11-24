@@ -20,8 +20,7 @@ celery_app.conf.update(
     timezone="UTC",
     beat_schedule={
         "run-due-schedules": {"task": "automation.run_due_schedules", "schedule": 60.0},
-        "sync-haraworks-bugs": {"task": "sync.scheduled", "schedule": float(_s.haraworks_sync_seconds), "args": ("sync_bugs",)},
-        "sync-function-descriptions": {"task": "sync.scheduled", "schedule": 3600.0 * 6, "args": ("sync_function_descriptions",)},
+        "sync-haraworks-all": {"task": "sync.scheduled", "schedule": float(_s.haraworks_sync_seconds), "args": ("sync_all",)},
     },
 )
 

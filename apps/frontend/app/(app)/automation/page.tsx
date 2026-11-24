@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, apiForm, ApiError, type Account, type AutoTask, type Environment, type Execution } from "@/lib/api";
+import { formatDateBadge, getModuleColor } from "@/lib/ui-prefs";
 
 const VSTATUS: Record<string, { label: string; cls: string }> = {
-  PENDING: { label: "Chờ QC duyệt", cls: "warn" }, APPROVED: { label: "Đã duyệt", cls: "ok" }, REJECTED: { label: "Từ chối", cls: "bad" }, RETIRED: { label: "Ngừng", cls: "" },
+  PENDING: { label: "Bản nháp", cls: "warn" }, APPROVED: { label: "Đang dùng", cls: "ok" }, REJECTED: { label: "Đã bỏ", cls: "bad" }, RETIRED: { label: "Cũ", cls: "" },
 };
 const ESTATUS: Record<string, string> = { QUEUED: "Đang chờ", CLAIMED: "Runner đã nhận", RUNNING: "Đang chạy", PASSED: "Đạt", FAILED: "Lỗi", CANCELLED: "Đã hủy" };
 
@@ -222,26 +223,51 @@ function TaskCard({ t, onChange, accounts, schedules }: { t: AutoTask; onChange:
     }
   }
 
+  async function activate(verId: string, verNo: number) {
+    setMsg("");
+    try {
+      await api(`/automation/tasks/${t.id}/versions/${verId}/activate`, { method: "POST" });
+      setMsg(`Đã kích hoạt phiên bản v${verNo} để chạy.`);
+      onChange();
+    } catch (e) {
+      setMsg(e instanceof ApiError ? e.message : "Không kích hoạt được");
+    }
+  }
+  async function removeTask() {
+    if (!confirm(`Xóa tác vụ "${t.name}"?`)) return;
+    await api(`/automation/tasks/${t.id}`, { method: "DELETE" });
+    onChange();
+  }
+  const modColor = getModuleColor(t.module_code);
+
   return (
     <article className="card">
       <div className="row">
+        <span className="badge" style={{ background: `${modColor}18`, color: modColor, borderColor: `${modColor}55` }}>{t.module_code}</span>
         <strong className="grow">{t.name}</strong>
-        <span className="badge">{t.module_code}</span>
+        {t.created_at && <span className="badge date">{formatDateBadge(t.created_at)}</span>}
         {t.writes && <span className="badge warn">Ghi dữ liệu</span>}
-        <span className={`badge ${t.runnable ? "ok" : "warn"}`}>{t.runnable ? `Chạy được (v${t.approved_version})` : "Chưa có bản được duyệt"}</span>
-        <button onClick={() => setOpen(!open)}>{open ? "Thu gọn" : "Chi tiết"}</button>
+        <span className={`badge ${t.runnable ? "ok" : "warn"}`}>{t.runnable ? `Sẵn sàng (v${t.approved_version})` : "Chưa kích hoạt"}</span>
+        <button className="sm" onClick={() => setOpen(!open)}>{open ? "Thu gọn" : "Chi tiết"}</button>
+        <button className="sm danger" onClick={() => void removeTask()}>Xóa</button>
       </div>
       {open && (
         <>
-          <div className="muted">{t.start_url}</div>
+          <div className="muted" style={{ marginTop: 6 }}>{t.start_url}</div>
           <div className="muted">Vai trò tài khoản cần: {t.required_roles.length ? t.required_roles.join(", ") : "không yêu cầu"}</div>
           <ol>{t.steps.map((s, i) => <li key={i}>{s}</li>)}</ol>
-          <div className="row">
+          <div className="row" style={{ marginBottom: 8 }}>
             {t.versions.map((v) => (
-              <span key={v.id} className={`badge ${VSTATUS[v.status]?.cls}`} title={v.sha256}>v{v.version_no} · {VSTATUS[v.status]?.label} · {v.origin}</span>
+              <span key={v.id} className="row" style={{ gap: 4 }}>
+                <span className={`badge ${VSTATUS[v.status]?.cls}`} title={v.sha256}>
+                  v{v.version_no} · {VSTATUS[v.status]?.label} · {v.origin}{v.created_at ? ` · ${formatDateBadge(v.created_at)}` : ""}
+                </span>
+                {v.status === "PENDING" && (
+                  <button className="sm primary" onClick={() => void activate(v.id, v.version_no)}>Kích hoạt v{v.version_no}</button>
+                )}
+              </span>
             ))}
           </div>
-          {t.versions.some((v) => v.status === "PENDING") && <div className="notice">Có phiên bản đang chờ QC duyệt trong mục “Duyệt”. Code chỉ chạy được sau khi được duyệt.</div>}
           {t.params.map((p) => (
             <div key={p.key}>
               <label htmlFor={`${t.id}-${p.key}`}>{p.label || p.key}</label>
@@ -306,7 +332,7 @@ export default function AutomationPage() {
   return (
     <>
       <h2>Tác vụ tự động</h2>
-      <p className="muted">Chỉ phiên bản code đã được QC duyệt mới chạy được; chạy trên Staging qua Runner. Code do AI viết hoặc sửa luôn phải qua duyệt.</p>
+      <p className="muted">Quản lý kịch bản Playwright theo module & ngày tạo; thêm, sửa, xóa và kích hoạt chạy trực tiếp trên Staging qua Runner.</p>
       {error && <div className="err" role="alert">{error}</div>}
       {stagingAccounts.length === 0 && <div className="notice">Chưa có tài khoản nào trong môi trường loại STAGING. Vào \"Môi trường & tài khoản\" để thêm môi trường (loại STAGING) và tài khoản test trước khi chạy.</div>}
       <div className="row" style={{ marginBottom: 12 }}>

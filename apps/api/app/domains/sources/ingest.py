@@ -1,6 +1,7 @@
 """Nạp nguồn vào DB: upload tài liệu, link Figma, Task Function. Mỗi nguồn có phiên bản; nguồn cũ không bị xóa."""
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import json
 import re
@@ -40,21 +41,36 @@ class IngestResult:
 
 
 def _next_label(session: Session, source_id: uuid.UUID, wanted: str | None) -> str:
-    n = session.scalar(select(func.count()).select_from(SourceVersion).where(SourceVersion.source_id == source_id)) or 0
-    label = (wanted or "").strip()[:120] or f"v{n + 1}"
-    if session.scalar(select(SourceVersion.id).where(SourceVersion.source_id == source_id, SourceVersion.label == label)):
-        raise Conflict(f'Phiên bản "{label}" của nguồn này đã tồn tại. Đặt nhãn phiên bản khác.', code="VERSION_EXISTS")
+    if wanted and wanted.strip():
+        label = wanted.strip()[:120]
+        if session.scalar(select(SourceVersion.id).where(SourceVersion.source_id == source_id, SourceVersion.label == label)):
+            raise Conflict(f'Phiên bản "{label}" của nguồn này đã tồn tại. Đặt nhãn phiên bản khác.', code="VERSION_EXISTS")
+        return label
+    vn_now = dt.datetime.now(dt.timezone(dt.timedelta(hours=7)))
+    base = vn_now.strftime("%d/%m/%Y")
+    label = base
+    idx = 2
+    while session.scalar(select(SourceVersion.id).where(SourceVersion.source_id == source_id, SourceVersion.label == label)):
+        label = f"{base} ({idx})"
+        idx += 1
     return label
 
 
 def _get_source(session: Session, kind: str, title: str, actor: Principal, url: str = "", meta: dict | None = None) -> Source:
+    now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
     src = session.scalar(select(Source).where(Source.kind == kind, Source.title == title))
     if src is None:
-        src = Source(kind=kind, title=title[:400], external_url=url[:1000], created_by=actor.id, meta=meta or {})
+        m = {**(meta or {}), "updated_at": now_iso}
+        src = Source(kind=kind, title=title[:400], external_url=url[:1000], created_by=actor.id, meta=m)
         session.add(src)
         session.flush()
-    elif src.status != "active":
-        src.status = "active"
+    else:
+        if src.status != "active":
+            src.status = "active"
+        if url:
+            src.external_url = url[:1000]
+        merged = {**(src.meta or {}), **(meta or {}), "updated_at": now_iso}
+        src.meta = merged
     return src
 
 
@@ -77,7 +93,7 @@ def _supersede_previous(session: Session, source_id: uuid.UUID, keep_version: uu
 
 
 def ingest_document(session: Session, storage: StorageBackend, *, actor: Principal, kind: str, title: str, filename: str, data: bytes,
-                    version_label: str | None = None, external_url: str = "") -> IngestResult:
+                    version_label: str | None = None, external_url: str = "", module: str = "") -> IngestResult:
     """Upload .docx (BA) hoặc wiki (.docx/.html/.md/.txt): lưu file vào storage, tách đoạn, thêm vào DB như phiên bản mới."""
     if kind not in DOC_EXT:
         raise AppError("Loại nguồn không hỗ trợ upload tệp", code="VALIDATION_ERROR", status=422)
@@ -105,7 +121,8 @@ def ingest_document(session: Session, storage: StorageBackend, *, actor: Princip
     if not items:
         raise AppError("Không trích xuất được đoạn văn bản nào từ tệp này (tệp rỗng hoặc chỉ có ảnh).", code="NO_TEXT", status=422)
     rec = file_service.save_file(session, storage, data=data, name=filename, owner=actor, max_bytes=get_settings().max_source_upload_bytes)
-    src = _get_source(session, kind, title, actor, external_url)
+    mod_clean = normalize_text(module).upper()[:40]
+    src = _get_source(session, kind, title, actor, external_url, {"module": mod_clean} if mod_clean else None)
     label = _next_label(session, src.id, version_label)
     ver = SourceVersion(source_id=src.id, label=label, file_id=rec.id, meta={"sha256": sha, "filename": filename, "parser": ext})
     session.add(ver)
@@ -129,9 +146,9 @@ def parse_figma_url(url: str) -> dict:
 
 
 def ingest_figma(session: Session, *, actor: Principal, url: str, title: str | None, nodes_json: dict | None, pasted_text: str | None,
-                 version_label: str | None = None) -> IngestResult:
-    """Nội dung Figma đến từ (a) JSON của Figma REST (đã lấy bằng token) hoặc (b) văn bản QC dán tay. Chỉ link thì không có đoạn nào để trích."""
-    info = parse_figma_url(url)
+                 version_label: str | None = None, module: str = "", images: list[dict] | None = None) -> IngestResult:
+    """Nội dung Figma đến từ (a) JSON của Figma REST, (b) văn bản/CSS QC dán tay, hoặc (c) ảnh chụp thiết kế đính kèm."""
+    info = parse_figma_url(url) if (url or "").strip() else {"file_key": "", "title": normalize_text(title or "") or "Figma", "node_id": "", "url": ""}
     if nodes_json:
         items = parsers.parse_figma_nodes(nodes_json, info["file_key"], info["url"].split("?")[0])
         origin = "figma_api"
@@ -140,12 +157,36 @@ def ingest_figma(session: Session, *, actor: Principal, url: str, title: str | N
         for it in items:
             it.locator.update({"url": info["url"], "file_key": info["file_key"], **({"node_id": info["node_id"]} if info["node_id"] else {})})
         origin = "pasted"
+    elif images:
+        img_names = ", ".join(str(im.get("filename") or "hình ảnh") for im in images)
+        items = [parsers.Parsed(
+            kind="paragraph",
+            heading_path=normalize_text(title or "") or info["title"],
+            locator={"url": info["url"], "file_key": info["file_key"], "images": len(images)},
+            text=f"Thiết kế Figma kèm {len(images)} hình ảnh: {img_names}",
+        )]
+        origin = "images"
     else:
-        raise AppError("Chưa có nội dung Figma để trích: cần token Figma (để hệ thống đọc) hoặc dán chú thích/văn bản trong thiết kế.", code="NO_FIGMA_CONTENT", status=422)
+        raise AppError("Chưa có nội dung Figma: hãy dán nội dung/CSS từ Figma, tải lên hình ảnh thiết kế hoặc cấu hình Token Figma.", code="NO_FIGMA_CONTENT", status=422)
     if not items:
         raise AppError("Không tìm thấy văn bản (nút TEXT) trong vùng Figma này.", code="NO_TEXT", status=422)
     name = normalize_text(title or "") or info["title"]
-    src = _get_source(session, "figma", name, actor, info["url"], {"file_key": info["file_key"]})
+    mod_clean = normalize_text(module).upper()[:40]
+    fmeta: dict = {"file_key": info["file_key"]}
+    if mod_clean:
+        fmeta["module"] = mod_clean
+    if images:
+        fmeta["images"] = images
+    src = _get_source(session, "figma", name, actor, info["url"], fmeta)
+    if images:
+        merged_imgs = list((src.meta or {}).get("images") or [])
+        seen_ids = {str(x.get("file_id")) for x in merged_imgs if isinstance(x, dict)}
+        for im in images:
+            if str(im.get("file_id")) not in seen_ids:
+                merged_imgs.append(im)
+        m2 = dict(src.meta or {})
+        m2["images"] = merged_imgs
+        src.meta = m2
     label = _next_label(session, src.id, version_label)
     ver = SourceVersion(source_id=src.id, label=label, meta={"origin": origin, "file_key": info["file_key"], "node_id": info["node_id"], "url": info["url"]})
     session.add(ver)

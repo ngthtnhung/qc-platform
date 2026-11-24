@@ -41,9 +41,10 @@ def meta(file_id: uuid.UUID, _: Principal = Depends(require(Perm.FILES_READ)), s
 
 
 @router.get("/files/{file_id}/download")
-def download(file_id: uuid.UUID, _: Principal = Depends(require(Perm.FILES_READ)), session: Session = Depends(get_session),
+def download(file_id: uuid.UUID, inline: bool = False, _: Principal = Depends(require(Perm.FILES_READ)), session: Session = Depends(get_session),
              storage: StorageBackend = Depends(storage_dep)):
     rec = service.get_file(session, file_id)
     safe_name = rec.original_name.replace('"', "")
+    disp = "inline" if inline else "attachment"
     return Response(storage.get(rec.storage_key), media_type=rec.mime,
-                    headers={"Content-Disposition": f'attachment; filename="{safe_name}"', "X-Content-Type-Options": "nosniff"})
+                    headers={"Content-Disposition": f'{disp}; filename="{safe_name}"', "X-Content-Type-Options": "nosniff"})

@@ -16,12 +16,13 @@ dependencies = [
   "python-multipart>=0.0.9",
   "celery>=5.4",
   "redis>=5.0",
+  "httpx>=0.27",
   "packaging>=24.0",  # kombu import trực tiếp nhưng không khai báo
 ]
 
 [project.optional-dependencies]
 s3 = ["boto3>=1.34"]
-dev = ["pytest>=8", "httpx>=0.27", "ruff>=0.5"]
+dev = ["pytest>=8", "ruff>=0.5"]
 
 [tool.setuptools.packages.find]
 include = ["app*"]

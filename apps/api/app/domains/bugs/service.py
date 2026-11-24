@@ -80,7 +80,9 @@ def _person(v) -> str:
             v = json.loads(v)
         except ValueError:
             return v
-    return str(v.get("name", "")) if isinstance(v, dict) else ""
+    if isinstance(v, list) and v:
+        return ", ".join(str(x.get("name") or x.get("user_Name") or "") for x in v if isinstance(x, dict) and (x.get("name") or x.get("user_Name")))
+    return str(v.get("name") or v.get("user_Name") or "") if isinstance(v, dict) else ""
 
 
 _KNOWN = {"id", "name", "status", "priority", "is_Deleted", "created_At", "status_Updated_At", "project_Id", "assignTo", "approverEntity", "project_Name"}
@@ -89,10 +91,13 @@ _KNOWN = {"id", "name", "status", "priority", "is_Deleted", "created_At", "statu
 def live_fields(b: dict, proj: Project | None, mod_index: dict[str, str]) -> dict:
     """Ánh xạ một task Haraworks (định dạng của bản Node/API) sang các cột của bảng bugs; trường chưa ánh xạ giữ trong extra."""
     title = str(b.get("name", ""))
+    tid = str(b.get("id") or "")
+    pid = proj.external_id if proj else str(b.get("project_Id") or "")
+    hw_url = f"https://tasks.haraworks.vn/task/project/{pid}/{tid}" if (pid and tid) else (f"https://tasks.haraworks.vn/task/me/{tid}" if tid else "")
     return dict(title=title, title_fold=fold(title), status=b.get("status"), priority=b.get("priority"), module_code=derive_module(title, mod_index),
                 project_id=proj.id if proj else None, created_at_ext=_dt(b.get("created_At")), updated_at_ext=_dt(b.get("status_Updated_At")),
                 assignee=_person(b.get("assignTo")), approver=_person(b.get("approverEntity")), is_deleted=bool(b.get("is_Deleted")),
-                extra={k: v for k, v in b.items() if k not in _KNOWN})
+                url=hw_url, extra={k: v for k, v in b.items() if k not in _KNOWN})
 
 
 def get_source(session: Session, code: str, name: str) -> BugSource:
@@ -114,7 +119,16 @@ def upsert_bug(session: Session, src: BugSource, ext_id: str, fields: dict, snap
         session.flush()
         rep.created += 1
     elif session.scalar(select(BugSnapshot.id).where(BugSnapshot.bug_id == bug.id, BugSnapshot.content_hash == h)):
-        rep.skipped += 1
+        # Nếu trước đó thiếu approver/assignee do lỗi parse, vẫn cập nhật lại cột trên bảng bugs
+        changed = False
+        for col in ("approver", "assignee", "module_code", "url"):
+            if not getattr(bug, col) and fields.get(col):
+                setattr(bug, col, fields[col])
+                changed = True
+        if changed:
+            rep.updated += 1
+        else:
+            rep.skipped += 1
         return bug
     else:
         for k, v in fields.items():
@@ -181,8 +195,13 @@ def _finish(session: Session, rep: Report, apply: bool) -> Report:
     return rep
 
 
+CLOSED_STATUSES = {4, 5, 10, 11}
+
+
 def search_bugs(session: Session, *, q: str = "", source: str = "", module: str = "", status: int | None = None,
-                project_id=None, limit: int = 50, offset: int = 0) -> tuple[int, list[tuple[Bug, str]]]:
+                project_id=None, project_name: str = "", closed: str = "", assignee: str = "", approver: str = "",
+                classification: str = "", year: str = "", date_range: str = "", sort: str = "created",
+                limit: int = 50, offset: int = 0) -> tuple[int, list[tuple[Bug, str]]]:
     stmt = select(Bug, BugSource.code).join(BugSource, BugSource.id == Bug.source_id).where(Bug.is_deleted.is_(False))
     if source:
         stmt = stmt.where(BugSource.code == source)
@@ -190,11 +209,38 @@ def search_bugs(session: Session, *, q: str = "", source: str = "", module: str 
         stmt = stmt.where(Bug.module_code == module)
     if status is not None:
         stmt = stmt.where(Bug.status == status)
+    if closed == "open":
+        stmt = stmt.where((Bug.status.is_(None)) | (~Bug.status.in_(CLOSED_STATUSES)))
+    elif closed == "closed":
+        stmt = stmt.where(Bug.status.in_(CLOSED_STATUSES))
+    if assignee:
+        stmt = stmt.where(Bug.assignee == assignee)
+    if approver:
+        stmt = stmt.where(Bug.approver == approver)
+    if classification:
+        stmt = stmt.where(Bug.classification == classification)
     if project_id:
         stmt = stmt.where(Bug.project_id == project_id)
+    if project_name:
+        stmt = stmt.join(Project, Project.id == Bug.project_id).where(Project.name == project_name)
+    if year and year.isdigit() and len(year) == 4:
+        y = int(year)
+        stmt = stmt.where(Bug.created_at_ext >= dt.datetime(y, 1, 1, tzinfo=dt.timezone.utc),
+                          Bug.created_at_ext < dt.datetime(y + 1, 1, 1, tzinfo=dt.timezone.utc))
+    if date_range:
+        now = dt.datetime.now(dt.timezone.utc)
+        if date_range == "old":
+            stmt = stmt.where(Bug.created_at_ext < now - dt.timedelta(days=30))
+        else:
+            days_map = {"today": 1, "week": 7, "month": 30, "30d": 30, "quarter": 90}
+            if date_range in days_map:
+                stmt = stmt.where(Bug.created_at_ext >= now - dt.timedelta(days=days_map[date_range]))
     for term in fold(q).split():
         stmt = stmt.where(Bug.title_fold.like(f"%{like_escape(term)}%", escape="\\"))
     total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
-    order = Bug.created_at_ext.desc().nulls_last()
-    rows = session.execute(stmt.order_by(order, Bug.external_id).limit(min(limit, 200)).offset(offset)).all()
+    if sort == "priority":
+        order = (Bug.priority.asc().nulls_last(), Bug.created_at_ext.desc().nulls_last())
+    else:
+        order = (Bug.created_at_ext.desc().nulls_last(), Bug.external_id)
+    rows = session.execute(stmt.order_by(*order).limit(min(limit, 200)).offset(offset)).all()
     return total, [(b, c) for b, c in rows]
