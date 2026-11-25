@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     cookie_secure: bool = False  # bật True khi chạy sau HTTPS (profile team)
     login_max_failures: int = 5
     login_lock_minutes: int = 15
-    password_min_length: int = 12
+    password_min_length: int = 6
 
     storage_backend: str = Field("local", pattern="^(local|s3)$")
     storage_local_path: str = ".data/storage"

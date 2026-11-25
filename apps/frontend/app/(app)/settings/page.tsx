@@ -21,7 +21,7 @@ import {
   type PetConfig,
 } from "@/lib/ui-prefs";
 
-type TabKey = "account" | "general" | "pet" | "integrations" | "users" | "audit";
+type TabKey = "account" | "general" | "pet" | "integrations" | "admin";
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -76,12 +76,13 @@ export default function SettingsPage() {
   const [audits, setAudits] = useState<AuditRow[]>([]);
 
   useEffect(() => {
-    setThemeState(getTheme());
     setPetCfg(loadPetConfig());
     if (typeof window !== "undefined") {
       const t = new URLSearchParams(window.location.search).get("tab");
-      if (t === "account" || t === "general" || t === "pet" || t === "integrations" || t === "users" || t === "audit") {
+      if (t === "account" || t === "general" || t === "pet" || t === "integrations" || t === "admin") {
         setTab(t);
+      } else if (t === "users" || t === "audit") {
+        setTab("admin");
       }
     }
   }, []);
@@ -191,6 +192,22 @@ export default function SettingsPage() {
     loadAll();
   }
 
+  async function resetUserPw(u: User) {
+    const custom = window.prompt(`Nhập mật khẩu mới (≥ 6 ký tự) cho ${u.username} — hoặc để trống để hệ thống tự sinh mật khẩu tạm:`);
+    if (custom === null) return;
+    setUMsg(null);
+    try {
+      const r = await api<{ temporary_password: string }>(`/users/${u.id}/reset-password`, {
+        method: "POST",
+        body: custom.trim() ? { password: custom.trim() } : {},
+      });
+      setUMsg({ ok: true, text: `Đã đặt lại mật khẩu cho ${u.username}: ${r.temporary_password}` });
+      loadAll();
+    } catch (err) {
+      setUMsg({ ok: false, text: err instanceof ApiError ? err.message : "Đặt lại mật khẩu thất bại" });
+    }
+  }
+
   return (
     <div>
       <div className="page-head">
@@ -203,11 +220,10 @@ export default function SettingsPage() {
       <div className="settings-layout">
         <div className="settings-nav" role="tablist">
           <button className={tab === "account" ? "active" : ""} onClick={() => setTab("account")}>Tài khoản</button>
-          <button className={tab === "general" ? "active" : ""} onClick={() => setTab("general")}>Chung (Giao diện &amp; Màu)</button>
-          <button className={tab === "pet" ? "active" : ""} onClick={() => setTab("pet")}>Trợ lý Pet &amp; Báo cáo</button>
-          <button className={tab === "integrations" ? "active" : ""} onClick={() => setTab("integrations")}>Tích hợp (Token &amp; Cookie)</button>
-          <button className={tab === "users" ? "active" : ""} onClick={() => setTab("users")}>Người dùng QC</button>
-          <button className={tab === "audit" ? "active" : ""} onClick={() => setTab("audit")}>Nhật ký hoạt động</button>
+          <button className={tab === "general" ? "active" : ""} onClick={() => setTab("general")}>Chung</button>
+          <button className={tab === "pet" ? "active" : ""} onClick={() => setTab("pet")}>Pet</button>
+          <button className={tab === "integrations" ? "active" : ""} onClick={() => setTab("integrations")}>Token &amp; Cookie</button>
+          <button className={tab === "admin" ? "active" : ""} onClick={() => setTab("admin")}>Admin</button>
         </div>
 
         <div>
@@ -232,8 +248,8 @@ export default function SettingsPage() {
                 <div className="card-title">Đổi mật khẩu</div>
                 <label>Mật khẩu hiện tại</label>
                 <input type="password" value={curPw} onChange={(e) => setCurPw(e.target.value)} required />
-                <label>Mật khẩu mới (≥ 12 ký tự)</label>
-                <input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} required minLength={12} />
+                <label>Mật khẩu mới (≥ 6 ký tự)</label>
+                <input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} required minLength={6} />
                 <div style={{ marginTop: 12 }}>
                   <button className="primary" type="submit">Cập nhật mật khẩu</button>
                 </div>
@@ -244,24 +260,6 @@ export default function SettingsPage() {
 
           {tab === "general" && (
             <>
-              <div className="card">
-                <div className="card-title">Chế độ giao diện</div>
-                <div className="row">
-                  <button
-                    className={theme === "light" ? "primary" : ""}
-                    onClick={() => { setTheme("light"); setThemeState("light"); }}
-                  >
-                    Giao diện Sáng (Pastel)
-                  </button>
-                  <button
-                    className={theme === "dark" ? "primary" : ""}
-                    onClick={() => { setTheme("dark"); setThemeState("dark"); }}
-                  >
-                    Giao diện Tối (Dark Mode)
-                  </button>
-                </div>
-              </div>
-
               <div className="card">
                 <div className="card-title">Màu sắc Dự án (đồng bộ trên Bug, Task Function, Theo dõi Build)</div>
                 <div className="row" style={{ marginBottom: 10 }}>
@@ -626,10 +624,10 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {tab === "users" && (
+          {tab === "admin" && (
             <>
               <form className="card" onSubmit={(e) => void createUser(e)}>
-                <div className="card-title">Thêm tài khoản QC</div>
+                <div className="card-title">Admin — Cấp tài khoản &amp; mật khẩu cho thành viên QC</div>
                 <div className="grid-2">
                   <div>
                     <label>Tên đăng nhập *</label>
@@ -644,18 +642,18 @@ export default function SettingsPage() {
                     <input value={uCode} onChange={(e) => setUCode(e.target.value)} />
                   </div>
                   <div>
-                    <label>Mật khẩu ban đầu (≥ 12 ký tự) *</label>
-                    <input type="password" value={uPass} onChange={(e) => setUPass(e.target.value)} required minLength={12} />
+                    <label>Mật khẩu ban đầu (≥ 6 ký tự) *</label>
+                    <input type="password" value={uPass} onChange={(e) => setUPass(e.target.value)} required minLength={6} />
                   </div>
                 </div>
                 <div style={{ marginTop: 10 }}>
-                  <button className="primary sm" type="submit">Tạo tài khoản</button>
+                  <button className="primary sm" type="submit">Cấp tài khoản</button>
                 </div>
                 {uMsg && <div className={uMsg.ok ? "badge ok" : "err"} style={{ marginTop: 8 }}>{uMsg.text}</div>}
               </form>
 
               <div className="card">
-                <div className="card-title">Danh sách người dùng QC ({users.length})</div>
+                <div className="card-title">Danh sách tài khoản QC ({users.length})</div>
                 <div className="table-wrap">
                   <table>
                     <thead>
@@ -675,11 +673,14 @@ export default function SettingsPage() {
                           <td><span className={`badge ${u.is_active ? "ok" : "bad"}`}>{u.is_active ? "Đang hoạt động" : "Đã khóa"}</span></td>
                           <td><span className="badge date">{formatDateBadge(u.last_login_at)}</span></td>
                           <td style={{ textAlign: "right" }}>
-                            {u.id !== user?.id && (
-                              <button className="sm" onClick={() => void toggleUser(u)}>
-                                {u.is_active ? "Khóa" : "Mở khóa"}
-                              </button>
-                            )}
+                            <div className="row" style={{ justifyContent: "flex-end", gap: 6 }}>
+                              <button type="button" className="sm" onClick={() => void resetUserPw(u)}>Đặt lại MK</button>
+                              {u.id !== user?.id && (
+                                <button type="button" className="sm" onClick={() => void toggleUser(u)}>
+                                  {u.is_active ? "Khóa" : "Mở khóa"}
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -687,37 +688,38 @@ export default function SettingsPage() {
                   </table>
                 </div>
               </div>
-            </>
-          )}
 
-          {tab === "audit" && (
-            <div className="card">
-              <div className="card-title">Nhật ký hoạt động gần đây</div>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Ngày</th>
-                      <th>Người thực hiện</th>
-                      <th>Hành động</th>
-                      <th>Đối tượng</th>
-                      <th>Kết quả</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {audits.map((a) => (
-                      <tr key={a.id}>
-                        <td><span className="badge date">{formatDateBadge(a.at)}</span></td>
-                        <td>{a.actor_username || a.actor_type}</td>
-                        <td><code>{a.action}</code></td>
-                        <td className="muted">{a.resource_type} {a.resource_id ? a.resource_id.slice(0, 8) : ""}</td>
-                        <td><span className={`badge ${a.decision === "ALLOW" ? "ok" : "bad"}`}>{a.decision}</span></td>
+              <div className="card">
+                <div className="card-title">Nhật ký hoạt động (Audit Log — chỉ lưu thêm, không thể sửa/xóa)</div>
+                <div className="muted" style={{ marginBottom: 10 }}>
+                  Ghi lại toàn bộ lịch sử thao tác quan trọng (đăng nhập, cấp/khóa tài khoản, đổi mật khẩu, lưu token, sửa môi trường, thêm/xóa module, chạy automation) để Admin đối soát bảo mật.
+                </div>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Ngày</th>
+                        <th>Người thực hiện</th>
+                        <th>Hành động</th>
+                        <th>Đối tượng</th>
+                        <th>Kết quả</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {audits.map((a) => (
+                        <tr key={a.id}>
+                          <td><span className="badge date">{formatDateBadge(a.at)}</span></td>
+                          <td>{a.actor_username || a.actor_type}</td>
+                          <td><code>{a.action}</code></td>
+                          <td className="muted">{a.resource_type} {a.resource_id ? a.resource_id.slice(0, 8) : ""}</td>
+                          <td><span className={`badge ${a.decision === "ALLOW" ? "ok" : "bad"}`}>{a.decision}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>

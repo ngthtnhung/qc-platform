@@ -67,11 +67,18 @@ def set_active(session: Session, *, actor: Principal, user_id: uuid.UUID, active
     return user
 
 
-def reset_password(session: Session, *, actor: Principal, user_id: uuid.UUID) -> tuple[User, str]:
+def reset_password(session: Session, *, actor: Principal, user_id: uuid.UUID, new_password: str | None = None) -> tuple[User, str]:
     user = session.get(User, user_id)
     if user is None:
         raise NotFound("Không thấy người dùng")
-    pw = generate_temp_password()
+    if new_password is not None and new_password.strip():
+        pw = new_password
+        try:
+            security.validate_password_policy(pw, user.username)
+        except security.WeakPassword as exc:
+            raise AppError(str(exc), code="WEAK_PASSWORD", status=422) from exc
+    else:
+        pw = generate_temp_password()
     user.password_hash = security.hash_password(pw)
     user.must_change_password = True
     user.failed_login_count, user.locked_until = 0, None

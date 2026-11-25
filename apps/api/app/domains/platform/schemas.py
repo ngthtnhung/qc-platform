@@ -43,6 +43,11 @@ class UserCreateIn(BaseModel):
     display_name: str = Field(min_length=1, max_length=120)
     employee_code: str = ""
     email: str = ""
+    password: str | None = Field(default=None, max_length=256)
+
+
+class UserResetPasswordIn(BaseModel):
+    password: str | None = Field(default=None, max_length=256)
 
 
 class UserCreatedOut(BaseModel):

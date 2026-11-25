@@ -46,6 +46,7 @@ from app.domains.platform.schemas import (
     UserCreatedOut,
     UserCreateIn,
     UserOut,
+    UserResetPasswordIn,
 )
 from app.domains.platform.vault import store_secret
 
@@ -133,8 +134,9 @@ def list_users(_: Principal = Depends(require(Perm.USERS_MANAGE)), session: Sess
 
 @router.post("/users", response_model=UserCreatedOut, status_code=201, tags=["users"])
 def create_user(body: UserCreateIn, p: Principal = Depends(require(Perm.USERS_MANAGE)), session: Session = Depends(get_session)):
+    pw_arg = body.password if (body.password and body.password.strip()) else None
     user, pw = user_service.create_user(session, actor=p, username=body.username, display_name=body.display_name,
-                                        employee_code=body.employee_code, email=body.email)
+                                        password=pw_arg, employee_code=body.employee_code, email=body.email)
     return UserCreatedOut(user=UserOut.model_validate(user), temporary_password=pw)
 
 
@@ -149,8 +151,9 @@ def activate(user_id: uuid.UUID, p: Principal = Depends(require(Perm.USERS_MANAG
 
 
 @router.post("/users/{user_id}/reset-password", response_model=UserCreatedOut, tags=["users"])
-def reset_password(user_id: uuid.UUID, p: Principal = Depends(require(Perm.USERS_MANAGE)), session: Session = Depends(get_session)):
-    user, pw = user_service.reset_password(session, actor=p, user_id=user_id)
+def reset_password(user_id: uuid.UUID, body: UserResetPasswordIn | None = None, p: Principal = Depends(require(Perm.USERS_MANAGE)), session: Session = Depends(get_session)):
+    pw_arg = body.password if (body and body.password and body.password.strip()) else None
+    user, pw = user_service.reset_password(session, actor=p, user_id=user_id, new_password=pw_arg)
     return UserCreatedOut(user=UserOut.model_validate(user), temporary_password=pw)
 
 
