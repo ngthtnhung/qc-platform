@@ -49,6 +49,11 @@ export type PetPulse = {
   };
   mentions: HwNotiItem[];
   missing_integrations?: string[];
+  integration_states?: {
+    haraworks?: "active" | "missing" | "expired" | "error";
+    ai?: "active" | "missing" | "expired" | "error";
+    figma?: "active" | "missing" | "expired" | "error";
+  };
   daily_summary: {
     todo_today: number;
     overdue: number;
@@ -198,6 +203,7 @@ export function QaPetWidget({
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{ startX: number; startY: number; ox: number; oy: number; moved: boolean } | null>(null);
   const quipIdxRef = useRef(0);
+  const promptedMissingRef = useRef(false);
 
   useEffect(() => {
     setCfg(loadPetConfig());
@@ -336,10 +342,41 @@ export function QaPetWidget({
               createdAt: m.created_at,
             })),
           });
+        } else if (!promptedMissingRef.current) {
+          // Mặc định khi truy cập hệ thống: nếu chưa có / hết hạn Cookie Haraworks hoặc thiếu API Key AI -> Pet bật bong bóng dễ thương chỉ chỗ nhập
+          const st = data.integration_states || {};
+          const hwBad = st.haraworks && st.haraworks !== "active";
+          const aiBad = st.ai && st.ai !== "active";
+          if (hwBad || aiBad) {
+            promptedMissingRef.current = true;
+            setAction("jump");
+            let cuteText = "";
+            if (hwBad && aiBad) {
+              cuteText =
+                st.haraworks === "expired"
+                  ? "Meow~ Qua ngày mới Cookie Haraworks hết hạn rồi, lại còn thiếu API Key AI nữa nè! Bấm vào đây nhập lại cho bé nha 🍪✨"
+                  : "Meow~ Bé chưa thấy Cookie Haraworks và API Key AI nè! Bạn ghé Cài đặt nhập vào để bé kéo bug & hỗ trợ phân tích nhé 🍪✨";
+            } else if (hwBad) {
+              cuteText =
+                st.haraworks === "expired"
+                  ? "Meow~ Cookie Haraworks hết hạn mất tiêu rồi! Bạn dán lại cookie mới để bé kéo task & thông báo nhé 🍪"
+                  : "Meow~ Chưa có Cookie Haraworks kìa! Bấm vào đây nhập token để bé đồng bộ dữ liệu cho bạn nha 🍪";
+            } else {
+              cuteText =
+                "Meow~ Bé thấy thiếu API Key AI (Gemini / Anthropic) nè! Thêm khóa vào để bé giúp bạn phân tích rule siêu nhanh nhé ✨";
+            }
+            setBubble({
+              kind: "missing_key",
+              title: `🐾 ${cfg.name} chỉ chỗ nhập Token nè!`,
+              text: cuteText,
+              items: [],
+              missingKeys: data.missing_integrations || [],
+            });
+          }
         }
       } catch { /* ignore */ }
     },
-    [cfg.alertMentions, cfg.alertUncheckedBug, onPulseUpdate]
+    [cfg.alertMentions, cfg.alertUncheckedBug, cfg.name, onPulseUpdate]
   );
 
   useEffect(() => {

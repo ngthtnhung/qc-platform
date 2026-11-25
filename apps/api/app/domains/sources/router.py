@@ -634,6 +634,14 @@ def _fetch_hw_notifications(session: Session, p: Principal, force: bool = False)
             timeout=12.0,
         )
         if r_list.status_code in (401, 403) or 300 <= r_list.status_code < 400:
+            from app.core.db import utcnow
+            from app.domains.sources.models import Integration
+
+            hw_int = session.get(Integration, "haraworks")
+            if hw_int is not None:
+                hw_int.last_check_status = f"hết hạn: Cookie Haraworks hết hạn (HTTP {r_list.status_code})"
+                hw_int.last_check_at = utcnow()
+                session.flush()
             res_obj = {"connected": False, "error": "Cookie Haraworks hết hạn hoặc chưa hợp lệ", "items": [], "unread_count": 0, "synced_at": dt.datetime.now(dt.timezone.utc).isoformat()}
             _NOTI_CACHE["global"] = (now, res_obj)
             return res_obj
@@ -848,14 +856,18 @@ def get_pet_pulse(since: str = "", force: bool = False, p: Principal = Depends(c
                 if (ps or pe) and (in_today or is_ov):
                     todo_today += 1
 
-    # Kiểm tra các khóa tích hợp còn thiếu (AI key, Haraworks cookie, Figma token) để Pet nhắc nhẹ
-    integ_rows = {row["key"]: bool(row.get("configured")) for row in integ.status(session)}
+    # Kiểm tra trạng thái từng tích hợp (missing / expired / error / active) để Pet nhắc chính xác
+    integ_list = integ.status(session)
+    integ_map = {row["key"]: row for row in integ_list}
     missing_integrations: list[str] = []
-    if not integ_rows.get("haraworks"):
+    hw_state = integ_map.get("haraworks", {}).get("state", "missing")
+    if hw_state != "active":
         missing_integrations.append("haraworks")
-    if not (integ_rows.get("gemini") or integ_rows.get("anthropic")):
+    gem_state = integ_map.get("gemini", {}).get("state", "missing")
+    ant_state = integ_map.get("anthropic", {}).get("state", "missing")
+    if gem_state != "active" and ant_state != "active":
         missing_integrations.append("ai")
-    if not integ_rows.get("figma"):
+    if integ_map.get("figma", {}).get("state", "missing") != "active":
         missing_integrations.append("figma")
 
     noti = _fetch_hw_notifications(session, p, force=force)
@@ -868,6 +880,11 @@ def get_pet_pulse(since: str = "", force: bool = False, p: Principal = Depends(c
         "notifications": noti,
         "mentions": mentions[:20],
         "missing_integrations": missing_integrations,
+        "integration_states": {
+            "haraworks": hw_state,
+            "ai": "active" if (gem_state == "active" or ant_state == "active") else (gem_state if gem_state != "missing" else ant_state),
+            "figma": integ_map.get("figma", {}).get("state", "missing"),
+        },
         "daily_summary": {
             "todo_today": todo_today,
             "overdue": overdue,
@@ -1661,3 +1678,21 @@ def put_integration(key: str, body: SecretIn, p: Principal = Depends(require(Per
 @router.post("/integrations/haraworks/check")
 def check_haraworks(p: Principal = Depends(require(Perm.SECRET_WRITE)), session: Session = Depends(get_session)):
     return integ.check_haraworks(session, p)
+
+
+@router.post("/integrations/{key}/check")
+def check_single_integration(key: str, p: Principal = Depends(current_principal), session: Session = Depends(get_session)):
+    return integ.check_integration(session, p, key)
+
+
+@router.post("/integrations/check-all")
+def check_all_integrations(p: Principal = Depends(current_principal), session: Session = Depends(get_session)):
+    results = {}
+    for row in integ.status(session):
+        k = row["key"]
+        if row["configured"]:
+            try:
+                results[k] = integ.check_integration(session, p, k)
+            except AppError as exc:
+                results[k] = {"ok": False, "state": "expired" if exc.status in (401, 403) else "error", "status": exc.message}
+    return {"items": integ.status(session), "results": results}

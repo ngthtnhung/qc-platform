@@ -60,6 +60,8 @@ function Shell({ children }: { children: ReactNode }) {
   const [bellBadgeCount, setBellBadgeCount] = useState(0);
   const [readNotiIds, setReadNotiIds] = useState<Set<string>>(() => new Set());
   const bellWrapRef = useRef<HTMLDivElement | null>(null);
+  const [infoOpenHref, setInfoOpenHref] = useState<string | null>(null);
+  const [infoHoverHref, setInfoHoverHref] = useState<string | null>(null);
 
   const currentNav = NAV_GROUPS.flatMap((g) => g.items).find((n) => pathname === n.href || pathname.startsWith(n.href + "/"));
 
@@ -70,17 +72,20 @@ function Shell({ children }: { children: ReactNode }) {
     } catch { /* ignore */ }
   }, []);
 
-  // Đóng popover chuông khi click ra ngoài
+  // Đóng popover chuông & popover (i) menu khi click ra ngoài
   useEffect(() => {
-    if (!notiOpen) return;
+    if (!notiOpen && !infoOpenHref) return;
     const onDown = (e: MouseEvent) => {
-      if (bellWrapRef.current && !bellWrapRef.current.contains(e.target as Node)) {
+      if (notiOpen && bellWrapRef.current && !bellWrapRef.current.contains(e.target as Node)) {
         setNotiOpen(false);
+      }
+      if (infoOpenHref && !(e.target as HTMLElement).closest(".nav-info-wrap")) {
+        setInfoOpenHref(null);
       }
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
-  }, [notiOpen]);
+  }, [notiOpen, infoOpenHref]);
 
   // Khi người dùng vào menu Danh sách Bug -> đánh dấu đã xem để tắt dấu chấm đỏ
   const markBugsSeen = () => {
@@ -306,21 +311,52 @@ function Shell({ children }: { children: ReactNode }) {
             <div key={g.title}>
               <div className="side-section">{g.title}</div>
               {g.items.map((n) => {
+                const isActive = pathname === n.href || pathname.startsWith(n.href + "/");
                 const showBugDot = n.href === "/bugs" && newBugsCount > 0;
+                const infoShowing = infoOpenHref === n.href || infoHoverHref === n.href;
                 return (
-                  <Link
-                    key={n.href}
-                    href={n.href}
-                    title={n.tip}
-                    onClick={n.href === "/bugs" ? markBugsSeen : undefined}
-                    className={pathname === n.href || pathname.startsWith(n.href + "/") ? "active" : ""}
-                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}
-                  >
-                    <span>{n.label}</span>
-                    {showBugDot && (
-                      <span className="nav-red-badge">{newBugsCount > 99 ? "99+" : newBugsCount}</span>
-                    )}
-                  </Link>
+                  <div key={n.href} style={{ position: "relative" }}>
+                    <Link
+                      href={n.href}
+                      onClick={n.href === "/bugs" ? markBugsSeen : undefined}
+                      className={isActive ? "active" : ""}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}
+                    >
+                      <span className="row" style={{ gap: 6, minWidth: 0, flex: 1 }}>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.label}</span>
+                        {isActive && (
+                          <span
+                            className="nav-info-wrap"
+                            onMouseEnter={() => setInfoHoverHref(n.href)}
+                            onMouseLeave={() => setInfoHoverHref((cur) => (cur === n.href ? null : cur))}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setInfoOpenHref((cur) => (cur === n.href ? null : n.href));
+                            }}
+                          >
+                            <span
+                              className="nav-info-circle"
+                              role="button"
+                              tabIndex={0}
+                              aria-label={`Giải thích menu ${n.label}`}
+                            >
+                              i
+                            </span>
+                            {infoShowing && (
+                              <span className="nav-info-popover" role="tooltip" onClick={(e) => e.stopPropagation()}>
+                                <strong>{n.label}</strong>
+                                <span>{n.tip}</span>
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </span>
+                      {showBugDot && (
+                        <span className="nav-red-badge">{newBugsCount > 99 ? "99+" : newBugsCount}</span>
+                      )}
+                    </Link>
+                  </div>
                 );
               })}
             </div>

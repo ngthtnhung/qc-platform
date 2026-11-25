@@ -144,12 +144,24 @@ export default function SettingsPage() {
     }
   }
 
-  async function checkHaraworks() {
+  async function checkOneIntegration(key: string) {
     setIntegMsg(null);
     try {
-      const r = await api<{ status: string }>("/integrations/haraworks/check", { method: "POST" });
-      setIntegMsg({ ok: true, text: `Kiểm tra Haraworks: ${r.status}` });
+      const r = await api<{ ok: boolean; status: string }>(`/integrations/${encodeURIComponent(key)}/check`, { method: "POST" });
+      setIntegMsg({ ok: r.ok !== false, text: `Kiểm tra ${key}: ${r.status}` });
       loadAll();
+    } catch (err) {
+      setIntegMsg({ ok: false, text: err instanceof ApiError ? err.message : "Kiểm tra thất bại" });
+      loadAll();
+    }
+  }
+
+  async function checkAllIntegrations() {
+    setIntegMsg(null);
+    try {
+      const r = await api<{ items: IntegrationStatus[] }>("/integrations/check-all", { method: "POST" });
+      setIntegs(r.items);
+      setIntegMsg({ ok: true, text: "Đã kiểm tra xong trạng thái tất cả token / khóa API." });
     } catch (err) {
       setIntegMsg({ ok: false, text: err instanceof ApiError ? err.message : "Kiểm tra thất bại" });
     }
@@ -557,33 +569,59 @@ export default function SettingsPage() {
 
           {tab === "integrations" && (
             <div className="card">
-              <div className="card-title">Tích hợp ngoài (mã hóa AES-256-GCM trong Vault, chỉ ghi)</div>
-              <div className="muted" style={{ marginBottom: 12 }}>
-                Dán Cookie Haraworks, Token Figma hoặc Khóa AI (Gemini / Anthropic) vào ô tương ứng rồi bấm Lưu.
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <div className="card-title" style={{ margin: 0 }}>Tích hợp ngoài (mã hóa AES-256-GCM trong Vault, chỉ ghi)</div>
+                <button type="button" className="sm" onClick={() => void checkAllIntegrations()}>
+                  🔄 Kiểm tra tất cả
+                </button>
               </div>
-              {integs.map((i) => (
-                <div key={i.key} style={{ padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
-                  <div className="row" style={{ marginBottom: 6 }}>
-                    <strong className="grow">{i.label}</strong>
-                    <span className={`badge ${i.configured ? "ok" : "warn"}`}>{i.configured ? "Đã cấu hình" : "Chưa cấu hình"}</span>
-                    {i.last_check_status && <span className="muted">Trạng thái: {i.last_check_status}</span>}
-                  </div>
-                  <div className="row">
-                    <input
-                      className="grow"
-                      type="password"
-                      autoComplete="off"
-                      placeholder={i.key === "haraworks" ? "Dán header Cookie Haraworks..." : `Dán khóa/token ${i.label}...`}
-                      value={integVals[i.key] ?? ""}
-                      onChange={(e) => setIntegVals((v) => ({ ...v, [i.key]: e.target.value }))}
-                    />
-                    <button className="primary sm" disabled={!integVals[i.key]} onClick={() => void saveIntegration(i.key)}>Lưu</button>
-                    {i.key === "haraworks" && i.configured && (
-                      <button className="sm" onClick={() => void checkHaraworks()}>Kiểm tra</button>
+              <div className="muted" style={{ marginBottom: 12 }}>
+                Dán Cookie Haraworks, Token Figma hoặc Khóa AI (Gemini / Anthropic) vào ô tương ứng rồi bấm Lưu. Hệ thống hiển thị rõ trạng thái <strong>Hoạt động</strong>, <strong>Thiếu token</strong>, <strong>Hết hạn</strong> hoặc <strong>Lỗi</strong>.
+              </div>
+              {integs.map((i) => {
+                const st = i.state || (i.configured ? "active" : "missing");
+                const badgeCls = st === "active" ? "ok" : st === "missing" ? "warn" : "bad";
+                const badgeText = i.state_label || (i.configured ? "Hoạt động" : "Thiếu token");
+                return (
+                  <div key={i.key} style={{ padding: "12px 0", borderBottom: "1px solid var(--line)" }}>
+                    <div className="row" style={{ marginBottom: 6, gap: 8, flexWrap: "wrap" }}>
+                      <strong className="grow">{i.label}</strong>
+                      <span className={`badge ${badgeCls}`}>{badgeText}</span>
+                      {i.last_check_at && (
+                        <span className="muted" style={{ fontSize: 11.5 }}>
+                          Kiểm tra lúc {formatDateBadge(i.last_check_at)}
+                        </span>
+                      )}
+                    </div>
+                    {(i.detail || i.last_check_status) && (
+                      <div
+                        className="muted"
+                        style={{
+                          fontSize: 12,
+                          marginBottom: 8,
+                          color: st === "expired" || st === "error" ? "var(--bad)" : "var(--muted)",
+                        }}
+                      >
+                        {i.detail || i.last_check_status}
+                      </div>
                     )}
+                    <div className="row">
+                      <input
+                        className="grow"
+                        type="password"
+                        autoComplete="off"
+                        placeholder={i.key === "haraworks" ? "Dán header Cookie Haraworks..." : `Dán khóa/token ${i.label}...`}
+                        value={integVals[i.key] ?? ""}
+                        onChange={(e) => setIntegVals((v) => ({ ...v, [i.key]: e.target.value }))}
+                      />
+                      <button className="primary sm" disabled={!integVals[i.key]} onClick={() => void saveIntegration(i.key)}>Lưu</button>
+                      {i.configured && (
+                        <button className="sm" onClick={() => void checkOneIntegration(i.key)}>Kiểm tra</button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               {integMsg && <div className={integMsg.ok ? "badge ok" : "err"} style={{ marginTop: 10 }}>{integMsg.text}</div>}
             </div>
           )}

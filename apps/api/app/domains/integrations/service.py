@@ -47,13 +47,93 @@ def get_secret(session: Session, actor: Principal, key: str, purpose: str) -> st
     return reveal_secret(session, sec, actor=actor, purpose=purpose, allow_system=True) if sec else None
 
 
+def _classify_status(configured: bool, raw_status: str) -> tuple[str, str, str]:
+    if not configured:
+        return "missing", "Thiếu token", "Chưa cấu hình token / cookie"
+    st = (raw_status or "").strip()
+    low = st.lower()
+    if not st:
+        return "active", "Hoạt động", "Đã lưu (chưa kiểm tra trực tiếp)"
+    if low.startswith("ok"):
+        return "active", "Hoạt động", st
+    if any(w in low for w in ("hết hạn", "expired", "401", "403", "no_cookie", "không hợp lệ")):
+        return "expired", "Hết hạn", st
+    return "error", "Lỗi", st
+
+
 def status(session: Session) -> list[dict]:
     out = []
     for key, label in KEYS.items():
         i = session.get(Integration, key)
-        out.append({"key": key, "label": label, "configured": bool(i and i.secret_id), "last_check_at": i.last_check_at.isoformat() if i and i.last_check_at else None,
-                    "last_check_status": i.last_check_status if i else ""})
+        configured = bool(i and i.secret_id)
+        raw = i.last_check_status if i else ""
+        state, state_label, detail = _classify_status(configured, raw)
+        out.append({
+            "key": key,
+            "label": label,
+            "configured": configured,
+            "state": state,
+            "state_label": state_label,
+            "detail": detail,
+            "last_check_at": i.last_check_at.isoformat() if i and i.last_check_at else None,
+            "last_check_status": raw,
+        })
     return out
+
+
+def check_integration(session: Session, actor: Principal, key: str, transport: httpx.BaseTransport | None = None) -> dict:
+    """Kiểm tra trực tiếp trạng thái hoạt động của từng loại token/cookie/API key."""
+    if key not in KEYS:
+        raise NotFound("Tích hợp không tồn tại")
+    if key == "haraworks":
+        return check_haraworks(session, actor, transport)
+    integ = session.get(Integration, key)
+    secret_val = get_secret(session, actor, key, f"kiểm tra tích hợp {key}")
+    if not secret_val or integ is None:
+        return {"ok": False, "state": "missing", "state_label": "Thiếu token", "status": "Chưa cấu hình"}
+
+    s = get_settings()
+    ok = False
+    msg = ""
+    try:
+        if key == "figma":
+            with httpx.Client(timeout=12, transport=transport or TRANSPORT.get("figma")) as hc:
+                r = hc.get(f"{s.figma_api_base.rstrip('/')}/v1/me", headers={"X-Figma-Token": secret_val})
+            if r.is_success:
+                ok, msg = True, "ok (Figma hoạt động)"
+            elif r.status_code in (401, 403):
+                msg = f"hết hạn: Token Figma không hợp lệ hoặc đã hết hạn (HTTP {r.status_code})"
+            else:
+                msg = f"lỗi: Figma trả HTTP {r.status_code}"
+        elif key == "gemini":
+            with httpx.Client(timeout=12, transport=transport) as hc:
+                r = hc.get(f"{s.gemini_api_base.rstrip('/')}/v1beta/models", headers={"x-goog-api-key": secret_val})
+            if r.is_success:
+                ok, msg = True, "ok (Gemini hoạt động)"
+            elif r.status_code in (400, 401, 403):
+                msg = f"hết hạn: Khóa Gemini không hợp lệ hoặc bị thu hồi (HTTP {r.status_code})"
+            else:
+                msg = f"lỗi: Gemini trả HTTP {r.status_code}"
+        elif key == "anthropic":
+            with httpx.Client(timeout=12, transport=transport) as hc:
+                r = hc.get(
+                    f"{s.anthropic_api_base.rstrip('/')}/v1/models",
+                    headers={"x-api-key": secret_val, "anthropic-version": "2023-06-01"},
+                )
+            if r.is_success:
+                ok, msg = True, "ok (Anthropic hoạt động)"
+            elif r.status_code in (401, 403):
+                msg = f"hết hạn: Khóa Anthropic không hợp lệ hoặc hết hạn (HTTP {r.status_code})"
+            else:
+                msg = f"lỗi: Anthropic trả HTTP {r.status_code}"
+    except httpx.HTTPError as exc:
+        msg = f"lỗi: Không kết nối được ({exc.__class__.__name__})"
+
+    integ.last_check_status = msg
+    integ.last_check_at = utcnow()
+    session.flush()
+    state, state_label, _ = _classify_status(True, msg)
+    return {"ok": ok, "state": state, "state_label": state_label, "status": msg}
 
 
 def haraworks_client(session: Session, actor: Principal, transport: httpx.BaseTransport | None = None) -> HaraworksClient:
@@ -70,7 +150,11 @@ def check_haraworks(session: Session, actor: Principal, transport: httpx.BaseTra
         n = len(c.projects())
         integ.last_check_status, ok = f"ok ({n} dự án)", True
     except AppError as exc:
-        integ.last_check_status, ok = f"lỗi: {exc.code}", False
+        if exc.status in (401, 403) or "het han" in exc.message.lower() or "hết hạn" in exc.message.lower() or "cookie" in exc.message.lower():
+            integ.last_check_status = f"hết hạn: {exc.message}"
+        else:
+            integ.last_check_status = f"lỗi: {exc.message}"
+        ok = False
         integ.last_check_at = utcnow()
         session.commit()  # giữ trạng thái kiểm tra dù trả lỗi
         raise

@@ -215,4 +215,13 @@ export type BuildItem = {
   version: string; platform: string; parent_task: string; linked_count?: number; url: string;
   created_at: string; updated_at: string;
 };
-export type IntegrationStatus = { key: string; label: string; configured: boolean; last_check_at: string | null; last_check_status: string };
+export type IntegrationStatus = {
+  key: string;
+  label: string;
+  configured: boolean;
+  state?: "active" | "missing" | "expired" | "error";
+  state_label?: string;
+  detail?: string;
+  last_check_at: string | null;
+  last_check_status: string;
+};
