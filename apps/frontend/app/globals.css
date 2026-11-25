@@ -493,7 +493,27 @@ tbody tr:hover { background: color-mix(in srgb, var(--brand) 5%, transparent); }
 }
 .bh-media { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .bh-media img { max-width: 150px; max-height: 120px; border-radius: 6px; border: 1px solid var(--line); object-fit: cover; }
-.bh-media video { max-width: 100%; max-height: 200px; border-radius: 6px; }
+.bh-media video { max-width: 100%; max-height: 340px; border-radius: 6px; background: #000; }
+.bh-link {
+  color: #2563eb;
+  text-decoration: underline;
+  word-break: break-all;
+  cursor: pointer;
+}
+.bh-link:hover { color: #1d4ed8; }
+[data-theme="dark"] .bh-link { color: #60a5fa; }
+[data-theme="dark"] .bh-link:hover { color: #93c5fd; }
+.bh-mention {
+  color: #db2777;
+  background: rgba(236, 72, 153, 0.12);
+  padding: 0 4px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+[data-theme="dark"] .bh-mention {
+  color: #f472b6;
+  background: rgba(244, 114, 182, 0.16);
+}
 
 @media (max-width: 900px) {
   .bh-list-head { display: none; }

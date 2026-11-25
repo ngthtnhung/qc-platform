@@ -203,6 +203,53 @@ function mediaPreviewUrl(rawUrl: string): string {
   return `/api/v1/sources/haraworks-media?url=${encodeURIComponent(rawUrl)}`;
 }
 
+const RICH_TOKEN_RE = /(https?:\/\/[^\s<>"')\]]+)|((?:^|[\s(\[{,:;])@(?:[\p{Lu}][\p{L}\p{N}._-]*(?:\s+[\p{Lu}][\p{L}\p{N}._-]*){0,4}|[\p{L}\p{N}._-]+))/gu;
+
+function RichText({ text }: { text?: string | null }) {
+  if (!text) return null;
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let key = 0;
+  RICH_TOKEN_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = RICH_TOKEN_RE.exec(text)) !== null) {
+    const full = match[0];
+    const start = match.index;
+    if (start > lastIndex) {
+      nodes.push(text.slice(lastIndex, start));
+    }
+    if (match[1]) {
+      let url = match[1];
+      let trail = "";
+      while (url.length > 0 && /[.,;:!?]/.test(url[url.length - 1])) {
+        trail = url[url.length - 1] + trail;
+        url = url.slice(0, -1);
+      }
+      nodes.push(
+        <a key={`u-${key++}`} href={url} target="_blank" rel="noopener noreferrer" className="bh-link">
+          {url}
+        </a>,
+      );
+      if (trail) nodes.push(trail);
+    } else if (match[2]) {
+      const atIdx = full.indexOf("@");
+      const prefix = full.slice(0, atIdx);
+      const mention = full.slice(atIdx);
+      if (prefix) nodes.push(prefix);
+      nodes.push(
+        <span key={`m-${key++}`} className="bh-mention">
+          {mention}
+        </span>,
+      );
+    }
+    lastIndex = start + full.length;
+  }
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+  return <>{nodes}</>;
+}
+
 function MediaList({ items, onPreview }: { items: MediaItem[]; onPreview: (m: MediaItem) => void }) {
   const seen = new Set<string>();
   const clean = (items || []).filter((m) => m && /^https?:\/\//i.test(m.url) && !seen.has(m.url) && (seen.add(m.url), true));
@@ -228,10 +275,13 @@ function MediaList({ items, onPreview }: { items: MediaItem[]; onPreview: (m: Me
         if (m.kind === "video") {
           return (
             <div key={m.url} style={{ width: "100%" }}>
-              <video controls preload="metadata" src={src} />
-              <div>
-                <button type="button" className="sm" onClick={() => onPreview(m)}>Phóng to video</button>
-              </div>
+              <video
+                controls
+                preload="metadata"
+                playsInline
+                src={src}
+                style={{ width: "100%", maxHeight: 340, borderRadius: 6, background: "#000" }}
+              />
             </div>
           );
         }
@@ -437,7 +487,7 @@ export function TaskDrawer({ task, onClose }: { task: DrawerTask; onClose: () =>
             {!detail && task.fallbackDescription && (
               <div>
                 <h4 style={{ margin: "10px 0 4px" }}>Mô tả</h4>
-                <div style={{ whiteSpace: "pre-wrap" }}>{task.fallbackDescription}</div>
+                <div style={{ whiteSpace: "pre-wrap" }}><RichText text={task.fallbackDescription} /></div>
               </div>
             )}
 
@@ -453,7 +503,7 @@ export function TaskDrawer({ task, onClose }: { task: DrawerTask; onClose: () =>
                     <h4 style={{ margin: "12px 0 4px" }}>
                       {task.kind === "build" ? "Mô tả (Danh sách Bug / Function)" : "Mô tả"}
                     </h4>
-                    {detail.description && <div style={{ whiteSpace: "pre-wrap" }}>{detail.description}</div>}
+                    {detail.description && <div style={{ whiteSpace: "pre-wrap" }}><RichText text={detail.description} /></div>}
                     <MediaList items={detail.description_media} onPreview={setPreviewItem} />
                   </>
                 )}
@@ -501,13 +551,13 @@ export function TaskDrawer({ task, onClose }: { task: DrawerTask; onClose: () =>
                     <div key={c.id} className="bh-comment">
                       <strong>{c.by || "—"}</strong>{" "}
                       <span className="muted" style={{ fontSize: 11 }}>{vnTime(c.at)}</span>
-                      <div style={{ whiteSpace: "pre-wrap", marginTop: 3 }}>{c.text}</div>
+                      <div style={{ whiteSpace: "pre-wrap", marginTop: 3 }}><RichText text={c.text} /></div>
                       <MediaList items={[...(c.media || []), ...(c.attachments || [])]} onPreview={setPreviewItem} />
                       {c.replies.map((r) => (
                         <div key={r.id} className="bh-reply">
                           <strong>{r.by || "—"}</strong>{" "}
                           <span className="muted" style={{ fontSize: 11 }}>{vnTime(r.at)}</span>
-                          <div style={{ whiteSpace: "pre-wrap" }}>{r.text}</div>
+                          <div style={{ whiteSpace: "pre-wrap" }}><RichText text={r.text} /></div>
                         </div>
                       ))}
                     </div>

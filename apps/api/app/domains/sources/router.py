@@ -6,7 +6,7 @@ import uuid
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -922,16 +922,35 @@ def check_build_membership(id: str = "", title: str = "", _: Principal = Depends
 
 
 @router.get("/sources/haraworks-media")
-def haraworks_media_proxy(url: str, p: Principal = Depends(current_principal), session: Session = Depends(get_session)):
-    """Proxy chỉ-đọc để preview ảnh/video/PDF đính kèm từ Haraworks ngay trong hệ thống (chỉ cho phép HTTPS và host tin cậy)."""
+def haraworks_media_proxy(
+    url: str,
+    request: Request,
+    p: Principal = Depends(current_principal),
+    session: Session = Depends(get_session),
+):
+    """Proxy chỉ-đọc để preview ảnh/video/PDF đính kèm từ Haraworks ngay trong hệ thống (hỗ trợ Range 206 cho video)."""
+    import mimetypes
     from fastapi.responses import Response
 
     u = urlparse((url or "").strip())
     host = (u.hostname or "").lower()
-    allowed_suffixes = ("haraworks.vn", "haravan.com", "hstatic.net", "hrws.cloud", "zuizui.io", "googleapis.com", "cloudfront.net")
+    allowed_suffixes = (
+        "haraworks.vn",
+        "haravan.com",
+        "haravan.vn",
+        "hstatic.net",
+        "hrws.cloud",
+        "zuizui.io",
+        "googleapis.com",
+        "cloudfront.net",
+        "amazonaws.com",
+    )
     if u.scheme != "https" or not any(host == s or host.endswith("." + s) for s in allowed_suffixes):
         raise AppError("URL đính kèm không nằm trong danh sách host cho phép preview", code="MEDIA_HOST_BLOCKED", status=403)
     headers = {"accept": "*/*"}
+    range_hdr = request.headers.get("range")
+    if range_hdr:
+        headers["range"] = range_hdr
     if host.endswith("haraworks.vn") or host.endswith("zuizui.io"):
         try:
             c = integ.haraworks_client(session, p)
@@ -941,16 +960,65 @@ def haraworks_media_proxy(url: str, p: Principal = Depends(current_principal), s
         except Exception:  # noqa: BLE001
             pass
     try:
-        with httpx.Client(timeout=20, follow_redirects=True) as client:
+        with httpx.Client(timeout=60, follow_redirects=True) as client:
             r = client.get(url, headers=headers)
     except httpx.HTTPError as exc:
         raise AppError(f"Không tải được tệp xem trước: {exc.__class__.__name__}", code="MEDIA_FETCH_FAILED", status=502) from exc
     if r.status_code >= 400:
         raise AppError(f"Không xem trước được tệp (HTTP {r.status_code})", code="MEDIA_FETCH_FAILED", status=502)
-    if len(r.content) > 25 * 1024 * 1024:
+    if len(r.content) > 100 * 1024 * 1024:
         raise AppError("Tệp quá lớn để xem trước trực tiếp", code="FILE_TOO_LARGE", status=413)
-    ctype = r.headers.get("content-type", "application/octet-stream").split(";")[0].strip()
-    return Response(content=r.content, media_type=ctype, headers={"Content-Disposition": "inline", "Cache-Control": "private, max-age=300"})
+
+    ctype = r.headers.get("content-type", "").split(";")[0].strip().lower()
+    if not ctype or ctype in ("application/octet-stream", "binary/octet-stream"):
+        ext_map = {
+            ".mp4": "video/mp4",
+            ".m4v": "video/mp4",
+            ".mov": "video/quicktime",
+            ".webm": "video/webm",
+            ".ogv": "video/ogg",
+            ".mp3": "audio/mpeg",
+            ".wav": "audio/wav",
+            ".m4a": "audio/mp4",
+            ".ogg": "audio/ogg",
+            ".pdf": "application/pdf",
+        }
+        path_l = (u.path or "").lower()
+        guessed = next((mt for ext, mt in ext_map.items() if path_l.endswith(ext)), None)
+        if not guessed:
+            guessed = mimetypes.guess_type(u.path)[0]
+        ctype = guessed or "application/octet-stream"
+
+    resp_headers = {
+        "Content-Disposition": "inline",
+        "Cache-Control": "private, max-age=300",
+        "Accept-Ranges": "bytes",
+    }
+
+    if r.status_code == 206:
+        if "content-range" in r.headers:
+            resp_headers["Content-Range"] = r.headers["content-range"]
+        return Response(content=r.content, status_code=206, media_type=ctype, headers=resp_headers)
+
+    if range_hdr and range_hdr.lower().startswith("bytes="):
+        total = len(r.content)
+        spec = range_hdr[6:].split(",")[0].strip()
+        start_s, _, end_s = spec.partition("-")
+        try:
+            start = int(start_s) if start_s else 0
+            end = int(end_s) if end_s else total - 1
+            if not start_s and end_s:
+                start = max(0, total - int(end_s))
+                end = total - 1
+            start = max(0, start)
+            end = min(total - 1, end)
+            if total > 0 and start <= end:
+                resp_headers["Content-Range"] = f"bytes {start}-{end}/{total}"
+                return Response(content=r.content[start : end + 1], status_code=206, media_type=ctype, headers=resp_headers)
+        except ValueError:
+            pass
+
+    return Response(content=r.content, media_type=ctype, headers=resp_headers)
 
 
 @router.get("/sources/haraworks-detail/{task_id}")
