@@ -201,9 +201,27 @@ export function QaPetWidget({
   const [meowFlash, setMeowFlash] = useState(false);
 
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [bubbleAlign, setBubbleAlign] = useState<{ horiz: "left" | "right"; vert: "above" | "below" }>({
+    horiz: "right",
+    vert: "above",
+  });
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ startX: number; startY: number; ox: number; oy: number; moved: boolean } | null>(null);
   const quipIdxRef = useRef(0);
   const promptedMissingRef = useRef(false);
+
+  // Tự động chọn hướng hiển thị bong bóng để không bao giờ bị che khuất ở mép trái / mép trên màn hình
+  const updateBubbleDirection = useCallback(() => {
+    if (typeof window === "undefined" || !stageRef.current) return;
+    const rect = stageRef.current.getBoundingClientRect();
+    const horiz = rect.left < 320 ? "left" : "right";
+    const vert = rect.top < 270 ? "below" : "above";
+    setBubbleAlign({ horiz, vert });
+  }, []);
+
+  useEffect(() => {
+    if (bubble) updateBubbleDirection();
+  }, [bubble, offset, updateBubbleDirection]);
 
   useEffect(() => {
     setCfg(loadPetConfig());
@@ -435,7 +453,11 @@ export function QaPetWidget({
       {cfg.visible && (
         <div className="qa-pet-widget" style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}>
           {bubble && (
-            <div className="qa-pet-bubble" role="status" style={{ borderColor: colors.ear }}>
+            <div
+              className={`qa-pet-bubble align-${bubbleAlign.horiz} pos-${bubbleAlign.vert}`}
+              role="status"
+              style={{ borderColor: colors.ear }}
+            >
               <div className="qa-pet-bubble-head" style={{ color: colors.accent }}>
                 <span>{bubble.title}</span>
                 <button
@@ -522,6 +544,7 @@ export function QaPetWidget({
 
           {/* Bé Mèo QC toàn thân — kéo thả tự do, bấm kêu Meow~ & hiện báo cáo đồng nhất Dashboard */}
           <div
+            ref={stageRef}
             className={`qa-pet-stage cat-act-${action}${bubble?.kind === "alert" ? " has-alert" : ""}`}
             title={`${cfg.name} — Kéo để di chuyển · Bấm để nghe Meow~ & xem báo cáo nhanh`}
             onPointerDown={(e) => {

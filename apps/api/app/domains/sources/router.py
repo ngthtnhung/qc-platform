@@ -662,6 +662,7 @@ def _fetch_hw_notifications(session: Session, p: Principal, force: bool = False)
 
         task_id_re = re.compile(r"([0-9a-f]{24})", re.I)
         mention_re = re.compile(r"nhắc|mention|@|bình luận|trả lời|comment|tag", re.I)
+        follower_re = re.compile(r"thêm vào danh sách theo dõi|theo dõi công việc", re.I)
         items = []
         for n in raw_items:
             if not isinstance(n, dict):
@@ -673,7 +674,8 @@ def _fetch_hw_notifications(session: Session, p: Principal, force: bool = False)
             if link and link.startswith("/"):
                 link = f"{client.base}{link}"
             m_tid = task_id_re.search(link)
-            is_mention = bool(mention_re.search(f"{title} {content}"))
+            full_txt = f"{title} {content}"
+            is_mention = bool(mention_re.search(full_txt)) and not bool(follower_re.search(full_txt))
             items.append({
                 "id": str(n.get("id") or ""),
                 "title": title,
@@ -798,7 +800,7 @@ def get_pet_pulse(since: str = "", force: bool = False, p: Principal = Depends(c
                     "age_minutes": max(1, int(age_sec // 60)),
                 })
 
-    # Tính daily_summary DÙNG CHUNG 100% logic với Dashboard Cá Nhân (Bug + QC Function + Release Function)
+    # Tính daily_summary DÙNG CHUNG 100% quy tắc lọc & đếm với Dashboard Cá Nhân (mặc định Tuần này)
     dash = personal_dashboard_tasks(p=p, session=session)
     dash_items = dash.get("items") or []
 
@@ -814,6 +816,9 @@ def get_pet_pulse(since: str = "", force: bool = False, p: Principal = Depends(c
         except ValueError:
             return s[:10]
 
+    vn_now = now_utc + dt.timedelta(hours=7)
+    week_start_str = (vn_now - dt.timedelta(days=vn_now.weekday())).strftime("%Y-%m-%d")
+
     todo_today = 0
     overdue = 0
     due_today = 0
@@ -824,18 +829,31 @@ def get_pet_pulse(since: str = "", force: bool = False, p: Principal = Depends(c
         closed = bool(t.get("closed"))
         ps = _vn_d(t.get("plan_start_at", ""))
         pe = _vn_d(t.get("plan_end_at", ""))
+        cr = _vn_d(t.get("created_at", ""))
+
+        # Lọc đồng bộ theo bộ lọc mặc định "Tuần này" trên Dashboard
+        in_base = False
+        if (not closed) and pe and pe < vn_today:
+            in_base = True
+        elif (pe and pe >= vn_today) or (ps and ps >= vn_today) or (cr and cr >= vn_today):
+            in_base = True
+        else:
+            ref_d = pe or ps or cr
+            in_base = (not ref_d) or (ref_d >= week_start_str)
+        if not in_base:
+            continue
+
         is_ov = (not closed) and bool(pe) and pe < vn_today
         is_dt = (not closed) and bool(pe) and pe == vn_today
-        in_today = False
-        if not closed:
-            if ps and pe:
-                in_today = ps <= vn_today <= pe
-            elif pe:
-                in_today = pe == vn_today
-            elif ps:
-                in_today = ps <= vn_today
-            else:
-                in_today = True
+        if ps and pe:
+            in_today = ps <= vn_today <= pe
+        elif pe:
+            in_today = pe == vn_today
+        elif ps:
+            in_today = ps == vn_today
+        else:
+            in_today = cr == vn_today
+
         if is_ov:
             overdue += 1
         if is_dt:
