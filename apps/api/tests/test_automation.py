@@ -311,8 +311,8 @@ def test_no_account_message_explains_cause_and_manual_pick_works(qc):
     env = qc.post("/api/v1/environments", json={"code": "stg", "name": "S", "type": "STAGING", "base_url": "https://staging.example.com",
                                                  "allowed_actions": ["AUTOMATE"]}).json()
     acc = qc.post("/api/v1/accounts", json={"environment_id": env["id"], "name": "NV", "username_ref": "nv@x.com", "role_label": "Nhân viên"}).json()
-    msg2 = qc.post(f"/api/v1/automation/tasks/{t['id']}/run", json={}).json()["error"]["message"]
-    assert "Quản trị" in msg2 and "Nhân viên" in msg2  # nêu vai trò cần và vai trò đang có
+    ok_auto = qc.post(f"/api/v1/automation/tasks/{t['id']}/run", json={})
+    assert ok_auto.status_code == 201  # required_roles chỉ là gợi ý, không chặn chạy
     ok = qc.post(f"/api/v1/automation/tasks/{t['id']}/run", json={"account_id": acc["id"]})
     assert ok.status_code == 201  # chọn thủ công thì không bắt khớp vai trò
     prod = qc.post("/api/v1/environments", json={"code": "prod", "name": "P", "type": "PRODUCTION", "base_url": "https://staging.example.com", "allowed_actions": ["*"]}).json()

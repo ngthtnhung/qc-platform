@@ -36,40 +36,59 @@ runner_router = APIRouter(prefix="/runner", tags=["runner"])
 class ParamIn(BaseModel):
     key: str
     label: str = ""
-    type: Literal["text", "multiline", "list", "file"] = "text"
+    type: Literal["text", "multiline", "list", "file", "number", "date", "select"] = "text"
     value: str = ""
+    options: list[str] = []
     auto: bool = True
     fallback: Literal["first", "random"] = "first"
+
+
+class CriterionIn(BaseModel):
+    id: str = ""
+    description: str
+    assertion_hint: str = ""
+    required: bool = True
 
 
 class TaskIn(BaseModel):
     name: str = Field(min_length=1, max_length=300)
     module_code: str = Field(min_length=1, max_length=40)
-    start_url: str
-    steps: list[str] = Field(min_length=1)
-    script: str
+    start_url: str = ""
+    steps: list[str] = []
+    script: str = ""
     params: list[ParamIn] = []
     flow: str = ""
+    flow_code: str = ""
+    automation_mode: Literal["AUTO", "SEMI_AUTO", "MANUAL"] = "AUTO"
+    target_modules: list[str] = []
     description: str = ""
     required_roles: list[str] = []
     writes: bool = False
     rule_keys: list[str] = []
+    preconditions: list[str] = []
+    data_policy: dict[str, Any] = {}
+    expected_criteria: list[CriterionIn] = []
+    manual_checklist: list[str] = []
+    activate_immediately: bool = False
 
 
 class CodeIn(BaseModel):
     script: str
     note: str = ""
     origin: Literal["human", "ai"] = "human"
+    activate_immediately: bool = False
 
 
 class RunIn(BaseModel):
     account_id: uuid.UUID | None = None
     params: dict[str, str] | None = None
     count: int = Field(1, ge=1, le=service.MAX_BATCH)
+    target_module: str | None = None
 
 
 class ParamsIn(BaseModel):
-    values: dict[str, str]
+    values: dict[str, str] = {}
+    params: list[ParamIn] | None = None
 
 
 class RunnerIn(BaseModel):
@@ -100,15 +119,52 @@ class HeartbeatIn(BaseModel):
 
 
 # ------------------------------------------------------------------ QC: tác vụ
-def _task_out(session: Session, t: AutomationTask) -> dict[str, Any]:
+def _task_out(session: Session, t: AutomationTask, requested_module: str = "") -> dict[str, Any]:
     vs = list(session.scalars(select(CodeVersion).where(CodeVersion.task_id == t.id).order_by(CodeVersion.version_no.desc())))
     approved = next((v for v in vs if v.status == "APPROVED"), None)
-    return {"id": str(t.id), "legacy_id": t.legacy_id, "name": t.name, "module_code": t.module_code, "flow": t.flow, "description": t.description,
-            "start_url": t.start_url, "required_roles": t.required_roles, "writes": t.writes, "rule_keys": t.rule_keys, "steps": t.steps,
-            "status": t.status, "created_at": t.created_at.isoformat(), "params": service.task_params(session, t.id), "runnable": approved is not None,
-            "approved_version": approved.version_no if approved else None,
-            "versions": [{"id": str(v.id), "version_no": v.version_no, "status": v.status, "origin": v.origin, "sha256": v.sha256,
-                          "created_at": v.created_at.isoformat(), "approved_by": str(v.approved_by) if v.approved_by else None} for v in vs]}
+    mode = (t.automation_mode or "AUTO").upper()
+    inherited = ""
+    req_up = requested_module.strip().upper()
+    if req_up and t.module_code.strip().upper() != req_up:
+        inherited = t.module_code.strip().upper()
+    return {
+        "id": str(t.id),
+        "legacy_id": t.legacy_id,
+        "name": t.name,
+        "module_code": t.module_code,
+        "flow": t.flow,
+        "flow_code": t.flow_code,
+        "automation_mode": mode,
+        "target_modules": list(t.target_modules or []),
+        "inherited_from_cluster": inherited,
+        "description": t.description,
+        "start_url": t.start_url,
+        "required_roles": t.required_roles,
+        "writes": t.writes,
+        "rule_keys": t.rule_keys,
+        "preconditions": list(t.preconditions or []),
+        "data_policy": dict(t.data_policy or {}),
+        "expected_criteria": list(t.expected_criteria or []),
+        "manual_checklist": list(t.manual_checklist or []),
+        "steps": t.steps,
+        "status": t.status,
+        "created_at": t.created_at.isoformat(),
+        "params": service.task_params(session, t.id),
+        "runnable": (approved is not None) and (mode != "MANUAL"),
+        "approved_version": approved.version_no if (approved and mode != "MANUAL") else None,
+        "versions": [
+            {
+                "id": str(v.id),
+                "version_no": v.version_no,
+                "status": v.status,
+                "origin": v.origin,
+                "sha256": v.sha256,
+                "created_at": v.created_at.isoformat(),
+                "approved_by": str(v.approved_by) if v.approved_by else None,
+            }
+            for v in vs
+        ],
+    }
 
 
 def _get_task(session: Session, task_id: uuid.UUID) -> AutomationTask:
@@ -119,11 +175,43 @@ def _get_task(session: Session, task_id: uuid.UUID) -> AutomationTask:
 
 
 @router.get("/automation/tasks")
-def list_tasks(module: str = "", _: Principal = Depends(current_principal), session: Session = Depends(get_session)):
+def list_tasks(
+    module: str = "",
+    flow_code: str = "",
+    automation_mode: str = "",
+    include_shared: bool = True,
+    _: Principal = Depends(current_principal),
+    session: Session = Depends(get_session),
+):
+    from app.domains.knowledge.models import Module
+
     q = select(AutomationTask).where(AutomationTask.status == "active").order_by(AutomationTask.module_code, AutomationTask.name)
-    if module:
-        q = q.where(AutomationTask.module_code == module)
-    return [_task_out(session, t) for t in session.scalars(q)]
+    mod_up = module.strip().upper()
+    rows = list(session.scalars(q))
+    cluster_code = ""
+    if mod_up:
+        mod_row = session.scalar(select(Module).where(Module.code == mod_up))
+        cluster_code = (mod_row.cluster_code or "").strip().upper() if mod_row else ""
+        if not cluster_code and mod_up in ("MAINT", "SCM", "IOT"):
+            cluster_code = "DV5S"
+
+    out = []
+    fc_up = flow_code.strip().upper()
+    am_up = automation_mode.strip().upper()
+    for t in rows:
+        t_mod = (t.module_code or "").strip().upper()
+        t_targets = [str(x).strip().upper() for x in (t.target_modules or [])]
+        if mod_up:
+            direct_match = t_mod == mod_up
+            shared_match = include_shared and ((cluster_code and t_mod == cluster_code) or (mod_up in t_targets))
+            if not direct_match and not shared_match:
+                continue
+        if fc_up and (t.flow_code or "").strip().upper() != fc_up and (t.flow or "").strip().upper() != fc_up:
+            continue
+        if am_up and (t.automation_mode or "AUTO").strip().upper() != am_up:
+            continue
+        out.append(_task_out(session, t, requested_module=mod_up))
+    return out
 
 
 @router.get("/automation/tasks/{task_id}")
@@ -136,27 +224,64 @@ def get_task(task_id: uuid.UUID, _: Principal = Depends(current_principal), sess
 
 @router.post("/automation/tasks", status_code=201)
 def create_task(body: TaskIn, p: Principal = Depends(require(Perm.APPROVE)), session: Session = Depends(get_session)):
-    """Tạo tác vụ ⇒ code ở PENDING cho tới khi một QC duyệt (kể cả khi chính QC viết)."""
-    t, _cv = service.create_task(session, actor=p, name=body.name, module_code=body.module_code, start_url=body.start_url, steps=body.steps,
-                                 script=body.script, params=[x.model_dump() for x in body.params], flow=body.flow, description=body.description,
-                                 required_roles=body.required_roles, writes=body.writes, rule_keys=body.rule_keys)
+    """Tạo tác vụ; hỗ trợ 3 phân loại (AUTO / SEMI_AUTO / MANUAL), 5 nhóm đầu vào chuẩn và kích hoạt trực tiếp nếu QC chọn."""
+    t, _cv = service.create_task(
+        session,
+        actor=p,
+        name=body.name,
+        module_code=body.module_code,
+        start_url=body.start_url,
+        steps=body.steps,
+        script=body.script,
+        params=[x.model_dump() for x in body.params],
+        flow=body.flow,
+        flow_code=body.flow_code,
+        automation_mode=body.automation_mode,
+        target_modules=body.target_modules,
+        description=body.description,
+        required_roles=body.required_roles,
+        writes=body.writes,
+        rule_keys=body.rule_keys,
+        preconditions=body.preconditions,
+        data_policy=body.data_policy,
+        expected_criteria=[x.model_dump() for x in body.expected_criteria],
+        manual_checklist=body.manual_checklist,
+        activate_immediately=body.activate_immediately,
+    )
     return _task_out(session, t)
 
 
 @router.post("/automation/tasks/{task_id}/versions", status_code=201)
 def add_version(task_id: uuid.UUID, body: CodeIn, p: Principal = Depends(require(Perm.APPROVE)), session: Session = Depends(get_session)):
     t = _get_task(session, task_id)
-    cv = service.add_code_version(session, task=t, script=body.script, requester=p, origin=body.origin, note=body.note)
+    cv = service.add_code_version(
+        session,
+        task=t,
+        script=body.script,
+        requester=p,
+        origin=body.origin,
+        note=body.note,
+        activate_immediately=body.activate_immediately,
+    )
     return {"id": str(cv.id), "version_no": cv.version_no, "status": cv.status, "sha256": cv.sha256}
 
 
 class TaskPatchIn(BaseModel):
     name: str | None = None
     module_code: str | None = None
+    flow: str | None = None
+    flow_code: str | None = None
+    automation_mode: Literal["AUTO", "SEMI_AUTO", "MANUAL"] | None = None
+    target_modules: list[str] | None = None
     start_url: str | None = None
     description: str | None = None
+    required_roles: list[str] | None = None
     writes: bool | None = None
     steps: list[str] | None = None
+    preconditions: list[str] | None = None
+    data_policy: dict[str, Any] | None = None
+    expected_criteria: list[CriterionIn] | None = None
+    manual_checklist: list[str] | None = None
 
 
 @router.patch("/automation/tasks/{task_id}")
@@ -166,14 +291,32 @@ def update_task(task_id: uuid.UUID, body: TaskPatchIn, p: Principal = Depends(re
         t.name = body.name.strip()[:300]
     if body.module_code is not None and body.module_code.strip():
         t.module_code = body.module_code.strip().upper()[:40]
+    if body.flow is not None:
+        t.flow = body.flow.strip()[:80]
+    if body.flow_code is not None:
+        t.flow_code = body.flow_code.strip()[:60]
+    if body.automation_mode is not None:
+        t.automation_mode = body.automation_mode
+    if body.target_modules is not None:
+        t.target_modules = [str(m).strip().upper() for m in body.target_modules if str(m).strip()]
     if body.start_url is not None and body.start_url.strip():
         t.start_url = body.start_url.strip()
     if body.description is not None:
         t.description = body.description
+    if body.required_roles is not None:
+        t.required_roles = [str(r).strip() for r in body.required_roles if str(r).strip()]
     if body.writes is not None:
         t.writes = body.writes
-    if body.steps is not None and len(body.steps) > 0:
+    if body.steps is not None:
         t.steps = body.steps
+    if body.preconditions is not None:
+        t.preconditions = [str(x).strip() for x in body.preconditions if str(x).strip()]
+    if body.data_policy is not None:
+        t.data_policy = body.data_policy
+    if body.expected_criteria is not None:
+        t.expected_criteria = [x.model_dump() for x in body.expected_criteria]
+    if body.manual_checklist is not None:
+        t.manual_checklist = [str(x).strip() for x in body.manual_checklist if str(x).strip()]
     log_audit(session, p, "AUTOMATION_TASK_UPDATE", resource_type="automation_task", resource_id=str(t.id))
     return _task_out(session, t)
 
@@ -181,25 +324,46 @@ def update_task(task_id: uuid.UUID, body: TaskPatchIn, p: Principal = Depends(re
 @router.post("/automation/tasks/{task_id}/versions/{version_id}/activate")
 def activate_version(task_id: uuid.UUID, version_id: uuid.UUID, p: Principal = Depends(require(Perm.APPROVE)), session: Session = Depends(get_session)):
     """QC kích hoạt trực tiếp 1 phiên bản code do mình quản lý (không cần qua trang Duyệt)."""
+    from app.core.db import utcnow
     from app.domains.platform import approvals as approval_service
-    from app.domains.platform.models import Approval
+    from app.domains.platform.models import ApprovalRequest
 
     _get_task(session, task_id)
     cv = session.get(CodeVersion, version_id)
     if cv is None or cv.task_id != task_id:
         raise NotFound("Không thấy phiên bản code")
     if cv.status != "APPROVED":
-        req = session.scalar(select(Approval).where(Approval.target_type == "code_version", Approval.target_id == cv.id, Approval.status == "PENDING"))
+        req = session.scalar(
+            select(ApprovalRequest).where(
+                ApprovalRequest.subject_type == "automation_code_version",
+                ApprovalRequest.subject_id == str(cv.id),
+                ApprovalRequest.status == "PENDING",
+            )
+        )
         if req is not None:
-            approval_service.decide(session, req.id, actor=p, decision="APPROVED", payload_hash=req.payload_hash, reason="QC kích hoạt trực tiếp")
+            approval_service.decide(
+                session,
+                actor=p,
+                request_id=req.id,
+                approve=True,
+                payload_hash=req.payload_hash,
+                note="QC kích hoạt trực tiếp",
+            )
         else:
-            service.on_code_approval(session, cv.id, "APPROVED", p)
+            cv.status, cv.approved_by, cv.approved_at = "APPROVED", p.id, utcnow()
+            log_audit(session, p, "CODE_VERSION_ACTIVATE", resource_type="automation_task", resource_id=str(task_id), after={"version": cv.version_no})
     return {"id": str(cv.id), "version_no": cv.version_no, "status": "APPROVED"}
 
 
 @router.put("/automation/tasks/{task_id}/params")
 def set_params(task_id: uuid.UUID, body: ParamsIn, p: Principal = Depends(require(Perm.APPROVE)), session: Session = Depends(get_session)):
-    return service.update_param_values(session, actor=p, task=_get_task(session, task_id), values=body.values)
+    return service.update_param_values(
+        session,
+        actor=p,
+        task=_get_task(session, task_id),
+        values=body.values,
+        params_def=[x.model_dump() for x in body.params] if body.params is not None else None,
+    )
 
 
 @router.delete("/automation/tasks/{task_id}", status_code=204)
@@ -211,15 +375,23 @@ def retire_task(task_id: uuid.UUID, p: Principal = Depends(require(Perm.APPROVE)
 
 @router.post("/automation/tasks/{task_id}/run", status_code=201)
 def run_task(task_id: uuid.UUID, body: RunIn, request: Request, p: Principal = Depends(require(Perm.APPROVE)), session: Session = Depends(get_session)):
-    exs = service.queue_runs(session, actor=p, task=_get_task(session, task_id), account_id=body.account_id, override=body.params,
-                             count=body.count, correlation_id=correlation_id(request))
+    exs = service.queue_runs(
+        session,
+        actor=p,
+        task=_get_task(session, task_id),
+        account_id=body.account_id,
+        override=body.params,
+        count=body.count,
+        correlation_id=correlation_id(request),
+        target_module=body.target_module,
+    )
     return {"executions": [{"id": str(e.id), "status": e.status} for e in exs]}
 
 
 # ------------------------------------------------------------------ QC: lần chạy
 def _ex_out(e: Execution) -> dict[str, Any]:
     return {"id": str(e.id), "task_id": str(e.task_id), "status": e.status, "attempt": e.attempt, "runner_id": str(e.runner_id) if e.runner_id else None,
-            "error": e.error, "duration_ms": e.duration_ms, "batch_id": e.batch_id, "queued_at": e.queued_at.isoformat(),
+            "target_module": e.target_module, "error": e.error, "duration_ms": e.duration_ms, "batch_id": e.batch_id, "queued_at": e.queued_at.isoformat(),
             "finished_at": e.finished_at.isoformat() if e.finished_at else None}
 
 
@@ -256,6 +428,7 @@ class ScheduleIn(BaseModel):
     task_id: uuid.UUID
     interval_minutes: int = Field(ge=5, le=60 * 24 * 30)
     account_id: uuid.UUID | None = None
+    target_module: str | None = None
     params: dict[str, str] = {}
     run_count: int = Field(1, ge=1, le=service.MAX_BATCH)
     first_run_in_minutes: int | None = Field(None, ge=0, le=60 * 24)
@@ -263,7 +436,7 @@ class ScheduleIn(BaseModel):
 
 def _sched_out(s: ExecutionSchedule) -> dict[str, Any]:
     return {"id": str(s.id), "task_id": str(s.task_id), "interval_minutes": s.interval_minutes, "run_count": s.run_count, "enabled": s.enabled,
-            "next_run_at": s.next_run_at.isoformat(), "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None, "last_status": s.last_status,
+            "target_module": s.target_module, "next_run_at": s.next_run_at.isoformat(), "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None, "last_status": s.last_status,
             "account_id": str(s.account_id) if s.account_id else None}
 
 
@@ -275,7 +448,7 @@ def list_schedules(_: Principal = Depends(current_principal), session: Session =
 @router.post("/automation/schedules", status_code=201)
 def create_schedule(body: ScheduleIn, p: Principal = Depends(require(Perm.APPROVE)), session: Session = Depends(get_session)):
     return _sched_out(sched.create_schedule(session, actor=p, task_id=body.task_id, interval_minutes=body.interval_minutes, account_id=body.account_id,
-                                            params=body.params, run_count=body.run_count, first_run_in_minutes=body.first_run_in_minutes))
+                                            params=body.params, run_count=body.run_count, first_run_in_minutes=body.first_run_in_minutes, target_module=body.target_module))
 
 
 class ScheduleToggle(BaseModel):

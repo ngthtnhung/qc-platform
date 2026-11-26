@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 
@@ -44,7 +45,13 @@ export default function FlowsPage() {
 
   return (
     <>
-      <h2>Ghi luồng thao tác</h2>
+      <h2>Ghi luồng thao tác (Legacy recording.json)</h2>
+      <div className="notice" style={{ marginBottom: 12 }}>
+        <strong>Quy trình mới đơn giản hơn:</strong> Bạn có thể dán trực tiếp code từ <code>playwright codegen</code>, tách luồng theo nghiệp vụ, chỉnh sửa code tô màu tham số và chạy thử ngay tại{" "}
+        <Link href="/automation" className="btn sm primary" style={{ marginLeft: 6 }}>
+          Mở Tác vụ tự động →
+        </Link>
+      </div>
       <p className="muted">
         Chạy recorder trên máy bạn: <code>QC_RECORD_URL=https://… node dist/recorder.js</code>, đăng nhập và thao tác như bình thường, rồi nạp tệp <code>recording.json</code> ở đây.
         Mật khẩu không bao giờ được ghi. Code sinh ra tất định từ bản ghi và vẫn phải chờ QC duyệt.

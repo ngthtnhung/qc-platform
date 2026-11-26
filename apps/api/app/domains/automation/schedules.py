@@ -19,15 +19,18 @@ MIN_INTERVAL = 5
 
 
 def create_schedule(session: Session, *, actor: Principal, task_id: uuid.UUID, interval_minutes: int, account_id: uuid.UUID | None = None,
-                    params: dict | None = None, run_count: int = 1, first_run_in_minutes: int | None = None) -> ExecutionSchedule:
+                    params: dict | None = None, run_count: int = 1, first_run_in_minutes: int | None = None, target_module: str | None = None) -> ExecutionSchedule:
     if interval_minutes < MIN_INTERVAL:
         raise AppError(f"Chu kỳ tối thiểu {MIN_INTERVAL} phút", code="VALIDATION_ERROR", status=422)
     task = session.get(AutomationTask, task_id)
     if task is None or task.status != "active":
         raise NotFound("Không thấy tác vụ")
+    if (task.automation_mode or "AUTO") == "MANUAL":
+        raise AppError("Tác vụ thủ công (MANUAL) không hỗ trợ đặt lịch chạy tự động.", code="MANUAL_TASK", status=422)
     if service.latest_approved(session, task.id) is None:
-        raise AppError("Tác vụ chưa có phiên bản code nào được QC duyệt; duyệt trước khi đặt lịch.", code="NOT_APPROVED", status=409)
+        raise AppError("Tác vụ chưa có phiên bản code nào sẵn sàng; kích hoạt trước khi đặt lịch.", code="NOT_APPROVED", status=409)
     sch = ExecutionSchedule(task_id=task_id, account_id=account_id, params=params or {}, run_count=run_count, interval_minutes=interval_minutes,
+                            target_module=target_module.strip().upper()[:40] if target_module and target_module.strip() else None,
                             next_run_at=utcnow() + dt.timedelta(minutes=first_run_in_minutes if first_run_in_minutes is not None else interval_minutes), created_by=actor.id)
     session.add(sch)
     session.flush()
@@ -53,7 +56,7 @@ def run_due(session: Session, now: dt.datetime | None = None) -> dict:
         task = session.get(AutomationTask, sch.task_id)
         try:
             with session.begin_nested():
-                exs = service.queue_runs(session, actor=actor, task=task, account_id=sch.account_id, override=sch.params or None, count=sch.run_count)
+                exs = service.queue_runs(session, actor=actor, task=task, account_id=sch.account_id, override=sch.params or None, count=sch.run_count, target_module=sch.target_module)
                 for e in exs:
                     e.schedule_id = sch.id
             sch.last_status, sch.last_run_at = f"Đã xếp hàng {len(exs)} lần chạy", now

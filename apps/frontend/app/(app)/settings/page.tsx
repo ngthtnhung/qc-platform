@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { api, ApiError, type AuditRow, type IntegrationStatus, type User } from "@/lib/api";
+import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useSearchParams } from "next/navigation";
+import { api, ApiError, clearStoredApiError, type AuditRow, type IntegrationStatus, type User } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
   DEFAULT_PET_CONFIG,
@@ -24,8 +25,18 @@ import {
 type TabKey = "account" | "general" | "pet" | "integrations" | "admin";
 
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="muted">Đang tải cài đặt…</div>}>
+      <SettingsContent />
+    </Suspense>
+  );
+}
+
+function SettingsContent() {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<TabKey>("account");
+  const focusKey = searchParams.get("focus") || "";
 
   // Account profile & password change
   const [profName, setProfName] = useState("");
@@ -49,6 +60,8 @@ export default function SettingsPage() {
   const [newProj, setNewProj] = useState("");
   const [modCode, setModCode] = useState("");
   const [modName, setModName] = useState("");
+  const [modCluster, setModCluster] = useState("");
+  const [modSlug, setModSlug] = useState("");
   const [modColor, setModColor] = useState("#2563eb");
   const [modMsg, setModMsg] = useState("");
   const [, setTick] = useState(0);
@@ -77,15 +90,13 @@ export default function SettingsPage() {
 
   useEffect(() => {
     setPetCfg(loadPetConfig());
-    if (typeof window !== "undefined") {
-      const t = new URLSearchParams(window.location.search).get("tab");
-      if (t === "account" || t === "general" || t === "pet" || t === "integrations" || t === "admin") {
-        setTab(t);
-      } else if (t === "users" || t === "audit") {
-        setTab("admin");
-      }
+    const t = searchParams.get("tab");
+    if (t === "account" || t === "general" || t === "pet" || t === "integrations" || t === "admin") {
+      setTab(t);
+    } else if (t === "users" || t === "audit") {
+      setTab("admin");
     }
-  }, []);
+  }, [searchParams]);
 
   const loadAll = useCallback(() => {
     api<IntegrationStatus[]>("/integrations").then(setIntegs).catch(() => undefined);
@@ -133,27 +144,32 @@ export default function SettingsPage() {
     }
   }
 
+  async function checkOneIntegration(key: string) {
+    setIntegMsg(null);
+    try {
+      const r = await api<{ ok: boolean; status: string }>(`/integrations/${encodeURIComponent(key)}/check`, { method: "POST" });
+      if (r.ok !== false) {
+        clearStoredApiError(`integ:${key === "gemini" || key === "anthropic" ? "ai" : key}`);
+      }
+      setIntegMsg({ ok: r.ok !== false, text: `Kiểm tra ${key}: ${r.status}` });
+      loadAll();
+      window.dispatchEvent(new CustomEvent("qc:synced"));
+    } catch (err) {
+      setIntegMsg({ ok: false, text: err instanceof ApiError ? err.message : "Kiểm tra thất bại" });
+      loadAll();
+      window.dispatchEvent(new CustomEvent("qc:synced"));
+    }
+  }
+
   async function saveIntegration(key: string) {
     setIntegMsg(null);
     try {
       await api(`/integrations/${key}`, { method: "PUT", body: { value: integVals[key] } });
       setIntegVals((v) => ({ ...v, [key]: "" }));
-      setIntegMsg({ ok: true, text: `Đã lưu cấu hình ${key} vào Vault.` });
-      loadAll();
+      setIntegMsg({ ok: true, text: `Đã lưu ${key} vào Vault, đang kiểm tra kết nối…` });
+      await checkOneIntegration(key);
     } catch (err) {
       setIntegMsg({ ok: false, text: err instanceof ApiError ? err.message : "Lưu thất bại" });
-    }
-  }
-
-  async function checkOneIntegration(key: string) {
-    setIntegMsg(null);
-    try {
-      const r = await api<{ ok: boolean; status: string }>(`/integrations/${encodeURIComponent(key)}/check`, { method: "POST" });
-      setIntegMsg({ ok: r.ok !== false, text: `Kiểm tra ${key}: ${r.status}` });
-      loadAll();
-    } catch (err) {
-      setIntegMsg({ ok: false, text: err instanceof ApiError ? err.message : "Kiểm tra thất bại" });
-      loadAll();
     }
   }
 
@@ -163,6 +179,7 @@ export default function SettingsPage() {
       const r = await api<{ items: IntegrationStatus[] }>("/integrations/check-all", { method: "POST" });
       setIntegs(r.items);
       setIntegMsg({ ok: true, text: "Đã kiểm tra xong trạng thái tất cả token / khóa API." });
+      window.dispatchEvent(new CustomEvent("qc:synced"));
     } catch (err) {
       setIntegMsg({ ok: false, text: err instanceof ApiError ? err.message : "Kiểm tra thất bại" });
     }
@@ -300,6 +317,18 @@ export default function SettingsPage() {
                     placeholder="Tên hiển thị (VD: Diễn đàn)"
                   />
                   <input
+                    style={{ width: 120 }}
+                    value={modCluster}
+                    onChange={(e) => setModCluster(e.target.value.toUpperCase())}
+                    placeholder="Cụm (VD: DV5S)"
+                  />
+                  <input
+                    style={{ width: 140 }}
+                    value={modSlug}
+                    onChange={(e) => setModSlug(e.target.value.toLowerCase())}
+                    placeholder="Slug URL (maintenance...)"
+                  />
+                  <input
                     type="color"
                     style={{ width: 38, height: 32, padding: 2 }}
                     value={modColor}
@@ -313,12 +342,21 @@ export default function SettingsPage() {
                       setModMsg("");
                       void api<ModuleDef>("/sources/modules", {
                         method: "POST",
-                        body: { code: modCode.trim().toUpperCase(), name: modName.trim() || modCode.trim().toUpperCase(), prefix: modCode.trim().toUpperCase(), color: modColor },
+                        body: {
+                          code: modCode.trim().toUpperCase(),
+                          name: modName.trim() || modCode.trim().toUpperCase(),
+                          prefix: modCode.trim().toUpperCase(),
+                          cluster_code: modCluster.trim().toUpperCase(),
+                          subsystem_slug: modSlug.trim().toLowerCase(),
+                          color: modColor,
+                        },
                       })
                         .then((created) => {
                           saveModuleColor(created.code, created.color || modColor);
                           setModCode("");
                           setModName("");
+                          setModCluster("");
+                          setModSlug("");
                           setModMsg(`Đã lưu module ${created.code}`);
                           loadAll();
                         })
@@ -357,6 +395,11 @@ export default function SettingsPage() {
                           [{m.code}]
                         </span>
                         <span style={{ fontSize: 13 }}>{m.name && m.name !== m.code ? m.name : ""}</span>
+                        {m.cluster_code && (
+                          <span className="badge" title={`Cụm dùng chung ${m.cluster_code}${m.subsystem_slug ? ` · /${m.subsystem_slug}` : ""}`}>
+                            {m.cluster_code}{m.subsystem_slug ? ` · /${m.subsystem_slug}` : ""}
+                          </span>
+                        )}
                         {m.custom && (
                           <button
                             type="button"
@@ -577,11 +620,19 @@ export default function SettingsPage() {
                 Dán Cookie Haraworks, Token Figma hoặc Khóa AI (Gemini / Anthropic) vào ô tương ứng rồi bấm Lưu. Hệ thống hiển thị rõ trạng thái <strong>Hoạt động</strong>, <strong>Thiếu token</strong>, <strong>Hết hạn</strong> hoặc <strong>Lỗi</strong>.
               </div>
               {integs.map((i) => {
-                const st = i.state || (i.configured ? "active" : "missing");
-                const badgeCls = st === "active" ? "ok" : st === "missing" ? "warn" : "bad";
-                const badgeText = i.state_label || (i.configured ? "Hoạt động" : "Thiếu token");
+                const st = i.state || (i.configured ? "unchecked" : "missing");
+                const badgeCls = st === "active" ? "ok" : st === "missing" || st === "unchecked" ? "warn" : "bad";
+                const badgeText = i.state_label || (st === "active" ? "Hoạt động" : st === "unchecked" ? "Chưa kiểm tra" : "Thiếu token");
+                const isFocused = focusKey === i.key || (focusKey === "ai" && (i.key === "gemini" || i.key === "anthropic"));
                 return (
-                  <div key={i.key} style={{ padding: "12px 0", borderBottom: "1px solid var(--line)" }}>
+                  <div
+                    key={i.key}
+                    style={{
+                      padding: isFocused ? "12px 12px" : "12px 0",
+                      borderBottom: "1px solid var(--line)",
+                      ...(isFocused ? { background: "rgba(37, 99, 235, 0.06)", borderRadius: 8, border: "1.5px solid var(--accent)", marginBottom: 8 } : {}),
+                    }}
+                  >
                     <div className="row" style={{ marginBottom: 6, gap: 8, flexWrap: "wrap" }}>
                       <strong className="grow">{i.label}</strong>
                       <span className={`badge ${badgeCls}`}>{badgeText}</span>
@@ -608,6 +659,7 @@ export default function SettingsPage() {
                         className="grow"
                         type="password"
                         autoComplete="off"
+                        autoFocus={isFocused && focusKey === i.key}
                         placeholder={i.key === "haraworks" ? "Dán header Cookie Haraworks..." : `Dán khóa/token ${i.label}...`}
                         value={integVals[i.key] ?? ""}
                         onChange={(e) => setIntegVals((v) => ({ ...v, [i.key]: e.target.value }))}

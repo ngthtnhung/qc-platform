@@ -13,6 +13,8 @@ export type Job = {
   script: string;
   sha256: string;
   params: Record<string, string>;
+  param_meta?: { key: string; value: string; type?: string; auto?: boolean; fallback?: "first" | "random" }[];
+  test_prefix?: string;
   account: { id: string; username: string; expected_org: string; route: string };
   environment: { code: string; type: string; login_url: string };
 };

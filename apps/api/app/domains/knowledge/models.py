@@ -22,6 +22,8 @@ class Module(Base):
     note: Mapped[str] = mapped_column(Text, default="")
     usage_flow: Mapped[str] = mapped_column(Text, default="")
     flows: Mapped[list] = mapped_column(JsonType, default=list)  # [{code,name,menu,note,stage}] giữ nguyên cấu trúc nguồn
+    subsystem_slug: Mapped[str] = mapped_column(String(60), default="")
+    standard_roles: Mapped[list] = mapped_column(JsonType, default=list)
     extra: Mapped[dict] = mapped_column(JsonType, default=dict)
     created_at: Mapped[dt.datetime] = ts()
 

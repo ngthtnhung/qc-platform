@@ -105,6 +105,20 @@ LEGACY_MODULES: list[tuple[str, str, str, list[str]]] = [
     ("VHST", "Vận hành siêu thị", "#854d0e", []),
 ]
 LEGACY_MODULE_COLORS: dict[str, tuple[str, str]] = {code: (name, color) for code, name, color, _ in LEGACY_MODULES}
+DEFAULT_DV5S_FLOWS = [
+    {"code": "DS", "name": "Danh sách & Tìm kiếm phiếu"},
+    {"code": "TAO", "name": "Tạo & Cập nhật phiếu"},
+    {"code": "BC", "name": "Báo cáo & Thống kê"},
+    {"code": "TL", "name": "Thiết lập nhân viên & Cấu hình phụ trách"},
+    {"code": "SLA", "name": "Thiết lập SLA"},
+]
+DEFAULT_DV5S_ROLES = ["Quản trị module", "Quản lý", "Nhân viên phụ trách", "Người tạo phiếu"]
+DEFAULT_MODULE_CLUSTER_META: dict[str, dict] = {
+    "DV5S": {"cluster_code": "DV5S", "subsystem_slug": "maintenance", "flows": DEFAULT_DV5S_FLOWS, "standard_roles": DEFAULT_DV5S_ROLES},
+    "MAINT": {"cluster_code": "DV5S", "subsystem_slug": "maintenance", "flows": DEFAULT_DV5S_FLOWS, "standard_roles": DEFAULT_DV5S_ROLES},
+    "SCM": {"cluster_code": "DV5S", "subsystem_slug": "scm", "flows": DEFAULT_DV5S_FLOWS, "standard_roles": DEFAULT_DV5S_ROLES},
+    "IOT": {"cluster_code": "DV5S", "subsystem_slug": "iot", "flows": DEFAULT_DV5S_FLOWS, "standard_roles": DEFAULT_DV5S_ROLES},
+}
 _MOD_PALETTE = [
     "#2563eb", "#059669", "#d97706", "#7c3aed",
     "#db2777", "#0891b2", "#ea580c", "#4f46e5",
@@ -121,28 +135,54 @@ def _default_mod_color(code: str) -> str:
 
 
 def _ensure_default_modules(session: Session) -> None:
-    """Tự động nạp 37 module chuẩn (kèm 37 màu khác nhau) nếu bảng modules đang trống và cập nhật lại module_code cho bug."""
+    """Tự động nạp 37 module chuẩn, đồng thời merge bổ sung metadata cụm DV5S (MAINT/SCM/IOT) nếu còn trống."""
     from app.domains.bugs.models import Bug
     from app.domains.bugs.service import derive_module, module_index
     from app.domains.knowledge.models import Module
 
     existing_count = session.scalar(select(func.count()).select_from(Module)) or 0
-    if existing_count > 0:
+    if existing_count == 0:
+        for code, name, color, aliases in LEGACY_MODULES:
+            cmeta = DEFAULT_MODULE_CLUSTER_META.get(code, {})
+            session.add(Module(
+                code=code,
+                name=name,
+                prefix=code,
+                cluster_code=cmeta.get("cluster_code", ""),
+                subsystem_slug=cmeta.get("subsystem_slug", ""),
+                flows=list(cmeta.get("flows") or []),
+                standard_roles=list(cmeta.get("standard_roles") or []),
+                extra={"color": color, "bug_aliases": aliases},
+            ))
+        session.flush()
+        idx = module_index(session)
+        for b in session.scalars(select(Bug).where(Bug.module_code == "")):
+            matched = derive_module(b.title or "", idx)
+            if matched:
+                b.module_code = matched
+        session.flush()
         return
-    for code, name, color, aliases in LEGACY_MODULES:
-        session.add(Module(
-            code=code,
-            name=name,
-            prefix=code,
-            extra={"color": color, "bug_aliases": aliases},
-        ))
-    session.flush()
-    idx = module_index(session)
-    for b in session.scalars(select(Bug).where(Bug.module_code == "")):
-        matched = derive_module(b.title or "", idx)
-        if matched:
-            b.module_code = matched
-    session.flush()
+
+    # Merge phần còn thiếu cho các module thuộc cụm DV5S mà không ghi đè dữ liệu đã cấu hình
+    changed = False
+    for code, cmeta in DEFAULT_MODULE_CLUSTER_META.items():
+        m = session.scalar(select(Module).where(Module.code == code))
+        if m is None:
+            continue
+        if not (m.cluster_code or "").strip() and cmeta.get("cluster_code"):
+            m.cluster_code = cmeta["cluster_code"]
+            changed = True
+        if not (m.subsystem_slug or "").strip() and cmeta.get("subsystem_slug"):
+            m.subsystem_slug = cmeta["subsystem_slug"]
+            changed = True
+        if not (m.flows or []) and cmeta.get("flows"):
+            m.flows = list(cmeta["flows"])
+            changed = True
+        if not (m.standard_roles or []) and cmeta.get("standard_roles"):
+            m.standard_roles = list(cmeta["standard_roles"])
+            changed = True
+    if changed:
+        session.flush()
 
 
 class ModuleIn(BaseModel):
@@ -151,6 +191,10 @@ class ModuleIn(BaseModel):
     prefix: str = Field(default="", max_length=40)
     color: str = Field(default="", max_length=20)
     aliases: list[str] = []
+    cluster_code: str = Field(default="", max_length=40)
+    subsystem_slug: str = Field(default="", max_length=60)
+    flows: list[dict] = []
+    standard_roles: list[str] = []
 
 
 class ModuleUpdateIn(BaseModel):
@@ -158,6 +202,29 @@ class ModuleUpdateIn(BaseModel):
     prefix: str | None = Field(default=None, max_length=40)
     color: str | None = Field(default=None, max_length=20)
     aliases: list[str] | None = None
+    cluster_code: str | None = Field(default=None, max_length=40)
+    subsystem_slug: str | None = Field(default=None, max_length=60)
+    flows: list[dict] | None = None
+    standard_roles: list[str] | None = None
+
+
+def _mod_out(m) -> dict:
+    code = m.code.strip().upper()
+    ex = m.extra or {}
+    legacy_name = LEGACY_MODULE_COLORS.get(code, ("", ""))[0]
+    return {
+        "id": str(m.id),
+        "code": code,
+        "name": m.name or legacy_name or code,
+        "prefix": (m.prefix or code).strip().upper(),
+        "color": str(ex.get("color") or _default_mod_color(code)),
+        "aliases": list(ex.get("bug_aliases") or []),
+        "cluster_code": (m.cluster_code or "").strip().upper(),
+        "subsystem_slug": (m.subsystem_slug or "").strip().lower(),
+        "flows": list(m.flows or []),
+        "standard_roles": list(m.standard_roles or []),
+        "custom": True,
+    }
 
 
 @router.get("/sources/modules")
@@ -169,21 +236,12 @@ def list_source_modules(_: Principal = Depends(current_principal), session: Sess
 
     mods: dict[str, dict] = {}
     for m in session.scalars(select(Module).order_by(Module.code)):
-        code = m.code.strip().upper()
-        ex = m.extra or {}
-        legacy_name = LEGACY_MODULE_COLORS.get(code, ("", ""))[0]
-        mods[code] = {
-            "id": str(m.id),
-            "code": code,
-            "name": m.name or legacy_name or code,
-            "prefix": (m.prefix or code).strip().upper(),
-            "color": str(ex.get("color") or _default_mod_color(code)),
-            "aliases": list(ex.get("bug_aliases") or []),
-            "custom": True,
-        }
+        item = _mod_out(m)
+        mods[item["code"]] = item
     for (mc,) in session.execute(select(Bug.module_code).where(Bug.module_code != "").distinct()):
         c = str(mc).strip().upper()
         if c and c not in mods:
+            cmeta = DEFAULT_MODULE_CLUSTER_META.get(c, {})
             mods[c] = {
                 "id": "",
                 "code": c,
@@ -191,11 +249,16 @@ def list_source_modules(_: Principal = Depends(current_principal), session: Sess
                 "prefix": c,
                 "color": _default_mod_color(c),
                 "aliases": [],
+                "cluster_code": cmeta.get("cluster_code", ""),
+                "subsystem_slug": cmeta.get("subsystem_slug", ""),
+                "flows": list(cmeta.get("flows") or []),
+                "standard_roles": list(cmeta.get("standard_roles") or []),
                 "custom": False,
             }
     for s in session.scalars(select(Source).where(Source.status == "active")):
         c = str((s.meta or {}).get("module") or "").strip().upper()
         if c and c not in mods:
+            cmeta = DEFAULT_MODULE_CLUSTER_META.get(c, {})
             mods[c] = {
                 "id": "",
                 "code": c,
@@ -203,6 +266,10 @@ def list_source_modules(_: Principal = Depends(current_principal), session: Sess
                 "prefix": c,
                 "color": _default_mod_color(c),
                 "aliases": [],
+                "cluster_code": cmeta.get("cluster_code", ""),
+                "subsystem_slug": cmeta.get("subsystem_slug", ""),
+                "flows": list(cmeta.get("flows") or []),
+                "standard_roles": list(cmeta.get("standard_roles") or []),
                 "custom": False,
             }
     return {"items": sorted(mods.values(), key=lambda x: x["code"])}
@@ -224,6 +291,14 @@ def create_source_module(body: ModuleIn, p: Principal = Depends(current_principa
     if existing is not None:
         existing.name = body.name.strip() or existing.name or code
         existing.prefix = prefix
+        if body.cluster_code.strip():
+            existing.cluster_code = body.cluster_code.strip().upper()
+        if body.subsystem_slug.strip():
+            existing.subsystem_slug = body.subsystem_slug.strip().lower()
+        if body.flows:
+            existing.flows = body.flows
+        if body.standard_roles:
+            existing.standard_roles = [r.strip() for r in body.standard_roles if str(r).strip()]
         ex = dict(existing.extra or {})
         ex["color"] = color
         ex["bug_aliases"] = aliases
@@ -234,6 +309,10 @@ def create_source_module(body: ModuleIn, p: Principal = Depends(current_principa
             code=code,
             name=body.name.strip() or LEGACY_MODULE_COLORS.get(code, (code, ""))[0],
             prefix=prefix,
+            cluster_code=body.cluster_code.strip().upper(),
+            subsystem_slug=body.subsystem_slug.strip().lower(),
+            flows=body.flows,
+            standard_roles=[r.strip() for r in body.standard_roles if str(r).strip()],
             extra={"color": color, "bug_aliases": aliases},
         )
         session.add(m)
@@ -246,15 +325,7 @@ def create_source_module(body: ModuleIn, p: Principal = Depends(current_principa
             b.module_code = matched
     session.flush()
     log_audit(session, p, "MODULE_SAVE", resource_type="module", resource_id=str(m.id), after={"code": code, "prefix": prefix, "color": color})
-    return {
-        "id": str(m.id),
-        "code": code,
-        "name": m.name,
-        "prefix": m.prefix,
-        "color": color,
-        "aliases": aliases,
-        "custom": True,
-    }
+    return _mod_out(m)
 
 
 @router.patch("/sources/modules/{code}")
@@ -277,6 +348,16 @@ def update_source_module(code: str, body: ModuleUpdateIn, p: Principal = Depends
         m.name = body.name.strip() or up
     if body.prefix is not None:
         m.prefix = body.prefix.strip().upper() or up
+    if body.cluster_code is not None:
+        m.cluster_code = body.cluster_code.strip().upper()
+    if body.subsystem_slug is not None:
+        m.subsystem_slug = body.subsystem_slug.strip().lower()
+    if body.flows is not None:
+        m.flows = body.flows
+        flag_modified(m, "flows")
+    if body.standard_roles is not None:
+        m.standard_roles = [str(r).strip() for r in body.standard_roles if str(r).strip()]
+        flag_modified(m, "standard_roles")
     ex = dict(m.extra or {})
     if body.color is not None and body.color.strip():
         ex["color"] = body.color.strip()
@@ -286,15 +367,7 @@ def update_source_module(code: str, body: ModuleUpdateIn, p: Principal = Depends
     flag_modified(m, "extra")
     session.flush()
     log_audit(session, p, "MODULE_UPDATE", resource_type="module", resource_id=str(m.id), after={"code": up, "name": m.name, "prefix": m.prefix, "color": ex.get("color")})
-    return {
-        "id": str(m.id),
-        "code": up,
-        "name": m.name,
-        "prefix": m.prefix or up,
-        "color": str(ex.get("color") or _default_mod_color(up)),
-        "aliases": list(ex.get("bug_aliases") or []),
-        "custom": True,
-    }
+    return _mod_out(m)
 
 
 @router.delete("/sources/modules/{code}", status_code=204)
@@ -874,22 +947,74 @@ def get_pet_pulse(since: str = "", force: bool = False, p: Principal = Depends(c
                 if (ps or pe) and (in_today or is_ov):
                     todo_today += 1
 
-    # Kiểm tra trạng thái từng tích hợp (missing / expired / error / active) để Pet nhắc chính xác
-    integ_list = integ.status(session)
-    integ_map = {row["key"]: row for row in integ_list}
-    missing_integrations: list[str] = []
-    hw_state = integ_map.get("haraworks", {}).get("state", "missing")
-    if hw_state != "active":
-        missing_integrations.append("haraworks")
-    gem_state = integ_map.get("gemini", {}).get("state", "missing")
-    ant_state = integ_map.get("anthropic", {}).get("state", "missing")
-    if gem_state != "active" and ant_state != "active":
-        missing_integrations.append("ai")
-    if integ_map.get("figma", {}).get("state", "missing") != "active":
-        missing_integrations.append("figma")
+    # Chủ động kiểm tra nhẹ các khóa AI đã lưu (theo TTL 10 phút hoặc khi force=True) & tải thông báo Haraworks
+    if get_settings().app_env != "test" or integ.TRANSPORT.get("gemini") is not None:
+        integ.probe_ai_if_stale(session, p, "gemini", force=force)
+    if get_settings().app_env != "test" or integ.TRANSPORT.get("anthropic") is not None:
+        integ.probe_ai_if_stale(session, p, "anthropic", force=force)
 
     noti = _fetch_hw_notifications(session, p, force=force)
     mentions = [x for x in noti.get("items", []) if x.get("is_mention") or not x.get("is_read")]
+
+    # Đọc lại trạng thái tích hợp SAU khi probe & gọi Haraworks (cập nhật tức thời expired/error)
+    integ_list = integ.status(session)
+    integ_map = {row["key"]: row for row in integ_list}
+    missing_integrations: list[str] = []
+    hw_row = integ_map.get("haraworks", {})
+    gem_row = integ_map.get("gemini", {})
+    ant_row = integ_map.get("anthropic", {})
+    fig_row = integ_map.get("figma", {})
+
+    hw_state = hw_row.get("state", "missing")
+    gem_state = gem_row.get("state", "missing")
+    ant_state = ant_row.get("state", "missing")
+    fig_state = fig_row.get("state", "missing")
+
+    if hw_state != "active":
+        missing_integrations.append("haraworks")
+    if gem_state != "active" and ant_state != "active":
+        missing_integrations.append("ai")
+    elif gem_state in ("expired", "error") or ant_state in ("expired", "error"):
+        # Nếu 1 key đang lỗi/hết hạn thì vẫn báo rõ để user sửa
+        if gem_state in ("expired", "error"):
+            missing_integrations.append("gemini")
+        if ant_state in ("expired", "error"):
+            missing_integrations.append("anthropic")
+    if fig_state != "active":
+        missing_integrations.append("figma")
+
+    # Kiểm tra trạng thái job đồng bộ gần nhất (nếu có lỗi đồng bộ Haraworks)
+    from app.domains.platform.models import Job
+    last_job = session.scalar(
+        select(Job)
+        .where(Job.kind.in_(["sync_all", "bugs_sync", "functions_sync", "builds_sync"]))
+        .order_by(Job.created_at.desc())
+        .limit(1)
+    )
+    last_sync = {"ok": True, "code": None, "message": None, "at": None}
+    if last_job is not None:
+        err_obj = (last_job.result or {}).get("error") if isinstance(last_job.result, dict) else None
+        if last_job.status == "FAILED" and isinstance(err_obj, dict):
+            last_sync = {
+                "ok": False,
+                "code": err_obj.get("code"),
+                "message": err_obj.get("message"),
+                "at": last_job.finished_at.isoformat() if last_job.finished_at else last_job.created_at.isoformat(),
+            }
+        elif last_job.finished_at:
+            last_sync["at"] = last_job.finished_at.isoformat()
+
+    # Tính trạng thái AI tổng hợp nhưng ưu tiên báo lỗi nếu bất kỳ khóa nào đã cấu hình bị expired/error
+    if gem_state in ("expired", "error"):
+        ai_summary = gem_state
+    elif ant_state in ("expired", "error"):
+        ai_summary = ant_state
+    elif gem_state == "active" or ant_state == "active":
+        ai_summary = "active"
+    elif gem_state == "unchecked" or ant_state == "unchecked":
+        ai_summary = "unchecked"
+    else:
+        ai_summary = "missing"
 
     return {
         "new_bugs_count": new_bugs_count,
@@ -900,8 +1025,27 @@ def get_pet_pulse(since: str = "", force: bool = False, p: Principal = Depends(c
         "missing_integrations": missing_integrations,
         "integration_states": {
             "haraworks": hw_state,
-            "ai": "active" if (gem_state == "active" or ant_state == "active") else (gem_state if gem_state != "missing" else ant_state),
-            "figma": integ_map.get("figma", {}).get("state", "missing"),
+            "gemini": gem_state,
+            "anthropic": ant_state,
+            "ai": ai_summary,
+            "figma": fig_state,
+        },
+        "integration_details": {
+            k: {
+                "label": row.get("label", k),
+                "state": row.get("state", "missing"),
+                "state_label": row.get("state_label", ""),
+                "detail": row.get("detail", ""),
+                "checked_at": row.get("last_check_at"),
+            }
+            for k, row in (("haraworks", hw_row), ("gemini", gem_row), ("anthropic", ant_row))
+        },
+        "data_health": {
+            "haraworks_notifications": {
+                "ok": bool(noti.get("connected")),
+                "error": noti.get("error") or None,
+            },
+            "last_sync": last_sync,
         },
         "daily_summary": {
             "todo_today": todo_today,
@@ -1768,7 +1912,15 @@ def check_haraworks(p: Principal = Depends(require(Perm.SECRET_WRITE)), session:
 
 @router.post("/integrations/{key}/check")
 def check_single_integration(key: str, p: Principal = Depends(current_principal), session: Session = Depends(get_session)):
-    return integ.check_integration(session, p, key)
+    try:
+        return integ.check_integration(session, p, key)
+    except AppError as exc:
+        return {
+            "ok": False,
+            "state": "missing" if exc.code == "NO_COOKIE" else ("expired" if exc.status in (401, 403) else "error"),
+            "state_label": "Thiếu token" if exc.code == "NO_COOKIE" else ("Hết hạn" if exc.status in (401, 403) else "Lỗi"),
+            "status": exc.message,
+        }
 
 
 @router.post("/integrations/check-all")

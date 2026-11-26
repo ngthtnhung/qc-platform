@@ -102,13 +102,16 @@ export async function handleJob(api: ServerApi, job: Job, cfg: AgentConfig, brow
     const password = cfg.skipLogin ? null : (await api.credentials(job.execution_id)).password;
     session = await browser(job, cfg, password);
     await api.start(job.execution_id);
-    const meta = Object.keys(job.params).map((key) => ({ key, value: job.params[key] }));
+    const meta = job.param_meta?.length
+      ? job.param_meta
+      : Object.keys(job.params).map((key) => ({ key, value: job.params[key] }));
     const attached = await fetchExecutionFiles(api, job.execution_id);
     let result: RunResult;
     try {
       result = await runScript({
         script: job.script, expectedSha256: job.sha256, page: session.page, username: job.account.username,
         startUrl: job.task.start_url, params: job.params, paramMeta: meta, files: attached.files,
+        testPrefix: job.test_prefix,
       });
     } finally {
       attached.cleanup(); // file đính kèm bị xóa ngay sau khi chạy

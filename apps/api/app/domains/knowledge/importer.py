@@ -58,17 +58,45 @@ def import_modules(session: Session, snap: Path, rep: Report) -> None:
     for f in sorted((snap / "modules").glob("*.json")) if (snap / "modules").is_dir() else []:
         try:
             m = _read(f)
-            code = str(m["code"])
+            code = str(m["code"]).strip().upper()
         except Exception as exc:  # noqa: BLE001
             rep.errors.append(f"{f.name}: {exc}")
             continue
-        if session.scalar(select(Module).where(Module.code == code)):
-            rep.modules_skipped += 1
+        known = {"code", "name", "cluster", "prefix", "note", "usage_flow", "flows", "subsystem_slug", "standard_roles"}
+        existing = session.scalar(select(Module).where(Module.code == code))
+        if existing is not None:
+            # Merge phần còn thiếu (cluster_code, flows, subsystem_slug...) vào module đã có mà không ghi đè dữ liệu người dùng
+            updated = False
+            if not (existing.cluster_code or "").strip() and m.get("cluster"):
+                existing.cluster_code = str(m.get("cluster") or "")
+                updated = True
+            if not (existing.subsystem_slug or "").strip() and m.get("subsystem_slug"):
+                existing.subsystem_slug = str(m.get("subsystem_slug") or "")
+                updated = True
+            if not (existing.flows or []) and m.get("flows"):
+                existing.flows = list(m.get("flows") or [])
+                updated = True
+            if not (existing.usage_flow or "").strip() and m.get("usage_flow"):
+                existing.usage_flow = str(m.get("usage_flow") or "")
+                updated = True
+            if not (existing.standard_roles or []) and m.get("standard_roles"):
+                existing.standard_roles = list(m.get("standard_roles") or [])
+                updated = True
+            if not updated:
+                rep.modules_skipped += 1
             continue
-        known = {"code", "name", "cluster", "prefix", "note", "usage_flow", "flows"}
-        session.add(Module(code=code, name=m.get("name", ""), cluster_code=m.get("cluster", ""), prefix=m.get("prefix", ""),
-                           note=m.get("note", ""), usage_flow=m.get("usage_flow", ""), flows=m.get("flows", []),
-                           extra={k: v for k, v in m.items() if k not in known}))
+        session.add(Module(
+            code=code,
+            name=m.get("name", ""),
+            cluster_code=m.get("cluster", ""),
+            prefix=m.get("prefix", ""),
+            subsystem_slug=m.get("subsystem_slug", ""),
+            note=m.get("note", ""),
+            usage_flow=m.get("usage_flow", ""),
+            flows=m.get("flows", []),
+            standard_roles=m.get("standard_roles", []),
+            extra={k: v for k, v in m.items() if k not in known},
+        ))
         rep.modules_created += 1
     session.flush()
 

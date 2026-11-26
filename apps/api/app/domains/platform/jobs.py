@@ -62,6 +62,9 @@ def run_job(job_id: uuid.UUID) -> dict:
             s.commit()
         except AppError as exc:
             s.rollback()
+            if exc.code == "HARAWORKS_AUTH":
+                from app.domains.integrations import service as integ
+                integ.record_integration_failure("haraworks", f"hết hạn ({exc.code}): {exc.message}")
             job = s.get(Job, job_id)
             job.status, job.result = "FAILED", {"error": {"code": exc.code, "message": exc.message}}
         except Exception as exc:  # noqa: BLE001

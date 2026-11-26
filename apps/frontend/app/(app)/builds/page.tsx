@@ -39,6 +39,7 @@ export default function BuildsPage() {
     setPage(1);
   }
 
+  const [loadErr, setLoadErr] = useState("");
   const load = useCallback(() => {
     const p = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String((page - 1) * PAGE_SIZE), sort });
     if (q.trim()) p.set("q", q.trim());
@@ -48,7 +49,9 @@ export default function BuildsPage() {
     if (closed) p.set("closed", closed);
     if (assignee) p.set("assignee", assignee);
     if (year) p.set("year", year);
-    api<typeof data>(`/sources/builds?${p.toString()}`).then(setData).catch(() => undefined);
+    api<typeof data>(`/sources/builds?${p.toString()}`)
+      .then((res) => { setLoadErr(""); setData(res); })
+      .catch((err) => setLoadErr(err instanceof Error ? err.message : "Không tải được Theo dõi Build"));
   }, [q, sort, team, kind, status, closed, assignee, year, page]);
 
   useEffect(load, [load]);
@@ -65,6 +68,7 @@ export default function BuildsPage() {
           <span className="badge ok">{data.total.toLocaleString("vi-VN")} đợt build</span>
         </div>
       </div>
+      {loadErr && <div className="err" role="alert" style={{ marginBottom: 10 }}>{loadErr} <button className="sm" onClick={load}>Thử lại</button></div>}
 
       <div className="card">
         <FilterToolbar

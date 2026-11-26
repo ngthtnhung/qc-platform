@@ -11,17 +11,27 @@ from app.core.db import Base, JsonType, pk, ts, utcnow
 
 class AutomationTask(Base):
     __tablename__ = "automation_tasks"
-    __table_args__ = (CheckConstraint("status IN ('active','retired')", name="status_valid"),)
+    __table_args__ = (
+        CheckConstraint("status IN ('active','retired')", name="status_valid"),
+        CheckConstraint("automation_mode IN ('AUTO','SEMI_AUTO','MANUAL')", name="automation_mode_valid"),
+    )
     id: Mapped[uuid.UUID] = pk()
     legacy_id: Mapped[str | None] = mapped_column(String(80), unique=True, nullable=True)  # at_<sha1(module|name)[:16]> của bản Node
     name: Mapped[str] = mapped_column(String(300))
     module_code: Mapped[str] = mapped_column(String(40), index=True)
     flow: Mapped[str] = mapped_column(String(80), default="")
+    flow_code: Mapped[str] = mapped_column(String(60), default="")
+    automation_mode: Mapped[str] = mapped_column(String(20), default="AUTO")  # AUTO | SEMI_AUTO | MANUAL
+    target_modules: Mapped[list] = mapped_column(JsonType, default=list)
     description: Mapped[str] = mapped_column(Text, default="")
     start_url: Mapped[str] = mapped_column(String(1000))
     required_roles: Mapped[list] = mapped_column(JsonType, default=list)
     writes: Mapped[bool] = mapped_column(Boolean, default=False)  # true: tạo/sửa dữ liệu (tiền tố [AI TEST])
     rule_keys: Mapped[list] = mapped_column(JsonType, default=list)
+    preconditions: Mapped[list] = mapped_column(JsonType, default=list)
+    data_policy: Mapped[dict] = mapped_column(JsonType, default=dict)
+    expected_criteria: Mapped[list] = mapped_column(JsonType, default=list)
+    manual_checklist: Mapped[list] = mapped_column(JsonType, default=list)
     source: Mapped[dict] = mapped_column(JsonType, default=dict)
     steps: Mapped[list] = mapped_column(JsonType, default=list)  # các bước bằng lời để người duyệt đọc
     status: Mapped[str] = mapped_column(String(10), default="active")
@@ -33,7 +43,7 @@ class TaskParam(Base):
     __tablename__ = "automation_task_params"
     __table_args__ = (
         Index("uq_task_params_key", "task_id", "key", unique=True),
-        CheckConstraint("type IN ('text','multiline','list','file')", name="type_valid"),
+        CheckConstraint("type IN ('text','multiline','list','file','number','date','select')", name="type_valid"),
     )
     id: Mapped[uuid.UUID] = pk()
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("automation_tasks.id", ondelete="CASCADE"), index=True)
@@ -41,6 +51,7 @@ class TaskParam(Base):
     label: Mapped[str] = mapped_column(String(80), default="")
     type: Mapped[str] = mapped_column(String(10), default="text")
     value: Mapped[str] = mapped_column(Text, default="")
+    options: Mapped[list] = mapped_column(JsonType, default=list)
     auto: Mapped[bool] = mapped_column(Boolean, default=True)
     fallback: Mapped[str] = mapped_column(String(10), default="first")
 
@@ -97,6 +108,7 @@ class Execution(Base):
     account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("accounts.id", ondelete="RESTRICT"))
     runner_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runners.id", ondelete="SET NULL"), nullable=True)
     params: Mapped[dict] = mapped_column(JsonType, default=dict)
+    target_module: Mapped[str | None] = mapped_column(String(40), nullable=True)
     status: Mapped[str] = mapped_column(String(10), default="QUEUED", index=True)
     attempt: Mapped[int] = mapped_column(Integer, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, default=2)
@@ -121,6 +133,7 @@ class ExecutionSchedule(Base):
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("automation_tasks.id", ondelete="CASCADE"), index=True)
     account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
     params: Mapped[dict] = mapped_column(JsonType, default=dict)
+    target_module: Mapped[str | None] = mapped_column(String(40), nullable=True)
     run_count: Mapped[int] = mapped_column(Integer, default=1)
     interval_minutes: Mapped[int] = mapped_column(Integer)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)

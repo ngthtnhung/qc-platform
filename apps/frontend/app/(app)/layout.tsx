@@ -30,8 +30,7 @@ const NAV_GROUPS = [
     title: "Kiểm thử tự động",
     items: [
       { href: "/environments", label: "Môi trường & Tài khoản", tip: "Quản lý môi trường Staging và tài khoản test" },
-      { href: "/automation", label: "Tác vụ tự động", tip: "Quản lý kịch bản Playwright, thêm/sửa/xóa và chạy kiểm thử" },
-      { href: "/flows", label: "Ghi luồng", tip: "Nạp bản ghi thao tác từ trình duyệt để sinh kịch bản kiểm thử" },
+      { href: "/automation", label: "Tác vụ tự động", tip: "Quản lý danh sách tác vụ theo Module (Tự động / Bán tự động / Thủ công), dán codegen sinh script, sửa code & chạy Staging" },
       { href: "/runners", label: "Runner", tip: "Quản lý Host Runner và Docker Runner" },
     ],
   },

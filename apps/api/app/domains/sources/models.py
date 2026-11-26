@@ -54,5 +54,5 @@ class Integration(Base):
     key: Mapped[str] = mapped_column(String(40), primary_key=True)  # haraworks | figma
     secret_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("secrets.id", ondelete="SET NULL"), nullable=True)
     last_check_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_check_status: Mapped[str] = mapped_column(String(40), default="")
+    last_check_status: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[dt.datetime] = ts()

@@ -155,11 +155,12 @@ export default function OverviewPage() {
   const [noteLinked, setNoteLinked] = useState<{ kind: string; title: string; url?: string } | null>(null);
   const [pickerFor, setPickerFor] = useState<"todo" | "note" | null>(null);
   const [pickerQ, setPickerQ] = useState("");
+  const [loadErr, setLoadErr] = useState("");
 
   const loadData = useCallback(() => {
     api<{ items: DashTask[] }>("/sources/dashboard")
-      .then((r) => setTasks(r.items || []))
-      .catch(() => undefined);
+      .then((r) => { setLoadErr(""); setTasks(r.items || []); })
+      .catch((err) => setLoadErr(err instanceof Error ? err.message : "Không tải được dữ liệu Tổng quan"));
   }, []);
 
   useEffect(loadData, [loadData]);
@@ -397,6 +398,7 @@ export default function OverviewPage() {
       </div>
 
       {/* Bộ lọc thời gian chung + 3 bộ lọc (bỏ checkbox Chỉ task của tôi) */}
+      {loadErr && <div className="err" role="alert" style={{ marginBottom: 10 }}>{loadErr} <button className="sm" onClick={loadData}>Thử lại</button></div>}
       <div className="card" style={{ padding: "10px 14px" }}>
         <div className="row">
           <input

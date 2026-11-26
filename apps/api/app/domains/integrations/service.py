@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import datetime as dt
+import threading
+
 import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.db import utcnow
+from app.core.db import session_scope, utcnow
 from app.core.errors import AppError, NotFound
 from app.core.principal import Principal
 from app.domains.integrations.clients import FigmaClient, HaraworksClient, html_to_text
@@ -17,6 +20,8 @@ from app.domains.sources.models import Integration, SourcePassage
 
 KEYS = {"haraworks": "Cookie phiên Haraworks (chỉ đọc)", "figma": "Token cá nhân Figma (chỉ đọc)", "gemini": "Khóa API Gemini (AI)", "anthropic": "Khóa API Anthropic/Claude (AI)"}
 TRANSPORT: dict[str, httpx.BaseTransport | None] = {}  # chỉ dùng trong test: tiêm transport giả cho haraworks/figma
+_PROBE_LOCK = threading.Lock()
+_IN_FLIGHT_PROBES: set[str] = set()
 
 
 def set_secret(session: Session, actor: Principal, key: str, value: str) -> Integration:
@@ -53,12 +58,30 @@ def _classify_status(configured: bool, raw_status: str) -> tuple[str, str, str]:
     st = (raw_status or "").strip()
     low = st.lower()
     if not st:
-        return "active", "Hoạt động", "Đã lưu (chưa kiểm tra trực tiếp)"
+        return "unchecked", "Chưa kiểm tra", "Đã lưu (chưa kiểm tra trực tiếp)"
     if low.startswith("ok"):
         return "active", "Hoạt động", st
-    if any(w in low for w in ("hết hạn", "expired", "401", "403", "no_cookie", "không hợp lệ")):
+    if any(w in low for w in ("hết hạn", "expired", "401", "403", "no_cookie", "không hợp lệ", "haraworks_auth", "ai_auth")):
         return "expired", "Hết hạn", st
     return "error", "Lỗi", st
+
+
+def record_integration_failure(key: str, status_text: str) -> None:
+    """Ghi nhận lỗi tích hợp trong transaction độc lập để không bị rollback làm mất trạng thái."""
+    try:
+        s = session_scope()
+        try:
+            integ = s.get(Integration, key)
+            if integ is None:
+                integ = Integration(key=key)
+                s.add(integ)
+            integ.last_check_status = (status_text or "").strip()[:2000]
+            integ.last_check_at = utcnow()
+            s.commit()
+        finally:
+            s.close()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def status(session: Session) -> list[dict]:
@@ -139,7 +162,7 @@ def check_integration(session: Session, actor: Principal, key: str, transport: h
 def haraworks_client(session: Session, actor: Principal, transport: httpx.BaseTransport | None = None) -> HaraworksClient:
     cookie = get_secret(session, actor, "haraworks", "đồng bộ Haraworks (chỉ đọc)")
     if not cookie:
-        raise AppError("Chưa cấu hình cookie Haraworks. Vào trang Nguồn → Tích hợp để nhập (chỉ ghi).", code="NO_COOKIE", status=409)
+        raise AppError("Chưa cấu hình cookie Haraworks. Vào Cài đặt → Token & Cookie để nhập (chỉ ghi).", code="NO_COOKIE", status=409)
     return HaraworksClient(get_settings().haraworks_base_url, cookie, transport=transport or TRANSPORT.get("haraworks"))
 
 
@@ -151,9 +174,9 @@ def check_haraworks(session: Session, actor: Principal, transport: httpx.BaseTra
         integ.last_check_status, ok = f"ok ({n} dự án)", True
     except AppError as exc:
         if exc.status in (401, 403) or "het han" in exc.message.lower() or "hết hạn" in exc.message.lower() or "cookie" in exc.message.lower():
-            integ.last_check_status = f"hết hạn: {exc.message}"
+            integ.last_check_status = f"hết hạn ({exc.code}): {exc.message}"
         else:
-            integ.last_check_status = f"lỗi: {exc.message}"
+            integ.last_check_status = f"lỗi ({exc.code}): {exc.message}"
         ok = False
         integ.last_check_at = utcnow()
         session.commit()  # giữ trạng thái kiểm tra dù trả lỗi
@@ -161,7 +184,33 @@ def check_haraworks(session: Session, actor: Principal, transport: httpx.BaseTra
     finally:
         c.close()
     integ.last_check_at = utcnow()
-    return {"ok": ok, "status": integ.last_check_status}
+    return {"ok": ok, "state": "active", "state_label": "Hoạt động", "status": integ.last_check_status}
+
+
+def probe_ai_if_stale(session: Session, actor: Principal, key: str, *, force: bool = False, ttl_seconds: int = 600) -> None:
+    """Chủ động kiểm tra nhẹ Gemini/Anthropic khi chưa check hoặc quá TTL, có khóa chống gọi trùng giữa các tab."""
+    if key not in ("gemini", "anthropic"):
+        return
+    integ = session.get(Integration, key)
+    if integ is None or integ.secret_id is None:
+        return
+    now = utcnow()
+    last = integ.last_check_at
+    if last is not None and last.tzinfo is None:
+        last = last.replace(tzinfo=dt.timezone.utc)
+    if not force and last is not None and (integ.last_check_status or "").strip() and (now - last).total_seconds() < ttl_seconds:
+        return
+    with _PROBE_LOCK:
+        if key in _IN_FLIGHT_PROBES:
+            return
+        _IN_FLIGHT_PROBES.add(key)
+    try:
+        check_integration(session, actor, key, transport=TRANSPORT.get(key))
+    except Exception:  # noqa: BLE001
+        pass
+    finally:
+        with _PROBE_LOCK:
+            _IN_FLIGHT_PROBES.discard(key)
 
 
 def sync_function_descriptions(session: Session, actor: Principal, *, limit: int | None = None, only_missing: bool = True,

@@ -70,4 +70,37 @@ describe("runScript", () => {
     const r = await runScript(base("assert(typeof require === 'undefined' && typeof process === 'undefined');"));
     expect(r.status).toBe("PASSED");
   });
+
+  it("openPopup tự đóng popup kể cả khi assertion bên trong lỗi", async () => {
+    let closed = false;
+    const popup = {
+      waitForLoadState: async () => {},
+      on: () => {},
+      url: () => "https://tasks.zuizui.io/report/detail",
+      close: async () => { closed = true; },
+    };
+    const fakePage = {
+      waitForEvent: async (ev: string) => (ev === "popup" ? popup : null),
+    };
+    const r = await runScript(
+      base("await openPopup(async () => {}, async (p) => { assert(false, 'popup check fail'); });", { page: fakePage }),
+    );
+    expect(r.status).toBe("FAILED");
+    expect(r.error).toBe("popup check fail");
+    expect(closed).toBe(true);
+  });
+
+  it("expectDownload xác thực tệp tải về và tên file", async () => {
+    const fakePage = {
+      waitForEvent: async (ev: string) =>
+        ev === "download"
+          ? { suggestedFilename: () => "bao_cao_hieu_suat.xlsx", failure: async () => null }
+          : null,
+    };
+    const r = await runScript(
+      base("const d = await expectDownload(async () => {}, { ext: '.xlsx' }); assert(d.filename.endsWith('.xlsx'), 'ok');", { page: fakePage }),
+    );
+    expect(r.status).toBe("PASSED");
+    expect(r.log.some((l) => l.includes("bao_cao_hieu_suat.xlsx"))).toBe(true);
+  });
 });

@@ -23,6 +23,19 @@ export type LocatorLike = {
   nth(i: number): { click(): Promise<void> };
 };
 export type InputLike = { setInputFiles(paths: string[]): Promise<void> };
+export type PopupPageLike = {
+  waitForLoadState?(state?: string, opts?: { timeout?: number }): Promise<void>;
+  on?(ev: string, fn: (e: unknown) => void): void;
+  url?(): string;
+  close(): Promise<void>;
+};
+export type DownloadLike = {
+  suggestedFilename(): string;
+  failure(): Promise<string | null>;
+};
+export type PageLike = {
+  waitForEvent?(ev: string, opts?: { timeout?: number }): Promise<unknown>;
+};
 
 export const sha256Hex = (s: string) => createHash("sha256").update(s).digest("hex");
 
@@ -118,7 +131,64 @@ export async function runScript(opts: {
     return true;
   };
 
-  const sandbox = vm.createContext({ page: opts.page, ctx, step, assert, pickOption, attachFiles, console: { log: ctx.log }, setTimeout, URL });
+  const openPopup = async <T = void>(
+    triggerFn: () => Promise<unknown>,
+    checkFn?: (popup: PopupPageLike) => Promise<T>,
+    timeoutMs = 30_000,
+  ): Promise<T | undefined> => {
+    const p = opts.page as PageLike;
+    if (!p?.waitForEvent) throw new Error("Trình duyệt không hỗ trợ waitForEvent('popup')");
+    const [popup] = await Promise.all([
+      p.waitForEvent("popup", { timeout: timeoutMs }) as Promise<PopupPageLike>,
+      triggerFn(),
+    ]);
+    try {
+      popup.on?.("pageerror", (e: unknown) => ctx.log(`[popup pageerror] ${String((e as Error)?.message ?? e)}`));
+      await popup.waitForLoadState?.("domcontentloaded", { timeout: timeoutMs }).catch(() => {});
+      if (checkFn) return await checkFn(popup);
+      return undefined;
+    } finally {
+      await popup.close?.().catch(() => {});
+    }
+  };
+
+  const expectDownload = async (
+    triggerFn: () => Promise<unknown>,
+    dlOpts?: { ext?: string; nameContains?: string },
+    timeoutMs = 30_000,
+  ): Promise<{ filename: string }> => {
+    const p = opts.page as PageLike;
+    if (!p?.waitForEvent) throw new Error("Trình duyệt không hỗ trợ waitForEvent('download')");
+    const [dl] = await Promise.all([
+      p.waitForEvent("download", { timeout: timeoutMs }) as Promise<DownloadLike>,
+      triggerFn(),
+    ]);
+    const failure = await dl.failure();
+    if (failure) throw new Error(`Tải tệp thất bại: ${failure}`);
+    const filename = dl.suggestedFilename();
+    if (dlOpts?.ext && !filename.toLowerCase().endsWith(dlOpts.ext.toLowerCase())) {
+      throw new Error(`Tên tệp "${filename}" không đúng định dạng ${dlOpts.ext}`);
+    }
+    if (dlOpts?.nameContains && !filename.toLowerCase().includes(dlOpts.nameContains.toLowerCase())) {
+      throw new Error(`Tên tệp "${filename}" không chứa "${dlOpts.nameContains}"`);
+    }
+    ctx.log(`Đã tải tệp: ${filename}`);
+    return { filename };
+  };
+
+  const sandbox = vm.createContext({
+    page: opts.page,
+    ctx,
+    step,
+    assert,
+    pickOption,
+    attachFiles,
+    openPopup,
+    expectDownload,
+    console: { log: ctx.log },
+    setTimeout,
+    URL,
+  });
   const timeoutMs = opts.timeoutMs ?? TIMEOUT_MS;
   let error = "";
   let timer: NodeJS.Timeout | undefined;

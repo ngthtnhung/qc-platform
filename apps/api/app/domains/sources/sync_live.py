@@ -17,7 +17,7 @@ from app.core.errors import AppError
 from app.core.principal import Principal
 from app.core.text import fold
 from app.domains.bugs.service import PRIORITY_LABELS, STATUS_LABELS
-from app.domains.integrations.clients import HaraworksClient, html_to_text
+from app.domains.integrations.clients import HaraworksAuthError, HaraworksClient, html_to_text
 from app.domains.knowledge.models import Source, SourceVersion
 from app.domains.sources.ingest import ingest_task_functions
 from app.domains.sources.models import SourcePassage
@@ -182,6 +182,8 @@ def sync_task_functions(session: Session, client: HaraworksClient, actor: Princi
         pid = proj["id"]
         try:
             lst = client.get_list_task("0", pid)
+        except HaraworksAuthError:
+            raise
         except Exception:  # noqa: BLE001
             continue
         if not lst or not lst.get("ids"):
@@ -322,6 +324,8 @@ def sync_release_builds(session: Session, client: HaraworksClient, actor: Princi
         pid = proj["id"]
         try:
             lst = client.get_list_task("0", pid)
+        except HaraworksAuthError:
+            raise
         except Exception:  # noqa: BLE001
             continue
         if not lst or not lst.get("ids"):

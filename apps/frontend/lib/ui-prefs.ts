@@ -168,6 +168,13 @@ const SKIP_PREFIX_TAGS = new Set([
   "TATCA", "TẤT CẢ", "EH", "ODOO", "MINIAPP",
 ]);
 
+export type ModuleFlowDef = {
+  code: string;
+  name: string;
+  menu?: string;
+  note?: string;
+};
+
 export type ModuleDef = {
   id?: string;
   code: string;
@@ -175,6 +182,10 @@ export type ModuleDef = {
   prefix?: string;
   color?: string;
   aliases?: string[];
+  cluster_code?: string;
+  subsystem_slug?: string;
+  flows?: ModuleFlowDef[];
+  standard_roles?: string[];
   custom?: boolean;
 };
 

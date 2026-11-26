@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { api, clearStoredApiError, readStoredApiErrors, type ApiErrorEventDetail } from "@/lib/api";
 import {
   DEFAULT_PET_CONFIG,
   formatDateBadge,
@@ -50,9 +50,16 @@ export type PetPulse = {
   mentions: HwNotiItem[];
   missing_integrations?: string[];
   integration_states?: {
-    haraworks?: "active" | "missing" | "expired" | "error";
-    ai?: "active" | "missing" | "expired" | "error";
-    figma?: "active" | "missing" | "expired" | "error";
+    haraworks?: "active" | "missing" | "expired" | "error" | "unchecked";
+    gemini?: "active" | "missing" | "expired" | "error" | "unchecked";
+    anthropic?: "active" | "missing" | "expired" | "error" | "unchecked";
+    ai?: "active" | "missing" | "expired" | "error" | "unchecked";
+    figma?: "active" | "missing" | "expired" | "error" | "unchecked";
+  };
+  integration_details?: Record<string, { label: string; state: string; state_label: string; detail: string; checked_at?: string | null }>;
+  data_health?: {
+    haraworks_notifications?: { ok: boolean; error: string | null };
+    last_sync?: { ok: boolean; code: string | null; message: string | null; at: string | null };
   };
   daily_summary: {
     todo_today: number;
@@ -174,19 +181,129 @@ type ReportStats = {
 };
 
 type BubbleState = {
-  kind: "report" | "alert" | "quip" | "missing_key";
+  kind: "report" | "alert" | "quip" | "missing_key" | "integration_error" | "data_error";
   title: string;
   text?: string;
   stats?: ReportStats;
   items: BubbleItem[];
   missingKeys?: string[];
+  focusKey?: string;
+  issueFp?: string;
+  issueLines?: string[];
 };
 
 const MISSING_LABELS: Record<string, string> = {
   ai: "Khóa AI (Gemini / Anthropic)",
+  gemini: "Gemini API Key",
+  anthropic: "Anthropic API Key",
   haraworks: "Cookie Haraworks",
   figma: "Token Figma",
 };
+
+type HealthDiagnostic = {
+  fp: string;
+  kind: "integration_error" | "data_error";
+  title: string;
+  text: string;
+  lines: string[];
+  focusKey: string;
+  missingKeys: string[];
+};
+
+function buildHealthDiagnostic(
+  pulseData: PetPulse | null,
+  storedErrors: Record<string, ApiErrorEventDetail>,
+  petName: string,
+): HealthDiagnostic | null {
+  const st = pulseData?.integration_states || {};
+  const details = pulseData?.integration_details || {};
+  const lines: string[] = [];
+  const fpParts: string[] = [];
+  const missingKeys: string[] = [];
+  let focusKey = "";
+
+  const hwSt = st.haraworks;
+  if (hwSt && hwSt !== "active") {
+    fpParts.push(`hw:${hwSt}`);
+    missingKeys.push("haraworks");
+    focusKey = focusKey || "haraworks";
+    if (hwSt === "missing") {
+      lines.push("• Cookie Haraworks: Chưa cấu hình nên chưa đồng bộ được bug & thông báo.");
+    } else if (hwSt === "unchecked") {
+      lines.push("• Cookie Haraworks: Đã lưu nhưng chưa kiểm tra trực tiếp.");
+    } else if (hwSt === "expired") {
+      lines.push(`• Cookie Haraworks đã hết hạn (${details.haraworks?.detail || "401/302"}), không tải được dữ liệu mới.`);
+    } else {
+      lines.push(`• Cookie Haraworks gặp lỗi (${details.haraworks?.detail || "không kết nối được"}).`);
+    }
+  }
+
+  const gemSt = st.gemini;
+  const antSt = st.anthropic;
+  if (gemSt === "expired" || gemSt === "error") {
+    fpParts.push(`gem:${gemSt}`);
+    missingKeys.push("gemini");
+    focusKey = focusKey || "gemini";
+    lines.push(`• Gemini API Key: ${gemSt === "expired" ? "Hết hạn hoặc không hợp lệ" : "Gặp lỗi"} (${details.gemini?.detail || "401/403"}).`);
+  }
+  if (antSt === "expired" || antSt === "error") {
+    fpParts.push(`ant:${antSt}`);
+    missingKeys.push("anthropic");
+    focusKey = focusKey || "anthropic";
+    lines.push(`• Anthropic API Key: ${antSt === "expired" ? "Hết hạn hoặc không hợp lệ" : "Gặp lỗi"} (${details.anthropic?.detail || "401/403"}).`);
+  }
+  const hasWorkingAi = gemSt === "active" || antSt === "active";
+  if (!hasWorkingAi && gemSt && antSt && gemSt !== "expired" && gemSt !== "error" && antSt !== "expired" && antSt !== "error") {
+    fpParts.push(`ai:${gemSt}:${antSt}`);
+    missingKeys.push("ai");
+    focusKey = focusKey || "gemini";
+    lines.push("• AI API Key (Gemini / Anthropic): Chưa cấu hình khóa hoạt động nên tính năng AI chưa chạy được.");
+  }
+
+  // Lỗi tải dữ liệu từ backend health hoặc Global API Error Bus
+  const notiOk = pulseData?.data_health?.haraworks_notifications?.ok;
+  const notiErr = pulseData?.data_health?.haraworks_notifications?.error || pulseData?.notifications?.error;
+  if (pulseData && notiOk === false && notiErr && hwSt === "active") {
+    fpParts.push(`noti_err:${notiErr.slice(0, 40)}`);
+    lines.push(`• Không tải được thông báo Haraworks: ${notiErr}`);
+  }
+  const syncHealth = pulseData?.data_health?.last_sync;
+  if (syncHealth && syncHealth.ok === false && syncHealth.message) {
+    fpParts.push(`sync:${syncHealth.code || "ERR"}`);
+    if (!focusKey && syncHealth.code === "HARAWORKS_AUTH") focusKey = "haraworks";
+    lines.push(`• Lỗi đồng bộ Haraworks (${syncHealth.code || "ERR"}): ${syncHealth.message}`);
+  }
+
+  const storedList = Object.values(storedErrors || {});
+  for (const err of storedList) {
+    fpParts.push(`${err.key}:${err.code}`);
+    if (err.code === "NO_COOKIE" || err.code === "HARAWORKS_AUTH") {
+      if (!focusKey) focusKey = "haraworks";
+      if (!lines.some((l) => l.includes("Cookie Haraworks"))) {
+        lines.push(`• Cookie Haraworks lỗi khi gọi ${err.path}: ${err.message}`);
+      }
+    } else if (err.code === "NO_AI_PROVIDER" || err.code === "AI_AUTH") {
+      if (!focusKey) focusKey = "gemini";
+      if (!lines.some((l) => l.includes("AI"))) {
+        lines.push(`• Lỗi AI API Key tại ${err.path}: ${err.message}`);
+      }
+    } else {
+      lines.push(`• Không tải được dữ liệu (${err.path}, mã ${err.code}): ${err.message}`);
+    }
+  }
+
+  if (lines.length === 0) return null;
+  const isToken = missingKeys.length > 0 || storedList.some((e) => e.category === "token_or_key");
+  return {
+    fp: Array.from(new Set(fpParts)).sort().join("|"),
+    kind: isToken ? "integration_error" : "data_error",
+    title: isToken ? `🔑 ${petName}: Cần cập nhật Token / API Key` : `⚠️ ${petName}: Lỗi tải dữ liệu`,
+    text: lines[0],
+    lines,
+    focusKey: focusKey || "haraworks",
+    missingKeys,
+  };
+}
 
 export function QaPetWidget({
   onPulseUpdate,
@@ -208,7 +325,9 @@ export function QaPetWidget({
   const stageRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ startX: number; startY: number; ox: number; oy: number; moved: boolean } | null>(null);
   const quipIdxRef = useRef(0);
-  const promptedMissingRef = useRef(false);
+  const dismissedErrFpRef = useRef<string>("");
+  const [storedErrors, setStoredErrors] = useState<Record<string, ApiErrorEventDetail>>({});
+  const [rechecking, setRechecking] = useState(false);
 
   // Tự động chọn hướng hiển thị bong bóng để không bao giờ bị che khuất ở mép trái / mép trên màn hình
   const updateBubbleDirection = useCallback(() => {
@@ -291,9 +410,45 @@ export function QaPetWidget({
     return () => clearTimeout(t);
   }, [bubble]);
 
+  // Đồng bộ các lỗi API đã ghi nhận từ localStorage & Global Error Bus
+  useEffect(() => {
+    setStoredErrors(readStoredApiErrors());
+    const onApiErr = (ev: Event) => {
+      const detail = (ev as CustomEvent<ApiErrorEventDetail>).detail;
+      if (!detail) return;
+      const next = readStoredApiErrors();
+      setStoredErrors(next);
+      // Nếu xuất hiện lỗi mới hoặc lỗi khác lần đã đóng tạm -> bật bong bóng ngay lập tức
+      const diag = buildHealthDiagnostic(pulse, next, cfg.name);
+      if (diag && dismissedErrFpRef.current !== diag.fp) {
+        setAction("jump");
+        setBubble({
+          kind: diag.kind,
+          title: diag.title,
+          text: diag.lines.join("\n"),
+          items: [],
+          missingKeys: diag.missingKeys,
+          focusKey: diag.focusKey,
+          issueFp: diag.fp,
+          issueLines: diag.lines,
+        });
+      }
+    };
+    const onApiOk = () => {
+      setStoredErrors(readStoredApiErrors());
+    };
+    window.addEventListener("qc:api-error", onApiErr);
+    window.addEventListener("qc:api-success", onApiOk);
+    return () => {
+      window.removeEventListener("qc:api-error", onApiErr);
+      window.removeEventListener("qc:api-success", onApiOk);
+    };
+  }, [pulse, cfg.name]);
+
   const fetchPulse = useCallback(
     async (force = false) => {
       try {
+        if (force) setRechecking(true);
         const since = typeof window !== "undefined" ? window.localStorage.getItem(BUGS_LAST_SEEN_KEY) || "" : "";
         const qs = new URLSearchParams();
         if (since) qs.set("since", since);
@@ -302,7 +457,18 @@ export function QaPetWidget({
         setPulse(data);
         onPulseUpdate?.(data);
 
-        // Pet CHỈ báo 2 loại realtime (nhắc 1 lần duy nhất, nhắc rồi KHÔNG nhắc lại; KHÔNG báo thông báo thường):
+        // Nếu trạng thái tích hợp trên server đã active -> xóa các lỗi tích hợp tương ứng trong localStorage
+        const st = data.integration_states || {};
+        if (st.haraworks === "active") clearStoredApiError("integ:haraworks");
+        if (st.gemini === "active" || st.anthropic === "active") clearStoredApiError("integ:ai");
+        const curStored = readStoredApiErrors();
+        setStoredErrors(curStored);
+
+        const diag = buildHealthDiagnostic(data, curStored, cfg.name);
+        if (!diag) {
+          dismissedErrFpRef.current = "";
+        }
+
         const alerted = getStringSet(ALERTED_KEYS_STORAGE);
         const nowMs = Date.now();
 
@@ -320,7 +486,20 @@ export function QaPetWidget({
             })
           : [];
 
-        if (freshBugs.length > 0) {
+        // Ưu tiên cao nhất: thiếu / hết hạn Token, AI Key hoặc lỗi tải dữ liệu (nhắc lại ngay khi vào hệ thống / F5)
+        if (diag && dismissedErrFpRef.current !== diag.fp) {
+          setAction("jump");
+          setBubble({
+            kind: diag.kind,
+            title: diag.title,
+            text: diag.lines.join("\n"),
+            items: [],
+            missingKeys: diag.missingKeys,
+            focusKey: diag.focusKey,
+            issueFp: diag.fp,
+            issueLines: diag.lines,
+          });
+        } else if (freshBugs.length > 0) {
           for (const b of freshBugs) alerted.add(`bug:${b.id}`);
           saveStringSet(ALERTED_KEYS_STORAGE, alerted);
           setAction("jump");
@@ -360,41 +539,39 @@ export function QaPetWidget({
               createdAt: m.created_at,
             })),
           });
-        } else if (!promptedMissingRef.current) {
-          // Mặc định khi truy cập hệ thống: nếu chưa có / hết hạn Cookie Haraworks hoặc thiếu API Key AI -> Pet bật bong bóng dễ thương chỉ chỗ nhập
-          const st = data.integration_states || {};
-          const hwBad = st.haraworks && st.haraworks !== "active";
-          const aiBad = st.ai && st.ai !== "active";
-          if (hwBad || aiBad) {
-            promptedMissingRef.current = true;
-            setAction("jump");
-            let cuteText = "";
-            if (hwBad && aiBad) {
-              cuteText =
-                st.haraworks === "expired"
-                  ? "Meow~ Qua ngày mới Cookie Haraworks hết hạn rồi, lại còn thiếu API Key AI nữa nè! Bấm vào đây nhập lại cho bé nha 🍪✨"
-                  : "Meow~ Bé chưa thấy Cookie Haraworks và API Key AI nè! Bạn ghé Cài đặt nhập vào để bé kéo bug & hỗ trợ phân tích nhé 🍪✨";
-            } else if (hwBad) {
-              cuteText =
-                st.haraworks === "expired"
-                  ? "Meow~ Cookie Haraworks hết hạn mất tiêu rồi! Bạn dán lại cookie mới để bé kéo task & thông báo nhé 🍪"
-                  : "Meow~ Chưa có Cookie Haraworks kìa! Bấm vào đây nhập token để bé đồng bộ dữ liệu cho bạn nha 🍪";
-            } else {
-              cuteText =
-                "Meow~ Bé thấy thiếu API Key AI (Gemini / Anthropic) nè! Thêm khóa vào để bé giúp bạn phân tích rule siêu nhanh nhé ✨";
-            }
-            setBubble({
-              kind: "missing_key",
-              title: `🐾 ${cfg.name} chỉ chỗ nhập Token nè!`,
-              text: cuteText,
-              items: [],
-              missingKeys: data.missing_integrations || [],
-            });
-          }
+        } else if (!diag) {
+          setBubble((cur) => (cur && (cur.kind === "integration_error" || cur.kind === "data_error" || cur.kind === "missing_key") ? null : cur));
         }
-      } catch { /* ignore */ }
+      } catch (err) {
+        const nextStored = readStoredApiErrors();
+        setStoredErrors(nextStored);
+        const msg = err instanceof Error ? err.message : "Không thể kiểm tra dữ liệu hệ thống";
+        const diag = buildHealthDiagnostic(pulse, nextStored, cfg.name) || {
+          fp: "pulse_unreachable",
+          kind: "data_error" as const,
+          title: `⚠️ ${cfg.name}: Lỗi kết nối dữ liệu`,
+          text: msg,
+          lines: [`• Không tải được trạng thái hệ thống (${msg}).`],
+          focusKey: "haraworks",
+          missingKeys: [],
+        };
+        if (dismissedErrFpRef.current !== diag.fp) {
+          setBubble({
+            kind: diag.kind,
+            title: diag.title,
+            text: diag.lines.join("\n"),
+            items: [],
+            missingKeys: diag.missingKeys,
+            focusKey: diag.focusKey,
+            issueFp: diag.fp,
+            issueLines: diag.lines,
+          });
+        }
+      } finally {
+        if (force) setRechecking(false);
+      }
     },
-    [cfg.alertMentions, cfg.alertUncheckedBug, cfg.name, onPulseUpdate]
+    [cfg.alertMentions, cfg.alertUncheckedBug, cfg.name, onPulseUpdate, pulse]
   );
 
   useEffect(() => {
@@ -446,23 +623,47 @@ export function QaPetWidget({
   }, [cfg.reminderEnabled, cfg.reminderTimes, pulse]);
 
   const colors = resolvePetColors(cfg);
-  if (!cfg.visible && !popup) return null;
+  const activeDiag = buildHealthDiagnostic(pulse, storedErrors, cfg.name);
+  if (!cfg.visible && !popup && !activeDiag) return null;
 
   return (
     <>
+      {!cfg.visible && activeDiag && (
+        <Link
+          href={`/settings?tab=integrations&focus=${encodeURIComponent(activeDiag.focusKey)}`}
+          className="qa-pet-widget"
+          style={{
+            background: "var(--panel)",
+            border: "1.5px solid var(--bad)",
+            color: "var(--bad)",
+            borderRadius: 999,
+            padding: "8px 14px",
+            fontSize: 12.5,
+            fontWeight: 600,
+            textDecoration: "none",
+            boxShadow: "0 6px 20px rgba(0,0,0,0.14)",
+          }}
+          title={activeDiag.lines.join("\n")}
+        >
+          {activeDiag.kind === "integration_error" ? "🔑 Thiếu/hết hạn Token · Cài đặt →" : "⚠️ Lỗi tải dữ liệu · Kiểm tra →"}
+        </Link>
+      )}
       {cfg.visible && (
         <div className="qa-pet-widget" style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}>
           {bubble && (
             <div
               className={`qa-pet-bubble align-${bubbleAlign.horiz} pos-${bubbleAlign.vert}`}
               role="status"
-              style={{ borderColor: colors.ear }}
+              style={{ borderColor: (bubble.kind === "integration_error" || bubble.kind === "data_error") ? "var(--bad)" : colors.ear }}
             >
-              <div className="qa-pet-bubble-head" style={{ color: colors.accent }}>
+              <div className="qa-pet-bubble-head" style={{ color: (bubble.kind === "integration_error" || bubble.kind === "data_error") ? "var(--bad)" : colors.accent }}>
                 <span>{bubble.title}</span>
                 <button
                   type="button"
-                  onClick={() => setBubble(null)}
+                  onClick={() => {
+                    if (bubble.issueFp) dismissedErrFpRef.current = bubble.issueFp;
+                    setBubble(null);
+                  }}
                   aria-label="Đóng"
                   style={{ border: 0, background: "transparent", cursor: "pointer", padding: "0 2px", fontSize: 12, color: "var(--muted)" }}
                 >
@@ -470,7 +671,11 @@ export function QaPetWidget({
                 </button>
               </div>
 
-              {bubble.text && <div className="qa-pet-bubble-text">{bubble.text}</div>}
+              {bubble.text && (
+                <div className="qa-pet-bubble-text" style={{ whiteSpace: "pre-line" }}>
+                  {bubble.text}
+                </div>
+              )}
 
               {/* Các chỉ số báo cáo có màu tách biệt rõ ràng (đồng nhất 100% với Dashboard) */}
               {bubble.stats && (
@@ -497,7 +702,7 @@ export function QaPetWidget({
               {/* Nhắc nhẹ nếu thiếu Token / API Key AI */}
               {bubble.missingKeys && bubble.missingKeys.length > 0 && bubble.kind === "report" && (
                 <div className="pet-missing-hint">
-                  🔑 Thiếu: {bubble.missingKeys.map((k) => MISSING_LABELS[k] || k).join(", ")}.{" "}
+                  🔑 Thiếu/lỗi: {bubble.missingKeys.map((k) => MISSING_LABELS[k] || k).join(", ")}.{" "}
                   <Link href="/settings?tab=integrations" onClick={() => setBubble(null)}>
                     Cài đặt →
                   </Link>
@@ -510,10 +715,27 @@ export function QaPetWidget({
                     Mở Dashboard
                   </Link>
                 )}
-                {bubble.kind === "missing_key" && (
-                  <Link href="/settings?tab=integrations" className="btn sm primary" onClick={() => setBubble(null)}>
-                    Cài đặt ngay →
-                  </Link>
+                {(bubble.kind === "missing_key" || bubble.kind === "integration_error" || bubble.kind === "data_error") && (
+                  <>
+                    <Link
+                      href={`/settings?tab=integrations${bubble.focusKey ? `&focus=${encodeURIComponent(bubble.focusKey)}` : ""}`}
+                      className="btn sm primary"
+                      onClick={() => setBubble(null)}
+                    >
+                      Cập nhật tại Cài đặt →
+                    </Link>
+                    <button
+                      type="button"
+                      className="sm"
+                      disabled={rechecking}
+                      onClick={() => {
+                        dismissedErrFpRef.current = "";
+                        void fetchPulse(true);
+                      }}
+                    >
+                      {rechecking ? "Đang kiểm tra…" : "Thử kiểm tra lại"}
+                    </button>
+                  </>
                 )}
                 {bubble.kind === "alert" && bubble.items.length === 1 && bubble.items[0].url && (
                   <a

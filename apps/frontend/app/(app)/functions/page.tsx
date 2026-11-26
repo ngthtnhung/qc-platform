@@ -38,6 +38,7 @@ export default function FunctionsPage() {
     setPage(1);
   }
 
+  const [loadErr, setLoadErr] = useState("");
   const load = useCallback(() => {
     const p = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String((page - 1) * PAGE_SIZE), sort });
     if (q.trim()) p.set("q", q.trim());
@@ -47,7 +48,9 @@ export default function FunctionsPage() {
     if (closed) p.set("closed", closed);
     if (assignee) p.set("assignee", assignee);
     if (dateRange) p.set("date_range", dateRange);
-    api<typeof data>(`/sources/task-functions?${p.toString()}`).then(setData).catch(() => undefined);
+    api<typeof data>(`/sources/task-functions?${p.toString()}`)
+      .then((res) => { setLoadErr(""); setData(res); })
+      .catch((err) => setLoadErr(err instanceof Error ? err.message : "Không tải được Task Function"));
   }, [q, sort, team, moduleCode, status, closed, assignee, dateRange, page]);
 
   useEffect(load, [load]);
@@ -64,6 +67,7 @@ export default function FunctionsPage() {
           <span className="badge ok">{data.total.toLocaleString("vi-VN")} task Function</span>
         </div>
       </div>
+      {loadErr && <div className="err" role="alert" style={{ marginBottom: 10 }}>{loadErr} <button className="sm" onClick={load}>Thử lại</button></div>}
 
       <div className="card">
         <FilterToolbar

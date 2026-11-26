@@ -8,7 +8,7 @@ import hashlib
 import re
 from urllib.parse import urlparse
 
-MAX_LEN = {"text": 200, "multiline": 5000, "list": 1000, "file": 400}
+MAX_LEN = {"text": 200, "multiline": 5000, "list": 1000, "file": 400, "number": 40, "date": 40, "select": 200}
 MAX_PARAMS = 30
 MAX_SCRIPT = 20000
 # Cho phép chữ hoa: dữ liệu thật của bản Node có khóa như "Tab_kiem_tra"; script đã duyệt tham chiếu đúng tên khóa nên KHÔNG được đổi tên
@@ -31,7 +31,7 @@ def validate_script(script) -> list[str]:
         errs.append(f"Script quá dài (tối đa {MAX_SCRIPT} ký tự)")
     if FORBIDDEN.search(script):
         errs.append("Script dùng cú pháp bị cấm (require, process, import(), eval, Function, constructor, fs, setInputFiles). "
-                    "Chỉ dùng page, ctx, step, assert, pickOption, attachFiles.")
+                    "Chỉ dùng page, ctx, step, assert, pickOption, attachFiles, openPopup, expectDownload.")
     return errs
 
 
@@ -56,8 +56,17 @@ def normalize_params(items) -> tuple[list[dict], list[str]]:
         if typ == "file" and value and not all(FILE_ID_RE.match(v.strip()) for v in value.split(",")):
             errs.append(f'Giá trị của "{key}" phải là mã file đã tải lên')
             continue
-        out.append({"key": key, "label": str(p.get("label") or key)[:80], "value": value, "auto": p.get("auto") is not False,
-                    "type": typ, "fallback": "random" if p.get("fallback") == "random" else "first"})
+        raw_opts = p.get("options") if isinstance(p.get("options"), list) else []
+        options = [str(o).strip()[:120] for o in raw_opts if str(o).strip()][:50]
+        out.append({
+            "key": key,
+            "label": str(p.get("label") or key)[:80],
+            "value": value,
+            "options": options,
+            "auto": p.get("auto") is not False,
+            "type": typ,
+            "fallback": "random" if p.get("fallback") == "random" else "first",
+        })
     if len(out) > MAX_PARAMS:
         errs.append(f"Tối đa {MAX_PARAMS} tham số")
     return out, errs
@@ -68,13 +77,18 @@ def root_domain(host: str) -> str:
 
 
 def validate_start_url(url: str, staging_base_urls: list[str]) -> str | None:
-    """None nếu hợp lệ. https bắt buộc; nếu đã có môi trường Staging thì phải cùng root domain với một trong số đó."""
+    """None nếu hợp lệ. Hỗ trợ đường dẫn tương đối (/...) dùng cho cụm dùng chung hoặc https cùng root domain Staging."""
+    raw = (url or "").strip()
+    if not raw:
+        return "Thiếu start_url"
+    if raw.startswith("/"):
+        return None
     try:
-        u = urlparse(url)
+        u = urlparse(raw)
     except ValueError:
         return "start_url không hợp lệ"
     if u.scheme != "https" or not u.hostname:
-        return "start_url phải là https"
+        return "start_url phải là https (hoặc đường dẫn tương đối bắt đầu bằng /)"
     roots = {root_domain(urlparse(b).hostname or "") for b in staging_base_urls if urlparse(b).hostname}
     if roots and root_domain(u.hostname) not in roots:
         return f"start_url phải thuộc {', '.join(sorted(roots))}"
@@ -93,9 +107,18 @@ def merge_params(base: list[dict], override: dict | None) -> dict[str, str]:
 
 
 def choose_account(required_roles: list[str], accounts: list[dict]) -> dict | None:
-    """Chọn tài khoản Staging để chạy automation (ưu tiên tài khoản đã lưu mật khẩu).
-    Trường vai trò (role_label) chỉ dùng làm ghi chú, không phải yếu tố quyết định thực thi."""
+    """Chọn tài khoản Staging để chạy automation (không bao giờ chặn vì vai trò).
+    Ưu tiên tài khoản đã lưu mật khẩu, sau đó ưu tiên mềm nếu role_label khớp gợi ý."""
     if not accounts:
         return None
-    scored = sorted(accounts, key=lambda a: -(1 if a.get("has_secret") else 0))
-    return scored[0]
+    from app.core.text import fold
+
+    role_tokens = [fold(r) for r in (required_roles or []) if str(r).strip()]
+
+    def _score(a: dict) -> tuple[int, int]:
+        has_sec = 1 if a.get("has_secret") else 0
+        rl = fold(a.get("role_label") or "")
+        role_match = 1 if (role_tokens and rl and any(t in rl or rl in t for t in role_tokens)) else 0
+        return (-has_sec, -role_match)
+
+    return min(accounts, key=_score)

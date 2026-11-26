@@ -46,4 +46,12 @@ describe("api client", () => {
     expect(err.code).toBe("INVALID_CREDENTIALS");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("không gọi /auth/refresh khi 401 là HARAWORKS_AUTH hoặc AI_AUTH", async () => {
+    fetchMock.mockResolvedValueOnce(res(401, { error: { code: "HARAWORKS_AUTH", message: "Cookie hết hạn" } }));
+    const err = (await api("/bugs/sync").catch((e: unknown) => e)) as ApiError;
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.code).toBe("HARAWORKS_AUTH");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

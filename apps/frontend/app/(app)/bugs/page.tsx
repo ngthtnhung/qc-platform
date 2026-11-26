@@ -40,6 +40,7 @@ export default function BugsPage() {
     sources: {}, modules: [], projects: [], assignees: [], approvers: [], classifications: [], years: [], status_labels: {},
   });
   const [data, setData] = useState<{ total: number; items: BugItem[] }>({ total: 0, items: [] });
+  const [loadErr, setLoadErr] = useState("");
   const [selected, setSelected] = useState<DrawerTask | null>(null);
 
   const activeFilters = [project, moduleCode, status, closed, assignee, approver, dateRange, classification, year].filter(Boolean).length;
@@ -51,7 +52,7 @@ export default function BugsPage() {
   }
 
   const loadMeta = useCallback(() => {
-    api<Meta>("/bugs/meta").then(setMeta).catch(() => undefined);
+    api<Meta>("/bugs/meta").then(setMeta).catch((err) => setLoadErr(err instanceof Error ? err.message : "Không tải được danh mục lọc"));
   }, []);
   useEffect(loadMeta, [loadMeta]);
 
@@ -67,7 +68,9 @@ export default function BugsPage() {
     if (dateRange) p.set("date_range", dateRange);
     if (classification) p.set("classification", classification);
     if (year) p.set("year", year);
-    api<{ total: number; items: BugItem[] }>(`/bugs?${p.toString()}`).then(setData).catch(() => undefined);
+    api<{ total: number; items: BugItem[] }>(`/bugs?${p.toString()}`)
+      .then((res) => { setLoadErr(""); setData(res); })
+      .catch((err) => setLoadErr(err instanceof Error ? err.message : "Không tải được danh sách Bug"));
   }, [q, sort, project, moduleCode, status, closed, assignee, approver, dateRange, classification, year, page]);
 
   useEffect(load, [load]);
@@ -85,6 +88,7 @@ export default function BugsPage() {
           <span className="badge ok">{data.total.toLocaleString("vi-VN")} bug</span>
         </div>
       </div>
+      {loadErr && <div className="err" role="alert" style={{ marginBottom: 10 }}>{loadErr} <button className="sm" onClick={load}>Thử lại</button></div>}
 
       <div className="card">
         <FilterToolbar

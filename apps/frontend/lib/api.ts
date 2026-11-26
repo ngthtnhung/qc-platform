@@ -35,6 +35,96 @@ async function tryRefresh(): Promise<boolean> {
   return refreshing;
 }
 
+export type ApiErrorCategory = "token_or_key" | "data_load";
+export type ApiErrorEventDetail = {
+  key: string;
+  category: ApiErrorCategory;
+  status: number;
+  code: string;
+  message: string;
+  path: string;
+  at: string;
+};
+
+export const ACTIVE_ERRORS_STORAGE_KEY = "qc_pet_active_errors";
+const NON_SESSION_AUTH_CODES = new Set(["HARAWORKS_AUTH", "AI_AUTH", "FIGMA_AUTH", "INVALID_CREDENTIALS"]);
+const TOKEN_OR_KEY_CODES = new Set(["NO_COOKIE", "HARAWORKS_AUTH", "NO_AI_PROVIDER", "AI_AUTH", "FIGMA_AUTH"]);
+
+export function readStoredApiErrors(): Record<string, ApiErrorEventDetail> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_ERRORS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, ApiErrorEventDetail>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStoredApiErrors(map: Record<string, ApiErrorEventDetail>): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(ACTIVE_ERRORS_STORAGE_KEY, JSON.stringify(map));
+  } catch { /* ignore */ }
+}
+
+function normalizeErrKey(code: string, path: string): string {
+  if (code === "NO_COOKIE" || code === "HARAWORKS_AUTH") return "integ:haraworks";
+  if (code === "NO_AI_PROVIDER" || code === "AI_AUTH") return "integ:ai";
+  if (code === "FIGMA_AUTH") return "integ:figma";
+  const basePath = path.split("?")[0] || path;
+  return `data:${basePath}`;
+}
+
+export function clearStoredApiError(keyOrPath: string): void {
+  if (typeof window === "undefined") return;
+  const cur = readStoredApiErrors();
+  const basePath = keyOrPath.split("?")[0] || keyOrPath;
+  let changed = false;
+  for (const k of Object.keys(cur)) {
+    if (k === keyOrPath || k === `data:${basePath}` || cur[k]?.path?.split("?")[0] === basePath) {
+      delete cur[k];
+      changed = true;
+    }
+  }
+  if (changed) writeStoredApiErrors(cur);
+}
+
+export function emitApiError(info: { status: number; code: string; message: string; path: string }): void {
+  if (typeof window === "undefined") return;
+  const { status, code, message, path } = info;
+  if (path.startsWith("/auth/")) return;
+  const isTokenErr = TOKEN_OR_KEY_CODES.has(code);
+  const isDataLoadErr = status === 0 || status >= 500 || code === "HARAWORKS_ERROR" || code === "AI_UNAVAILABLE" || code === "SYNC_FAILED";
+  if (!isTokenErr && !isDataLoadErr) return;
+  const category: ApiErrorCategory = isTokenErr ? "token_or_key" : "data_load";
+  const detail: ApiErrorEventDetail = {
+    key: normalizeErrKey(code, path),
+    category,
+    status,
+    code,
+    message,
+    path,
+    at: new Date().toISOString(),
+  };
+  const cur = readStoredApiErrors();
+  cur[detail.key] = detail;
+  writeStoredApiErrors(cur);
+  try {
+    window.dispatchEvent(new CustomEvent<ApiErrorEventDetail>("qc:api-error", { detail }));
+  } catch { /* ignore */ }
+}
+
+function emitApiSuccess(path: string, method: string): void {
+  if (typeof window === "undefined") return;
+  if (method !== "GET" || path.startsWith("/auth/")) return;
+  const basePath = path.split("?")[0] || path;
+  clearStoredApiError(basePath);
+  try {
+    window.dispatchEvent(new CustomEvent<{ path: string }>("qc:api-success", { detail: { path: basePath } }));
+  } catch { /* ignore */ }
+}
+
 async function parseError(res: Response): Promise<ApiError> {
   let code = "HTTP_" + res.status;
   let message = "Có lỗi xảy ra";
@@ -60,7 +150,17 @@ export async function waitJob(id: string, onTick?: (j: Job) => void, timeoutMs =
   for (;;) {
     const j = await api<Job>(`/jobs/${id}`);
     onTick?.(j);
-    if (j.status === "DONE" || j.status === "FAILED") return j;
+    if (j.status === "FAILED") {
+      const errObj = (j.result as { error?: { code?: string; message?: string } } | null)?.error;
+      emitApiError({
+        status: errObj?.code === "HARAWORKS_AUTH" ? 401 : 500,
+        code: errObj?.code || "SYNC_FAILED",
+        message: errObj?.message || "Tác vụ nền thất bại",
+        path: `/jobs/${j.kind}`,
+      });
+      return j;
+    }
+    if (j.status === "DONE") return j;
     if (Date.now() - t0 > timeoutMs) throw new ApiError(408, "JOB_TIMEOUT", "Tác vụ nền chạy quá lâu; xem lại sau.");
     await new Promise((r) => setTimeout(r, 2000));
   }
@@ -68,9 +168,27 @@ export async function waitJob(id: string, onTick?: (j: Job) => void, timeoutMs =
 
 export async function apiForm<T = unknown>(path: string, form: FormData): Promise<T> {
   const doFetch = () => fetch(`/api/v1${path}`, { method: "POST", credentials: "same-origin", headers: { "X-CSRF-Token": readCookie("csrf_token") }, body: form });
-  let res = await doFetch();
-  if (res.status === 401 && (await tryRefresh())) res = await doFetch();
-  if (!res.ok) throw await parseError(res);
+  let res: Response;
+  try {
+    res = await doFetch();
+  } catch (e) {
+    emitApiError({ status: 0, code: "NETWORK_ERROR", message: "Không kết nối được máy chủ API.", path });
+    throw e;
+  }
+  if (!res.ok) {
+    const firstErr = res.status === 401 ? await parseError(res) : null;
+    if (firstErr && !NON_SESSION_AUTH_CODES.has(firstErr.code) && (await tryRefresh())) {
+      res = await doFetch();
+    } else if (firstErr) {
+      emitApiError({ status: firstErr.status, code: firstErr.code, message: firstErr.message, path });
+      throw firstErr;
+    }
+  }
+  if (!res.ok) {
+    const err = await parseError(res);
+    emitApiError({ status: err.status, code: err.code, message: err.message, path });
+    throw err;
+  }
   return (await res.json()) as T;
 }
 
@@ -87,10 +205,31 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
       body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
     });
 
-  let res = await doFetch();
+  let res: Response;
+  try {
+    res = await doFetch();
+  } catch (e) {
+    emitApiError({ status: 0, code: "NETWORK_ERROR", message: "Không kết nối được máy chủ API.", path });
+    throw e;
+  }
   const isAuthCall = path.startsWith("/auth/login") || path.startsWith("/auth/refresh");
-  if (res.status === 401 && !isAuthCall && (await tryRefresh())) res = await doFetch();
-  if (!res.ok) throw await parseError(res);
+  if (!res.ok) {
+    if (res.status === 401 && !isAuthCall) {
+      const firstErr = await parseError(res);
+      if (!NON_SESSION_AUTH_CODES.has(firstErr.code) && (await tryRefresh())) {
+        res = await doFetch();
+      } else {
+        emitApiError({ status: firstErr.status, code: firstErr.code, message: firstErr.message, path });
+        throw firstErr;
+      }
+    }
+    if (!res.ok) {
+      const err = await parseError(res);
+      emitApiError({ status: err.status, code: err.code, message: err.message, path });
+      throw err;
+    }
+  }
+  emitApiSuccess(path, method);
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
@@ -167,16 +306,70 @@ export type Account = {
   has_secret: boolean;
 };
 
-export type TaskParam = { key: string; label: string; type: string; value: string; auto: boolean };
+export type ParamOption = { value: string; label?: string };
+export type TaskParam = {
+  key: string;
+  label: string;
+  type: "text" | "multiline" | "list" | "file" | "number" | "date" | "select" | string;
+  value: string;
+  options?: string[];
+  auto: boolean;
+  fallback?: "first" | "random";
+};
+export type ExpectedCriterion = {
+  id: string;
+  description: string;
+  assertion_hint?: string;
+  required?: boolean;
+};
+export type DataPolicy = {
+  test_prefix?: string;
+  cleanup_strategy?: "none" | "delete_after" | "revert" | string;
+  seed_note?: string;
+};
+export type AutomationMode = "AUTO" | "SEMI_AUTO" | "MANUAL";
 export type AutoTask = {
-  id: string; name: string; module_code: string; flow: string; description: string; start_url: string; writes: boolean; steps: string[]; required_roles: string[];
+  id: string;
+  name: string;
+  module_code: string;
+  flow: string;
+  flow_code?: string;
+  automation_mode?: AutomationMode;
+  target_modules?: string[];
+  inherited_from_cluster?: string;
+  description: string;
+  start_url: string;
+  writes: boolean;
+  steps: string[];
+  required_roles: string[];
+  rule_keys?: string[];
+  preconditions?: string[];
+  data_policy?: DataPolicy;
+  expected_criteria?: ExpectedCriterion[];
+  manual_checklist?: string[];
   created_at?: string;
-  params: TaskParam[]; runnable: boolean; approved_version: number | null;
+  params: TaskParam[];
+  runnable: boolean;
+  approved_version: number | null;
   versions: { id: string; version_no: number; status: string; origin: string; sha256: string; created_at?: string }[];
 };
 export type Execution = {
-  id: string; task_id: string; status: string; attempt: number; runner_id: string | null; error: string; duration_ms: number | null;
-  batch_id: string; queued_at: string; finished_at: string | null;
+  id: string;
+  task_id: string;
+  status: string;
+  attempt: number;
+  runner_id: string | null;
+  target_module?: string | null;
+  error: string;
+  duration_ms: number | null;
+  batch_id: string;
+  queued_at: string;
+  finished_at: string | null;
+};
+export type ExecutionDetail = Execution & {
+  steps: { name: string; status: string; ms: number; error: string }[];
+  log: string[];
+  artifacts: { id: string; kind: string; file_id: string }[];
 };
 export type RunnerRow = { id: string; name: string; type: string; capabilities: string[]; status: string; last_heartbeat_at: string | null; revoked: boolean; token?: string };
 
@@ -219,7 +412,7 @@ export type IntegrationStatus = {
   key: string;
   label: string;
   configured: boolean;
-  state?: "active" | "missing" | "expired" | "error";
+  state?: "active" | "missing" | "expired" | "error" | "unchecked";
   state_label?: string;
   detail?: string;
   last_check_at: string | null;

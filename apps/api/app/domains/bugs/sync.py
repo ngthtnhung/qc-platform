@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.db import utcnow
 from app.domains.bugs.models import Bug, Project
 from app.domains.bugs.service import Report, get_source, live_fields, module_index, upsert_bug
-from app.domains.integrations.clients import HaraworksClient
+from app.domains.integrations.clients import HaraworksAuthError, HaraworksClient
 
 BIG_PROJECT = 1000  # dự án lớn hơn mức này: chỉ lấy chi tiết task MỚI hoặc tạo gần đây
 RECENT_DAYS = 14
@@ -25,6 +25,8 @@ def _discover_bug_projects(session: Session, client: HaraworksClient, src, all_t
     existing = {p.external_id: p for p in session.scalars(select(Project).where(Project.source_id == src.id))}
     try:
         remote = client.projects() or []
+    except HaraworksAuthError:
+        raise
     except Exception:  # noqa: BLE001
         remote = []
     for rp in remote:

@@ -72,44 +72,144 @@ def _submit(session: Session, cv: CodeVersion, task: AutomationTask, requester: 
     )
 
 
-def add_code_version(session: Session, *, task: AutomationTask, script: str, requester: Principal, origin: str, note: str = "") -> CodeVersion:
+def add_code_version(
+    session: Session,
+    *,
+    task: AutomationTask,
+    script: str,
+    requester: Principal,
+    origin: str,
+    note: str = "",
+    activate_immediately: bool = False,
+) -> CodeVersion:
     errs = rules.validate_script(script)
     if errs:
         raise AppError("; ".join(errs), code="SCRIPT_INVALID", status=422)
     sha = rules.script_sha(script)
-    if session.scalar(select(CodeVersion.id).where(CodeVersion.task_id == task.id, CodeVersion.sha256 == sha)):
+    existing = session.scalar(select(CodeVersion).where(CodeVersion.task_id == task.id, CodeVersion.sha256 == sha))
+    if existing is not None:
+        if activate_immediately and requester.type != PrincipalType.AI and existing.status != "APPROVED":
+            existing.status, existing.approved_by, existing.approved_at = "APPROVED", requester.id, utcnow()
+            log_audit(session, requester, "CODE_VERSION_ACTIVATE", resource_type="automation_task", resource_id=str(task.id), after={"version": existing.version_no, "sha256": sha})
+            return existing
         raise Conflict("Code này đã có trong một phiên bản của tác vụ", code="DUPLICATE_CODE")
     n = (session.scalar(select(func.max(CodeVersion.version_no)).where(CodeVersion.task_id == task.id)) or 0) + 1
-    cv = CodeVersion(task_id=task.id, version_no=n, script=script, sha256=sha, origin=origin, created_by_type=requester.type.value, note=note)
+    direct_approve = bool(activate_immediately and requester.type != PrincipalType.AI and origin in ("human", "import"))
+    cv = CodeVersion(
+        task_id=task.id,
+        version_no=n,
+        script=script,
+        sha256=sha,
+        status="APPROVED" if direct_approve else "PENDING",
+        origin=origin,
+        created_by_type=requester.type.value,
+        approved_by=requester.id if direct_approve else None,
+        approved_at=utcnow() if direct_approve else None,
+        note=note,
+    )
     session.add(cv)
     session.flush()
-    _submit(session, cv, task, requester)
-    log_audit(session, requester, "CODE_VERSION_CREATE", resource_type="automation_task", resource_id=str(task.id), after={"version": n, "sha256": sha, "origin": origin})
+    if direct_approve:
+        log_audit(session, requester, "CODE_VERSION_ACTIVATE_DIRECT", resource_type="automation_task", resource_id=str(task.id), after={"version": n, "sha256": sha, "origin": origin})
+    else:
+        _submit(session, cv, task, requester)
+    log_audit(session, requester, "CODE_VERSION_CREATE", resource_type="automation_task", resource_id=str(task.id), after={"version": n, "sha256": sha, "origin": origin, "direct": direct_approve})
     return cv
 
 
-def create_task(session: Session, *, actor: Principal, name: str, module_code: str, start_url: str, steps: list[str], script: str,
-                params: list[dict], flow: str = "", description: str = "", required_roles: list[str] | None = None, writes: bool = False,
-                rule_keys: list[str] | None = None, source: dict | None = None, legacy_id: str | None = None, origin: str = "human") -> tuple[AutomationTask, CodeVersion]:
+def create_task(
+    session: Session,
+    *,
+    actor: Principal,
+    name: str,
+    module_code: str,
+    start_url: str,
+    steps: list[str],
+    script: str = "",
+    params: list[dict] | None = None,
+    flow: str = "",
+    flow_code: str = "",
+    automation_mode: str = "AUTO",
+    target_modules: list[str] | None = None,
+    description: str = "",
+    required_roles: list[str] | None = None,
+    writes: bool = False,
+    rule_keys: list[str] | None = None,
+    preconditions: list[str] | None = None,
+    data_policy: dict | None = None,
+    expected_criteria: list[dict] | None = None,
+    manual_checklist: list[str] | None = None,
+    source: dict | None = None,
+    legacy_id: str | None = None,
+    origin: str = "human",
+    activate_immediately: bool = False,
+) -> tuple[AutomationTask, CodeVersion | None]:
     if not name.strip() or not module_code.strip():
         raise AppError("Thiếu tên hoặc module", code="VALIDATION_ERROR", status=422)
-    if not [s for s in steps if str(s).strip()]:
-        raise AppError("Cần ghi các bước bằng lời để người duyệt đọc", code="VALIDATION_ERROR", status=422)
+    mode = (automation_mode or "AUTO").strip().upper()
+    if mode not in ("AUTO", "SEMI_AUTO", "MANUAL"):
+        raise AppError("automation_mode phải là AUTO, SEMI_AUTO hoặc MANUAL", code="VALIDATION_ERROR", status=422)
+    clean_steps = [str(s).strip() for s in (steps or []) if str(s).strip()]
+    clean_manual = [str(s).strip() for s in (manual_checklist or []) if str(s).strip()]
+    if not clean_steps and mode != "MANUAL":
+        raise AppError("Cần ghi các bước bằng lời để người dùng dễ theo dõi", code="VALIDATION_ERROR", status=422)
+    if mode == "MANUAL" and not clean_steps and not clean_manual:
+        raise AppError("Tác vụ thủ công cần ít nhất 1 bước hoặc checklist kiểm tra", code="VALIDATION_ERROR", status=422)
+
     staging = [e for (e,) in session.execute(select(Environment.base_url).where(Environment.type == "STAGING", Environment.is_active.is_(True)))]
-    bad_url = rules.validate_start_url(start_url, staging)
-    if bad_url:
-        raise AppError(bad_url, code="VALIDATION_ERROR", status=422)
-    norm, perrs = rules.normalize_params(params)
+    if mode != "MANUAL" or (start_url or "").strip():
+        bad_url = rules.validate_start_url(start_url or "/", staging)
+        if bad_url:
+            raise AppError(bad_url, code="VALIDATION_ERROR", status=422)
+    norm, perrs = rules.normalize_params(params or [])
     if perrs:
         raise AppError("; ".join(perrs), code="VALIDATION_ERROR", status=422)
-    task = AutomationTask(legacy_id=legacy_id, name=name.strip()[:300], module_code=module_code.strip(), flow=flow, description=description,
-                          start_url=start_url, required_roles=required_roles or [], writes=writes, rule_keys=rule_keys or [],
-                          source=source or {}, steps=[str(s) for s in steps if str(s).strip()])
+
+    clean_policy = dict(data_policy or {})
+    if "test_prefix" not in clean_policy:
+        clean_policy["test_prefix"] = "[AI TEST]"
+
+    task = AutomationTask(
+        legacy_id=legacy_id,
+        name=name.strip()[:300],
+        module_code=module_code.strip().upper()[:40],
+        flow=flow,
+        flow_code=flow_code.strip()[:60],
+        automation_mode=mode,
+        target_modules=[str(m).strip().upper() for m in (target_modules or []) if str(m).strip()],
+        description=description,
+        start_url=(start_url or "").strip(),
+        required_roles=[str(r).strip() for r in (required_roles or []) if str(r).strip()],
+        writes=writes,
+        rule_keys=rule_keys or [],
+        preconditions=[str(p).strip() for p in (preconditions or []) if str(p).strip()],
+        data_policy=clean_policy,
+        expected_criteria=list(expected_criteria or []),
+        manual_checklist=clean_manual,
+        source=source or {},
+        steps=clean_steps or clean_manual,
+    )
     session.add(task)
     session.flush()
     session.add_all(TaskParam(task_id=task.id, **p) for p in norm)
-    cv = add_code_version(session, task=task, script=script, requester=actor, origin=origin)
-    log_audit(session, actor, "AUTOMATION_TASK_CREATE", resource_type="automation_task", resource_id=str(task.id), after={"name": task.name, "module": module_code})
+    cv: CodeVersion | None = None
+    if mode != "MANUAL":
+        cv = add_code_version(
+            session,
+            task=task,
+            script=script,
+            requester=actor,
+            origin=origin,
+            activate_immediately=activate_immediately,
+        )
+    log_audit(
+        session,
+        actor,
+        "AUTOMATION_TASK_CREATE",
+        resource_type="automation_task",
+        resource_id=str(task.id),
+        after={"name": task.name, "module": task.module_code, "mode": mode, "direct_activate": activate_immediately},
+    )
     return task, cv
 
 
@@ -119,35 +219,49 @@ def latest_approved(session: Session, task_id: uuid.UUID) -> CodeVersion | None:
 
 def task_params(session: Session, task_id: uuid.UUID) -> list[dict]:
     rows = session.scalars(select(TaskParam).where(TaskParam.task_id == task_id).order_by(TaskParam.key))
-    return [{"key": p.key, "label": p.label, "type": p.type, "value": p.value, "auto": p.auto, "fallback": p.fallback} for p in rows]
+    return [{"key": p.key, "label": p.label, "type": p.type, "value": p.value, "options": list(p.options or []), "auto": p.auto, "fallback": p.fallback} for p in rows]
 
 
-def update_param_values(session: Session, *, actor: Principal, task: AutomationTask, values: dict[str, str]) -> list[dict]:
-    """Đổi giá trị tham số (không đổi code ⇒ không cần duyệt lại, giống bản Node)."""
+def update_param_values(session: Session, *, actor: Principal, task: AutomationTask, values: dict[str, str] | None = None, params_def: list[dict] | None = None) -> list[dict]:
+    """Cập nhật giá trị tham số hoặc danh sách định nghĩa tham số (không đổi code ⇒ không cần duyệt lại)."""
+    if params_def is not None:
+        norm, perrs = rules.normalize_params(params_def)
+        if perrs:
+            raise AppError("; ".join(perrs), code="VALIDATION_ERROR", status=422)
+        for row in session.scalars(select(TaskParam).where(TaskParam.task_id == task.id)).all():
+            session.delete(row)
+        session.flush()
+        session.add_all(TaskParam(task_id=task.id, **p) for p in norm)
+        session.flush()
+        log_audit(session, actor, "AUTOMATION_PARAMS_SAVE", resource_type="automation_task", resource_id=str(task.id), after={"keys": [p["key"] for p in norm]})
+        return task_params(session, task.id)
+
     cur = {p.key: p for p in session.scalars(select(TaskParam).where(TaskParam.task_id == task.id))}
-    for k, v in values.items():
+    for k, v in (values or {}).items():
         p = cur.get(k)
         if p is None:
             raise AppError(f'Không có tham số "{k}"', code="VALIDATION_ERROR", status=422)
-        if len(str(v)) > rules.MAX_LEN[p.type]:
+        if len(str(v)) > rules.MAX_LEN.get(p.type, 200):
             raise AppError(f'Giá trị của "{k}" quá dài', code="VALIDATION_ERROR", status=422)
         p.value = str(v)
-    log_audit(session, actor, "AUTOMATION_PARAMS_SAVE", resource_type="automation_task", resource_id=str(task.id), after={"keys": sorted(values)})
+    log_audit(session, actor, "AUTOMATION_PARAMS_SAVE", resource_type="automation_task", resource_id=str(task.id), after={"keys": sorted(values or {})})
     return task_params(session, task.id)
 
 
 # ------------------------------------------------------------------ xếp hàng chạy
 def queue_runs(session: Session, *, actor: Principal, task: AutomationTask, account_id: uuid.UUID | None, override: dict | None,
-               count: int = 1, correlation_id: str = "") -> list[Execution]:
+               count: int = 1, correlation_id: str = "", target_module: str | None = None) -> list[Execution]:
     if not actor.is_qc_user:
         raise PolicyBlocked("Chỉ QC được yêu cầu chạy tác vụ")
     if task.status != "active":
         raise NotFound("Tác vụ đã ngừng dùng")
+    if (task.automation_mode or "AUTO") == "MANUAL":
+        raise AppError("Tác vụ thủ công (MANUAL) không có script chạy tự động qua Runner.", code="MANUAL_TASK", status=422)
     if not 1 <= count <= MAX_BATCH:
         raise AppError(f"Số lần chạy phải từ 1 đến {MAX_BATCH}", code="VALIDATION_ERROR", status=422)
     cv = latest_approved(session, task.id)
     if cv is None:
-        raise Conflict("Tác vụ chưa có phiên bản code nào được QC duyệt", code="NOT_APPROVED")
+        raise Conflict("Tác vụ chưa có phiên bản code nào sẵn sàng chạy (chưa kích hoạt)", code="NOT_APPROVED")
     since = utcnow() - dt.timedelta(minutes=10)
     recent = session.scalar(select(func.count()).select_from(Execution).where(Execution.requested_by == actor.id, Execution.queued_at >= since)) or 0
     if recent + count > RATE_LIMIT_RUNS:
@@ -165,15 +279,16 @@ def queue_runs(session: Session, *, actor: Principal, task: AutomationTask, acco
     policy.evaluate_action(session, actor=actor, action="AUTOMATE", env=chosen["env"], correlation_id=correlation_id)
 
     params = rules.merge_params(task_params(session, task.id), override)
+    tmod = target_module.strip().upper()[:40] if target_module and target_module.strip() else None
     batch = secrets.token_hex(6) if count > 1 else ""
     out = []
     for _ in range(count):
-        ex = Execution(task_id=task.id, code_version_id=cv.id, account_id=chosen["id"], params=params, batch_id=batch, requested_by=actor.id)
+        ex = Execution(task_id=task.id, code_version_id=cv.id, account_id=chosen["id"], params=params, target_module=tmod, batch_id=batch, requested_by=actor.id)
         session.add(ex)
         out.append(ex)
     session.flush()
     log_audit(session, actor, "AUTOMATION_RUN_QUEUED", resource_type="automation_task", resource_id=str(task.id),
-              after={"executions": [str(e.id) for e in out], "code_sha256": cv.sha256, "account": str(chosen["id"])}, correlation_id=correlation_id)
+              after={"executions": [str(e.id) for e in out], "code_sha256": cv.sha256, "account": str(chosen["id"]), "target_module": tmod}, correlation_id=correlation_id)
     return out
 
 
@@ -260,11 +375,36 @@ def claim(session: Session, runner: Runner) -> dict | None:
         if cv.status != "APPROVED":  # bị thu hồi giữa chừng ⇒ không chạy
             ex.status, ex.finished_at, ex.error = "FAILED", utcnow(), "Phiên bản code không còn ở trạng thái APPROVED"
             continue
+        from app.domains.knowledge.models import Module
+
+        mod_code = (ex.target_module or task.module_code or "").strip().upper()
+        mod = session.scalar(select(Module).where(Module.code == mod_code)) if mod_code else None
+        default_slugs = {"MAINT": "maintenance", "SCM": "scm", "IOT": "iot", "DV5S": "maintenance"}
+        slug = (mod.subsystem_slug if mod and mod.subsystem_slug else default_slugs.get(mod_code, mod_code.lower() if mod_code else ""))
+        resolved_start_url = task.start_url or ""
+        if "{subsystem}" in resolved_start_url and slug:
+            resolved_start_url = resolved_start_url.replace("{subsystem}", slug)
+        if resolved_start_url.startswith("/"):
+            base = (env.base_url or env.login_url or "").rstrip("/")
+            if base:
+                resolved_start_url = f"{base}{resolved_start_url}"
+
+        t_params = task_params(session, task.id)
+        test_prefix = str((task.data_policy or {}).get("test_prefix") or "[AI TEST]")
         log_audit(session, Principal(type=PrincipalType.RUNNER, id=runner.id, username=runner.name), "AUTOMATION_CLAIM", resource_type="execution", resource_id=str(ex.id))
-        return {"execution_id": str(ex.id), "attempt": ex.attempt, "lease_seconds": LEASE_MINUTES * 60, "task": {"name": task.name, "start_url": task.start_url, "writes": task.writes},
-                "script": cv.script, "sha256": cv.sha256, "params": ex.params,
-                "account": {"id": str(acc.id), "username": acc.username_ref, "expected_org": env.org_identifier or acc.expected_org_ref, "route": acc.default_route, "routes": acc.routes or []},
-                "environment": {"code": env.code, "type": env.type, "login_url": env.login_url or env.base_url}}
+        return {
+            "execution_id": str(ex.id),
+            "attempt": ex.attempt,
+            "lease_seconds": LEASE_MINUTES * 60,
+            "task": {"name": task.name, "start_url": resolved_start_url, "writes": task.writes, "target_module": mod_code},
+            "script": cv.script,
+            "sha256": cv.sha256,
+            "params": ex.params,
+            "param_meta": [{"key": p["key"], "value": p["value"], "type": p["type"], "auto": p["auto"], "fallback": p["fallback"]} for p in t_params],
+            "test_prefix": test_prefix,
+            "account": {"id": str(acc.id), "username": acc.username_ref, "expected_org": env.org_identifier or acc.expected_org_ref, "route": acc.default_route, "routes": acc.routes or []},
+            "environment": {"code": env.code, "type": env.type, "login_url": env.login_url or env.base_url},
+        }
     return None
 
 
